@@ -1,26 +1,94 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { average, confidence, poissonProbabilityOver } from "../functions/api/model.js";
+import {
+  MODEL, analyzeMatch, buildAccumulator, buildContext, poissonPmf, probabilities, scoreMatrix, stressedProbabilities, verdictFor,
+} from "../functions/api/model.js";
+import { syncDue, TTL } from "../functions/api/_lib.js";
 
-test("average ignores missing and invalid values", () => {
-  assert.equal(average([1, 2, null, NaN, -3]), 1.5);
-  assert.equal(average([null, NaN]), null);
+const day = 86400e3;
+function league(nRounds = 12) {
+  const teams = ["a", "b", "c", "d"]; const finals = []; let t = Date.parse("2026-08-20T18:00:00Z");
+  for (let r = 0; r < nRounds; r += 1) {
+    for (const [h, a] of [["a", "b"], ["c", "d"]]) {
+      const [x, y] = r % 2 ? [a, h] : [h, a];
+      finals.push({ league: "seriea", kickoff_at: new Date(t).toISOString(), home_id: x, away_id: y, home_name: x, away_name: y,
+        home_score: x === "a" ? 3 : 1, away_score: y === "a" ? 3 : 1, neutral_site: false });
+      t += day;
+    }
+  }
+  return { finals, teams };
+}
+
+test("la matrice dei punteggi somma a 1 e il Poisson è coerente", () => {
+  const m = scoreMatrix(1.6, 1.1);
+  assert.ok(Math.abs(m.flat().reduce((s, v) => s + v, 0) - 1) < 1e-9);
+  assert.ok(Math.abs(poissonPmf(2).slice(0, 3).reduce((s, v) => s + v, 0) - 0.6767) < 1e-3);
 });
 
-test("Poisson over probability is bounded and decreases with a higher line", () => {
-  const over15 = poissonProbabilityOver(2.5, 1.5);
-  const over25 = poissonProbabilityOver(2.5, 2.5);
-  const over35 = poissonProbabilityOver(2.5, 3.5);
-  assert.ok(over15 > over25 && over25 > over35);
-  assert.ok(over15 >= 0 && over15 <= 1);
+test("i mercati sono coerenti tra loro", () => {
+  const p = probabilities(1.7, 1.2);
+  assert.ok(Math.abs(p.home + p.draw + p.away - 1) < 1e-9);
+  assert.ok(Math.abs(p.over25 + p.under25 - 1) < 1e-9);
+  assert.ok(p.over15 > p.over25 && p.over25 > p.over35);
+  assert.ok(Math.abs(p.dc1x - (p.home + p.draw)) < 1e-12);
+  const sym = probabilities(1.3, 1.3);
+  assert.ok(Math.abs(sym.home - sym.away) < 1e-12);
 });
 
-test("Poisson probability handles zero mean", () => {
-  assert.equal(poissonProbabilityOver(0, 0.5), 0);
+test("la probabilità prudente non supera mai quella base", () => {
+  const base = probabilities(1.8, 1.0);
+  const low = stressedProbabilities(1.8, 1.0, 0.15);
+  for (const k of Object.keys(base)) assert.ok(low[k] <= base[k] + 1e-12, k);
 });
 
-test("confidence reflects sample size conservatively", () => {
-  assert.equal(confidence(2), "insufficiente");
-  assert.equal(confidence(5), "bassa");
-  assert.equal(confidence(10), "media");
+test("la squadra forte ha lambda più alto e vince più spesso", () => {
+  const { finals } = league();
+  const ctx = buildContext(finals);
+  const a = analyzeMatch({ league: "seriea", kickoff_at: "2026-10-30T18:00:00Z", home_id: "a", away_id: "b", neutral_site: false }, ctx, { n: 8 });
+  assert.ok(a.lambda.home > a.lambda.away);
+  assert.ok(a.selections.find((s) => s.key === "home").p > a.selections.find((s) => s.key === "away").p);
+  assert.equal(a.sample, 8);
+  assert.equal(a.confidence, "buona");
+});
+
+test("campione piccolo: mai BET", () => {
+  const ctx = buildContext(league(1).finals);
+  const a = analyzeMatch({ league: "seriea", kickoff_at: "2026-10-30T18:00:00Z", home_id: "a", away_id: "b" }, ctx, { n: 8 });
+  assert.ok(a.selections.every((s) => s.verdict === "EVITA"));
+});
+
+test("con quota inserita decide il valore atteso prudente", () => {
+  const sel = { pLow: 0.6, minOdds: 1.72 };
+  assert.equal(verdictFor(sel, 8, 1.8).verdict, "BET");
+  assert.equal(verdictFor(sel, 8, 1.6).verdict, "EVITA");
+  assert.equal(verdictFor({ pLow: 0.3, minOdds: 3.4 }, 8, 5).verdict, "EVITA");
+  assert.equal(verdictFor({ pLow: 0.7, minOdds: 1.47, edge: 0.15 }, 8).verdict, "BET");
+  assert.equal(verdictFor({ pLow: 0.7, minOdds: 1.47, edge: 0.03 }, 8).verdict, "EVITA");
+  assert.equal(verdictFor({ pLow: 0.55, minOdds: 1.9, edge: 0.2 }, 8).verdict, "EVITA");
+});
+
+test("la multipla usa solo BET e moltiplica le probabilità prudenti", () => {
+  const mk = (id, v, pLow) => ({ id, pick: { verdict: v, pLow } });
+  const acc = buildAccumulator([mk("1", "BET", 0.7), mk("2", "BET", 0.8), mk("3", "EVITA", 0.9)]);
+  assert.deepEqual(acc.ids, ["2", "1"]);
+  assert.ok(Math.abs(acc.pLow - 0.56) < 1e-3);
+  assert.equal(buildAccumulator([mk("1", "BET", 0.7)]), null);
+});
+
+test("politica di sync: fresco = niente chiamate", () => {
+  const now = Date.now();
+  assert.equal(syncDue(null, false, now), true);
+  assert.equal(syncDue({ synced_at: new Date(now - 60e3).toISOString() }, true, now), false);
+  assert.equal(syncDue({ synced_at: new Date(now - TTL.active - 1e3).toISOString() }, true, now), true);
+  assert.equal(syncDue({ synced_at: new Date(now - TTL.active - 1e3).toISOString() }, false, now), false);
+  assert.equal(syncDue({ synced_at: null, attempted_at: new Date(now - 1e3).toISOString(), last_error: "x" }, false, now), false);
+  assert.ok(MODEL.betThreshold > 0.5);
+});
+
+test("frequenze storiche: esiti coerenti", () => {
+  const ctx = buildContext(league().finals);
+  const r = ctx.baseRates("seriea");
+  assert.ok(Math.abs(r.home + r.draw + r.away - 1) < 1e-9);
+  assert.ok(Math.abs(r.over25 + r.under25 - 1) < 1e-9);
+  assert.equal(ctx.baseRates("sconosciuto") !== null, true);
 });
