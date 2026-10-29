@@ -1,14 +1,30 @@
 export const SEASON = 2026;
 export const NINJAS_URL = "https://api.api-ninjas.com/v1/soccermatches";
 
+/**
+ * Campionati disponibili. `continent` e `country`/`nation` alimentano il menu ad accordion:
+ * continente > nazione > campionati. Le coppe internazionali stanno nel continente con un
+ * gruppo proprio (international: true). `tier` = categoria (1 = massima serie).
+ * Per aggiungere un campionato nuovo (se l'API lo espone) basta una riga qui.
+ */
+export const CONTINENTS = [
+  { id: "europa", name: "Europa" },
+  { id: "nord-america", name: "Nord America" },
+  { id: "sud-america", name: "Sud America" },
+  { id: "asia", name: "Asia" },
+  { id: "africa", name: "Africa" },
+  { id: "oceania", name: "Oceania" },
+];
+
 export const LEAGUES = [
-  { id: "seriea", name: "Serie A", short: "Serie A" },
-  { id: "epl", name: "Premier League", short: "Premier" },
-  { id: "laliga", name: "LaLiga", short: "LaLiga" },
-  { id: "bundesliga", name: "Bundesliga", short: "Bundesliga" },
-  { id: "ligue1", name: "Ligue 1", short: "Ligue 1" },
-  { id: "ucl", name: "Champions League", short: "Champions" },
-  { id: "uel", name: "Europa League", short: "Europa League" },
+  { id: "seriea", name: "Serie A", short: "Serie A", continent: "europa", country: "IT", nation: "Italia", tier: 1 },
+  { id: "epl", name: "Premier League", short: "Premier", continent: "europa", country: "GB", nation: "Inghilterra", tier: 1 },
+  { id: "laliga", name: "LaLiga", short: "LaLiga", continent: "europa", country: "ES", nation: "Spagna", tier: 1 },
+  { id: "bundesliga", name: "Bundesliga", short: "Bundesliga", continent: "europa", country: "DE", nation: "Germania", tier: 1 },
+  { id: "ligue1", name: "Ligue 1", short: "Ligue 1", continent: "europa", country: "FR", nation: "Francia", tier: 1 },
+  { id: "ucl", name: "Champions League", short: "Champions", continent: "europa", country: "UEFA-C", nation: "Coppe europee", international: true, tier: 0 },
+  { id: "uel", name: "Europa League", short: "Europa League", continent: "europa", country: "UEFA-C", nation: "Coppe europee", international: true, tier: 0 },
+  { id: "mls", name: "MLS", short: "MLS", continent: "nord-america", country: "US", nation: "Stati Uniti", tier: 1 },
 ];
 export const LEAGUE_IDS = new Set(LEAGUES.map((l) => l.id));
 

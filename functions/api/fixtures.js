@@ -1,5 +1,5 @@
 import {
-  LEAGUES, SEASON, errorMessage, isActiveLeague, json, loadFinals, missingConfig, supabaseGet, supabaseGetAll, syncDue,
+  CONTINENTS, LEAGUES, SEASON, errorMessage, isActiveLeague, json, loadFinals, missingConfig, supabaseGet, supabaseGetAll, syncDue,
 } from "./_lib.js";
 import { analyzeMatch, buildContext, compactPick } from "./model.js";
 
@@ -32,6 +32,7 @@ export async function onRequest({ env }) {
     return json({
       updatedAt: new Date(now).toISOString(),
       historyMatches: ctx.matchCount,
+      continents: CONTINENTS,
       leagues: LEAGUES.map((l) => ({ ...l, syncedAt: byLeague[l.id]?.synced_at ?? null, count: byLeague[l.id]?.matches_count ?? 0, error: byLeague[l.id]?.last_error ?? null })),
       needsSync: LEAGUES.filter((l) => syncDue(byLeague[l.id], isActiveLeague(window, l.id, now), now)).map((l) => l.id),
       matches,

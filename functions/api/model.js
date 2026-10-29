@@ -17,6 +17,16 @@ export const MODEL = {
   maxUsefulProb: 0.80,    // oltre: quota equa < 1,25, esito non interessante
   edgeMargin: 1.03,       // valore atteso minimo: prob. prudente x quota >= 1,03
   longshotFloor: 0.40,    // con quota inserita non si consiglia sotto questa prob. prudente
+  // Mercati preferiti: tra i BET della stessa partita passano davanti a 1X2, doppia chance, gol/no gol.
+  // Per aggiungere i corner basta inserire qui il nome del mercato (es. "Corner totali") quando ci saranno i dati.
+  preferredMarkets: ["Gol totali"],
+  // Gestione del budget (puntate). Le quote reali non sono note: se non le inserisci si usa una stima.
+  bookMargin: 0.06,       // margine medio del bookmaker: quota stimata = quota equa / (1 + margine)
+  kellyFraction: 0.25,    // si punta un quarto della frazione di Kelly (molto più prudente del Kelly pieno)
+  maxStakePct: 0.05,      // massimo 5% del budget su una singola
+  maxAccStakePct: 0.02,   // massimo 2% sulla multipla
+  maxTotalPct: 0.20,      // massimo 20% del budget esposto in totale
+  stakeStep: 0.5,         // le puntate sono arrotondate a 0,50 €
 };
 
 export const SELECTIONS = [
@@ -35,6 +45,8 @@ export const SELECTIONS = [
   { key: "btts", market: "Entrambe segnano", label: "Gol (entrambe segnano)" },
   { key: "nobtts", market: "Entrambe segnano", label: "No Gol" },
 ];
+
+export const isPreferred = (sel) => MODEL.preferredMarkets.includes(sel.market);
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const round = (v, d = 4) => (Number.isFinite(v) ? Number(v.toFixed(d)) : null);
@@ -221,7 +233,9 @@ export function analyzeMatch(match, ctx, { n = 8 } = {}) {
   });
 
   const ranked = selections.filter((s) => s.p <= MODEL.maxUsefulProb)
-    .sort((x, y) => (y.verdict === "BET") - (x.verdict === "BET") || (y.edge ?? -1) - (x.edge ?? -1) || y.pLow - x.pLow);
+    .sort((x, y) => (y.verdict === "BET") - (x.verdict === "BET")
+      || (y.verdict === "BET" && isPreferred(y)) - (x.verdict === "BET" && isPreferred(x))
+      || (y.edge ?? -1) - (x.edge ?? -1) || y.pLow - x.pLow);
   const pick = ranked[0] ?? null;
   const scores = [];
   m.forEach((row, i) => row.forEach((v, j) => scores.push({ score: `${i}-${j}`, p: round(v) })));
@@ -242,7 +256,7 @@ export function analyzeMatch(match, ctx, { n = 8 } = {}) {
 export function compactPick(analysis) {
   const s = analysis.pick;
   if (!s) return null;
-  return { key: s.key, label: s.label, market: s.market, p: s.p, pLow: s.pLow, minOdds: s.minOdds, verdict: s.verdict,
+  return { key: s.key, label: s.label, market: s.market, preferred: isPreferred(s), p: s.p, pLow: s.pLow, minOdds: s.minOdds, estOdds: estimateOdds(s.p), verdict: s.verdict,
     reason: s.reason, confidence: analysis.confidence, sample: analysis.sample, expectedGoals: analysis.lambda.total };
 }
 
@@ -252,4 +266,79 @@ export function buildAccumulator(items, maxLegs = 4) {
   if (legs.length < 2) return null;
   const pLow = legs.reduce((acc, l) => acc * l.pick.pLow, 1);
   return { ids: legs.map((l) => l.id), pLow: round(pLow), minOdds: round(MODEL.edgeMargin / pLow, 2) };
+}
+
+/* ---------- Quote stimate e puntate ---------- */
+
+/** Quota che un bookmaker pagherebbe in media per una probabilità p: quota equa ridotta del margine. */
+export function estimateOdds(p) {
+  return p > 0 && p < 1 ? Math.max(1.01, round(1 / (p * (1 + MODEL.bookMargin)), 2)) : null;
+}
+
+const floorStep = (v) => Math.floor(v / MODEL.stakeStep + 1e-9) * MODEL.stakeStep;
+
+/**
+ * Puntata con Kelly frazionato sulla probabilità prudente. Se il valore atteso prudente
+ * (pLow x quota) è sotto edgeMargin non si punta: stake = 0 e play = false.
+ */
+export function stakePlan({ pLow, odds, bankroll, maxPct = MODEL.maxStakePct }) {
+  const none = { stake: 0, win: 0, ret: 0, ev: null, play: false };
+  if (!(bankroll > 0) || !(odds > 1) || !(pLow > 0)) return none;
+  const ev = pLow * odds;
+  if (ev < MODEL.edgeMargin) return { ...none, ev: round(ev, 3) };
+  const kelly = (pLow * odds - 1) / (odds - 1);
+  const raw = bankroll * Math.min(maxPct, MODEL.kellyFraction * kelly);
+  const stake = Math.min(bankroll, Math.max(MODEL.stakeStep, floorStep(raw)));
+  return { stake, win: round(stake * (odds - 1), 2), ret: round(stake * odds, 2), ev: round(ev, 3), play: true };
+}
+
+/**
+ * Piano per una giocata. `odds` = quota reale inserita (opzionale); altrimenti quota stimata.
+ * Se a quella quota non c'è valore, `conditional` dice quanto puntare SE il bookmaker paga almeno `need`.
+ */
+export function planFor({ pLow, p }, odds, bankroll, { maxPct = MODEL.maxStakePct, source = null } = {}) {
+  const real = Number.isFinite(odds) && odds > 1;
+  const est = estimateOdds(p);
+  const used = real ? odds : est;
+  const base = stakePlan({ pLow, odds: used, bankroll, maxPct });
+  const out = { ...base, odds: used, est, source: source ?? (real ? "inserita" : "stimata"), pLow, p };
+  if (!base.play && pLow > 0) {
+    out.need = Math.ceil((MODEL.edgeMargin / pLow) * 100) / 100;
+    out.conditional = stakePlan({ pLow, odds: out.need, bankroll, maxPct });
+  }
+  return out;
+}
+
+/** Multipla: probabilità e quote delle gambe si moltiplicano. legs = [{pLow, p, odds?}]. */
+export function accumulatorPlan(legs, bankroll) {
+  if (legs.length < 2) return null;
+  const prod = (f) => legs.reduce((a, l) => a * f(l), 1);
+  const pLow = prod((l) => l.pLow), p = prod((l) => l.p);
+  const allReal = legs.every((l) => Number.isFinite(l.odds) && l.odds > 1);
+  const odds = round(prod((l) => (Number.isFinite(l.odds) && l.odds > 1 ? l.odds : estimateOdds(l.p))), 2);
+  return planFor({ pLow, p }, odds, bankroll, { maxPct: MODEL.maxAccStakePct, source: allReal ? "inserita" : "stimata" });
+}
+
+/** Se la somma delle puntate supera maxTotalPct del budget, le riduce tutte nella stessa proporzione. */
+export function applyCap(plans, bankroll) {
+  const total = plans.reduce((s, x) => s + (x?.play ? x.stake : 0), 0);
+  const cap = bankroll * MODEL.maxTotalPct;
+  if (!(total > cap) || !(cap > 0)) return plans;
+  const k = cap / total;
+  return plans.map((x) => {
+    if (!x?.play) return x;
+    const stake = Math.max(MODEL.stakeStep, floorStep(x.stake * k));
+    return { ...x, stake, win: round(stake * (x.odds - 1), 2), ret: round(stake * x.odds, 2), capped: true };
+  });
+}
+
+/** Totali del resoconto. `plans` = piani già con tetto applicato. Vincita = netta se tutte le giocate entrano. */
+export function totalsOf(plans) {
+  const played = plans.filter((x) => x?.play);
+  return {
+    count: played.length,
+    stake: round(played.reduce((s, x) => s + x.stake, 0), 2),
+    win: round(played.reduce((s, x) => s + x.win, 0), 2),
+    ev: round(played.reduce((s, x) => s + x.stake * (x.pLow * x.odds - 1), 0), 2), // esito atteso prudente
+  };
 }
