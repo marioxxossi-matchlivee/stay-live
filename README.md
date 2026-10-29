@@ -1,137 +1,41 @@
 # Stay Live
 
-**Stay Live** è una dashboard web in italiano per analisi pre-partita e live della Serie A, con focus su Over/Under gol e corner. Il repository è progettato per GitHub + Cloudflare Pages + Supabase e non richiede un server Node permanente.
+Analisi pre-partita per **Serie A, Premier League, LaLiga, Bundesliga, Ligue 1, Champions League ed Europa League**: probabilità per 1X2, doppia chance, Over/Under 1,5·2,5·3,5 ed entrambe segnano, verdetto **BET / EVITA** con la quota minima da cercare, e **preview di giornata** sulle partite che scegli.
 
-> Importante: questo progetto è uno starter tecnico. Le stime statistiche sono sperimentali, non validate e non costituiscono consigli di scommessa. Non vengono mostrate quote inventate. Prima di usare i dati, configura i servizi e verifica il piano del provider.
+Stack: Vite (JS vanilla) · Cloudflare Pages Functions · Supabase · API Ninjas (piano gratuito).
 
-## Funzioni incluse
+> Le stime sono sperimentali e usano solo i gol: non sono garanzie né consigli finanziari.
 
-- Dashboard responsive con tema chiaro, filtri per stato partita e modale di dettaglio.
-- Endpoint server-side `/api/fixtures` per partite live e prossime partite da API-Football, con fallback alle partite archiviate in Supabase.
-- Endpoint protetto `/api/sync` per importare le ultime partite concluse e le statistiche squadra (corner, tiri, possesso e cartellini) in Supabase.
-- Endpoint `/api/analysis` per statistiche descrittive sugli ultimi 5 o 10 incontri e stime sperimentali Over/Under basate su Poisson.
-- Endpoint `/api/odds` che restituisce solo snapshot delle quote già archiviati nel database e calcola la media aritmetica per selezione/mercato. Non scarica né inventa quote.
-- Test unitari del modello statistico (`npm test`).
+## Messa in funzione
 
-## Stack
+1. **Supabase → SQL Editor**: esegui `supabase/migrations/202610290002_matches_cache.sql` (additiva, crea `matches` e `sync_state`; la migrazione precedente resta valida ma non è più usata).
+2. **Cloudflare Pages → Settings → Variables and Secrets**: `API_NINJAS_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (secret). Opzionale `SYNC_SECRET`.
+3. Build: `npm run build`, output `dist`. Push su GitHub e il deploy parte da solo.
+4. Apri il sito: al primo accesso l'app scarica i campionati da API Ninjas e li salva in Supabase (qualche secondo).
 
-- Vite + JavaScript ES modules
-- Cloudflare Pages Functions
-- Supabase PostgreSQL + PostgREST
-- API-Football (chiave opzionale, solo lato server)
+## Come arrivano i dati
 
-## Requisiti
+`/api/fixtures` legge da Supabase. Se i dati di un campionato sono vecchi, la pagina chiama `/api/sync?league=…`, che interroga API Ninjas **solo se serve**: ogni 6 ore, oppure ogni 15 minuti per i campionati con partite iniziate da meno di 4 ore o in partenza. Un sync costa circa 8 chiamate per campionato; con dati freschi ne costa 0, quindi chiunque apra il sito non può consumare la quota. Errori: nuovo tentativo dopo 2 minuti. Nessun dato demo: se qualcosa manca viene mostrato l'errore reale.
 
-- Node.js 20.19+ o 22.12+ consigliato per Vite 7
-- Account GitHub
-- Account Cloudflare
-- Progetto Supabase
-- Chiave API-Football, se vuoi usare dati dal provider
+## Come sono calcolate le percentuali
 
-## Avvio locale
+Fonte unica del codice: `functions/api/model.js` (tutte le costanti sono lì e compaiono nell'app in "Come calcoliamo").
+
+1. **Media gol di riferimento** del campionato (casa e trasferta), mescolata con 1,5 / 1,2 come se fossero 30 partite. Sotto 20 partite giocate si usa la media di tutti i campionati.
+2. **Attacco e difesa** di ogni squadra sulle ultime 5/8/10 partite (tutte le competizioni). Gol fatti e subiti divisi per la media del campionato in cui sono stati segnati; peso `0,92^k` (più vecchia = meno peso); poi 4 partite "medie" aggiunte per evitare valori estremi.
+3. **Gol attesi**: `λ casa = media casa × attacco casa × difesa trasferta`, `λ trasf. = media trasf. × attacco trasf. × difesa casa` (limitati a 0,2–4; campo neutro: stessa media per entrambe).
+4. **Probabilità**: Poisson indipendente per le due squadre, punteggi 0–0 … 10–10. Ogni mercato è una somma di caselle, quindi tutti i mercati sono coerenti.
+5. **Probabilità prudente**: attese gol incerte di `±0,30/√partite`; si ricalcolano 5 scenari e si tiene il peggiore. È la percentuale mostrata in grande.
+6. **BET** se: campione ≥ 5 partite per squadra, probabilità prudente ≥ 60%, e almeno 8 punti sopra la frequenza storica di quell'esito nel campionato (evita mercati "sempre probabili" come Over 1,5). **Quota minima** = `1,03 / probabilità prudente`. Se inserisci la tua quota: BET se `prob. prudente × quota ≥ 1,03`. Esiti con quota equa < 1,25 non sono proposti.
+7. **Multipla**: fino a 4 BET di partite diverse; probabilità = prodotto delle prudenti.
+
+Limiti: soglie non calibrate su uno storico lungo; nessuna quota reale, infortuni o formazioni; API Ninjas (free) non fornisce corner né quote, quindi i mercati corner sono stati rimossi. Senza la quota del bookmaker "BET" significa solo "alta probabilità rispetto alla norma", non "scommessa di valore".
+
+## Sviluppo
 
 ```bash
 npm install
-npm test
+npm test          # modello e politica di sync
 npm run build
-npm run dev
 ```
-
-Il comando `npm run dev` serve la dashboard, ma le Pages Functions potrebbero non essere eseguite come su Cloudflare Pages. Per testare localmente anche le Functions usa Wrangler/Cloudflare Pages dev, configurando le variabili locali in `.dev.vars` (mai committare questo file).
-
-## Variabili Cloudflare Pages
-
-In **Workers & Pages → il progetto → Settings → Variables and Secrets**, imposta:
-
-| Variabile | Tipo | Necessaria per |
-|---|---|---|
-| `API_FOOTBALL_KEY` | Secret | Partite e statistiche dal provider |
-| `API_FOOTBALL_BASE_URL` | Variabile opzionale | Default `https://v3.football.api-sports.io` |
-| `SUPABASE_URL` | Variabile | URL del progetto Supabase |
-| `SUPABASE_SERVICE_ROLE_KEY` | Secret | Lettura/scrittura server-side nel database |
-| `SYNC_SECRET` | Secret | Protezione dell'endpoint di sincronizzazione |
-
-**Non inserire `SUPABASE_SERVICE_ROLE_KEY`, `API_FOOTBALL_KEY` o `SYNC_SECRET` nel frontend, in GitHub, in screenshot o in file committati.** La chiave `service_role` bypassa le policy RLS ed è esclusivamente server-side.
-
-## Schema Supabase
-
-La migrazione SQL è in `supabase/migrations/202610290001_initial_schema.sql`. Contiene competizioni, stagioni, squadre, partite, statistiche squadra-partita, previsioni e snapshot quote.
-
-Il database del progetto era stato già inizializzato in precedenza. Prima di eseguire la migrazione su un database esistente, controlla le tabelle e le policy: non applicare alla cieca migrazioni su un progetto con dati importanti.
-
-## Sincronizzare storico e statistiche
-
-Dopo il deploy e la configurazione delle variabili, invia una richiesta `POST` all'endpoint:
-
-`https://TUO-DOMINIO.pages.dev/api/sync`
-
-Header:
-`x-sync-secret: IL_TUO_SYNC_SECRET`
-
-Body JSON:
-```json
-{"last": 10}
-```
-
-`last` può essere da 1 a 20. La sincronizzazione usa una richiesta per la directory squadre, una per l’elenco delle ultime partite e una richiesta aggiuntiva per ogni partita completata per recuperare le statistiche. Quindi, per 10 partite, usa indicativamente 12 richieste API (più eventuali retry), oltre alle richieste per la dashboard. Controlla il limite del tuo piano prima di usarla. Non esporre mai il secret in un'app pubblica o in un frontend; esegui la chiamata da un ambiente privato.
-
-L'endpoint importa le ultime partite concluse della stagione 2026/27, i dati delle squadre, le partite e le statistiche disponibili. I dati mancanti (ad esempio corner non forniti dal provider) restano `null`.
-
-## Endpoint
-
-### `GET /api/fixtures`
-Restituisce le partite live e le prossime partite di Serie A; fallback su Supabase. Se non ci sono dati configurati restituisce `demo: true` e un array vuoto. La dashboard mostra quindi esempi identificati come demo.
-
-### `POST /api/sync`
-Richiede `x-sync-secret` e le chiavi Supabase/API-Football. Importa fino a 20 partite concluse recenti e recupera le relative statistiche.
-
-### `GET /api/analysis?homeTeamId=ID&awayTeamId=ID&matches=5`
-Restituisce medie e stime sperimentali. `matches` accetta 5 o 10. Gli ID sono gli ID interni di `teams` in Supabase, non gli ID del provider.
-
-### `GET /api/odds?fixtureId=ID`
-Restituisce snapshot già salvati in `odds_snapshots`, con media semplice delle quote per mercato, linea, selezione e stato live. Non importa quote da un bookmaker in questa versione.
-
-## Quote e limiti del modello
-
-- Le quote non sono incluse finché non viene collegato e autorizzato un provider di quote e salvati gli snapshot nel database.
-- L'endpoint di analisi usa medie semplici e distribuzione di Poisson come baseline dimostrativa. Non considera ancora forza avversaria aggiustata, separazione casa/trasferta, correzioni per lo stato live, calibrazione storica o value betting. Non interpretare le percentuali come probabilità affidabili senza una validazione out-of-sample.
-- Le partite live non mostrano corner live finché non viene aggiunta una sincronizzazione delle statistiche in tempo reale.
-- I limiti API dipendono dal piano effettivo del tuo account.
-
-## Deploy su Cloudflare Pages collegato a GitHub
-
-1. Carica il contenuto della repository su GitHub, mantenendo le cartelle.
-2. In Cloudflare Pages, crea un progetto collegato alla repository.
-3. Framework preset: **Vite**.
-4. Build command: `npm run build`.
-5. Build output directory: `dist`.
-6. Configura le variabili e i secrets elencati sopra.
-7. Dopo il deploy, prova `GET /api/fixtures` e verifica che `demo` sia `false` quando i dati reali sono disponibili.
-8. Esegui `npm test` e `npm run build` prima di ogni aggiornamento importante.
-
-## Struttura
-
-```text
-stay-live/
-├── functions/
-│   └── api/
-│       ├── _lib.js
-│       ├── analysis.js
-│       ├── fixtures.js
-│       ├── model.js
-│       ├── odds.js
-│       └── sync.js
-├── public/
-│   └── favicon.svg
-├── src/
-│   ├── main.js
-│   └── style.css
-├── supabase/
-│   └── migrations/
-│       └── 202610290001_initial_schema.sql
-├── tests/
-│   └── model.test.js
-├── index.html
-├── package.json
-└── wrangler.toml
-```
+Per provare anche le Functions in locale usa `npx wrangler pages dev dist` con le variabili in `.dev.vars`.
