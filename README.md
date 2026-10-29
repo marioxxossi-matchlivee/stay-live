@@ -1,6 +1,6 @@
 # Stay Live
 
-Analisi pre-partita per **Serie A, Premier League, LaLiga, Bundesliga, Ligue 1, Champions League ed Europa League**: probabilità per 1X2, doppia chance, Over/Under 1,5·2,5·3,5 ed entrambe segnano, verdetto **BET / EVITA** con la quota minima da cercare, e **preview di giornata** sulle partite che scegli.
+Analisi pre-partita per **Serie A, Premier League, LaLiga, Bundesliga, Ligue 1, MLS, Champions League ed Europa League**: probabilità per 1X2, doppia chance, Over/Under 1,5·2,5·3,5 ed entrambe segnano, verdetto **BET / EVITA** con la quota minima da cercare, e **preview di giornata** sulle partite che scegli.
 
 Stack: Vite (JS vanilla) · Cloudflare Pages Functions · Supabase · API Ninjas (piano gratuito).
 
@@ -12,6 +12,16 @@ Stack: Vite (JS vanilla) · Cloudflare Pages Functions · Supabase · API Ninjas
 2. **Cloudflare Pages → Settings → Variables and Secrets**: `API_NINJAS_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (secret). Opzionale `SYNC_SECRET`.
 3. Build: `npm run build`, output `dist`. Push su GitHub e il deploy parte da solo.
 4. Apri il sito: al primo accesso l'app scarica i campionati da API Ninjas e li salva in Supabase (qualche secondo).
+
+## Menu campionati e PDF
+
+Il menu in alto è organizzato per **continente > nazione (accordion) > campionati**; le coppe europee stanno sotto Europa > Coppe europee. Per aggiungere un campionato basta una riga in `LEAGUES` (`functions/api/_lib.js`) con continente, nazione e categoria. Il pulsante **Condividi PDF** della preview crea il PDF nel browser (`src/pdf.js`, nessuna dipendenza) e lo condivide col foglio di sistema; dove non è supportato lo scarica.
+
+## Budget, puntate e vincita potenziale
+
+Nel resoconto (preview) inserisci il **budget**; per ogni BET puoi scrivere la **quota reale** del bookmaker. Senza quota l'app usa una **quota stimata** = quota equa / 1,06 (margine medio del 6%). La puntata si calcola con **Kelly a un quarto** sulla probabilità prudente, con tetti: 5% del budget su una singola, 2% sulla multipla, 20% di esposizione totale (tutto in `MODEL`, `functions/api/model.js`). Se a quella quota il valore atteso prudente è sotto 1,03 non si punta: l'app indica invece la quota minima da trovare e quanto puntare *se* il bookmaker la paga. Il PDF riporta lo stesso piano.
+
+Attenzione: una quota stimata dal modello non può creare un vantaggio (il margine del bookmaker lo toglie per costruzione). Il piano è affidabile solo con quote reali; nessuna stima garantisce un guadagno.
 
 ## Come arrivano i dati
 
@@ -29,7 +39,7 @@ Fonte unica del codice: `functions/api/model.js` (tutte le costanti sono lì e c
 6. **BET** se: campione ≥ 5 partite per squadra, probabilità prudente ≥ 60%, e almeno 8 punti sopra la frequenza storica di quell'esito nel campionato (evita mercati "sempre probabili" come Over 1,5). **Quota minima** = `1,03 / probabilità prudente`. Se inserisci la tua quota: BET se `prob. prudente × quota ≥ 1,03`. Esiti con quota equa < 1,25 non sono proposti.
 7. **Multipla**: fino a 4 BET di partite diverse; probabilità = prodotto delle prudenti.
 
-Limiti: soglie non calibrate su uno storico lungo; nessuna quota reale, infortuni o formazioni; API Ninjas (free) non fornisce corner né quote, quindi i mercati corner sono stati rimossi. Senza la quota del bookmaker "BET" significa solo "alta probabilità rispetto alla norma", non "scommessa di valore".
+Limiti: soglie non calibrate su uno storico lungo; nessuna quota reale, infortuni o formazioni; API Ninjas non fornisce corner né quote, quindi i mercati corner non sono calcolabili; copre solo 8 competizioni (5 campionati top europei, Champions, Europa League, MLS), nessuna serie minore. Senza la quota del bookmaker "BET" significa solo "alta probabilità rispetto alla norma", non "scommessa di valore".
 
 ## Sviluppo
 

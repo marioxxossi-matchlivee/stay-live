@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0e1a2b" />
-    <meta name="description" content="Stay Live: probabilità, BET o EVITA e preview di giornata per i principali campionati europei, Champions ed Europa League." />
+    <meta name="description" content="Stay Live: probabilità, BET o EVITA e preview di giornata per i principali campionati, Champions ed Europa League." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -25,7 +25,10 @@
         <p id="summary" class="summary" aria-live="polite">Caricamento…</p>
       </section>
       <div id="banner" class="banner" role="status" hidden></div>
-      <div class="chips" id="league-chips" aria-label="Campionato"></div>
+      <div class="leaguebar">
+        <button class="ghost lg-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="league-nav"></button>
+      </div>
+      <nav class="league-nav" id="league-nav" aria-label="Campionati per nazione" hidden></nav>
       <div class="days" id="day-strip" aria-label="Giornata"></div>
       <div class="toolbar">
         <label class="switch"><input type="checkbox" id="only-bet" /><span>Solo BET</span></label>
