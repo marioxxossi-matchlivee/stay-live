@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f5f7fb" />
+    <meta name="description" content="Stay Live: dashboard di analisi statistica per la Serie A, con focus su gol, corner e dati live." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Stay Live — Serie A</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <a class="brand" href="#"><span class="brand-mark">SL</span><span>Stay<span class="brand-light">Live</span><small>LIVE FOOTBALL ANALYTICS</small></span></a>
+        <div class="top-actions"><span class="season-pill">ITALIA · SERIE A · 2026/27</span><span class="avatar">SL</span></div>
+      </header>
+      <main>
+        <section class="hero">
+          <div><p class="eyebrow">CENTRO ANALISI</p><h1>Leggi la partita <span>prima degli altri.</span></h1><p class="subtitle">Statistiche, trend e probabilità per i mercati gol e corner.</p></div>
+          <div class="date-card"><span>OGGI</span><strong id="today">29 OTT 2026</strong><small>Orario Italia · Europe/Rome</small></div>
+        </section>
+        <section class="metrics">
+          <article class="metric"><div class="metric-label">PARTITE IN PROGRAMMA <span>↗</span></div><strong id="metric-fixtures">—</strong><small>Serie A · stagione corrente</small></article>
+          <article class="metric"><div class="metric-label">MEDIA CORNER <span>⌁</span></div><strong id="metric-corners">—</strong><small>per partita, dati disponibili</small></article>
+          <article class="metric"><div class="metric-label">MEDIA GOL <span>⚽</span></div><strong id="metric-goals">—</strong><small>per partita, dati disponibili</small></article>
+          <article class="metric"><div class="metric-label">FONTE DATI <span>●</span></div><strong class="source-value" id="data-source">DEMO</strong><small id="source-note">Dati dimostrativi</small></article>
+        </section>
+        <section class="content-grid">
+          <div class="panel matches-panel">
+            <div class="panel-heading"><div><p class="eyebrow">MATCH CENTER</p><h2>Partite Serie A</h2></div><div class="filters"><button class="filter active" data-filter="all">Tutte</button><button class="filter" data-filter="upcoming">In programma</button><button class="filter" data-filter="live">Live</button></div></div>
+            <div class="table-wrap"><table><thead><tr><th>PARTITA</th><th>STATO</th><th>GOL</th><th>CORNER</th><th>ANALISI</th></tr></thead><tbody id="matches"><tr><td colspan="5" class="empty">Caricamento partite…</td></tr></tbody></table></div>
+            <p class="panel-footnote">Le probabilità sono stime statistiche, non garanzie di risultato.</p>
+          </div>
+          <aside class="panel insight-panel">
+            <div class="panel-heading"><div><p class="eyebrow">MODELLO STATISTICO</p><h2>Segnali da seguire</h2></div><span class="spark-icon">✦</span></div>
+            <div class="insight"><span class="insight-icon blue">↗</span><div><strong>Forma recente</strong><p>Confronto sugli ultimi 5 o 10 incontri disponibili.</p></div></div>
+            <div class="insight"><span class="insight-icon orange">⌁</span><div><strong>Pressione sui corner</strong><p>Corner conquistati e concessi, casa e trasferta.</p></div></div>
+            <div class="insight"><span class="insight-icon green">◎</span><div><strong>Over/Under gol</strong><p>Distribuzione dei gol e confronto tra soglie.</p></div></div>
+            <div class="chart-card"><div class="chart-head"><strong>Trend di riferimento</strong><span>DATI DISPONIBILI</span></div><div class="bars" id="trend-bars"><i style="height:35%"></i><i style="height:55%"></i><i style="height:44%"></i><i style="height:70%"></i><i style="height:60%"></i><i style="height:82%"></i><i style="height:67%"></i></div><div class="chart-labels"><span>-6</span><span>-5</span><span>-4</span><span>-3</span><span>-2</span><span>-1</span><span>Ultima</span></div></div>
+            <button class="primary-button" id="refresh">Aggiorna dati <span>↻</span></button>
+            <p class="status-note" id="status-note">Connessione al backend in corso.</p><p class="status-note" id="updated-at">Aggiornamento non disponibile</p>
+          </aside>
+        </section>
+        <footer>Stay Live <span>·</span> Prototipo analitico per Serie A <span>·</span> Dati demo chiaramente identificati</footer>
+      </main>
+    </div>
+    <dialog id="match-modal" class="match-modal"><button class="modal-close" id="close-modal" aria-label="Chiudi">×</button><p class="eyebrow">DETTAGLIO PARTITA</p><h2 id="modal-title">Partita</h2><p id="modal-status"></p><div class="modal-grid"><div><small>GOL TOTALI</small><strong id="modal-goals">—</strong></div><div><small>CORNER TOTALI</small><strong id="modal-corners">—</strong></div></div><section class="modal-analysis" id="modal-analysis"><div class="modal-analysis-head"><strong>Analisi statistica</strong><label for="history-count">Storico</label><select id="history-count"><option value="5">Ultime 5</option><option value="10">Ultime 10</option></select></div><p id="analysis-state">Analisi disponibile dopo la sincronizzazione dello storico.</p><div class="analysis-values" id="analysis-values" hidden></div></section><p class="modal-note" id="modal-note">Le stime saranno disponibili quando saranno presenti dati storici sufficienti. Le informazioni demo non sono pronostici reali.</p></dialog>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
