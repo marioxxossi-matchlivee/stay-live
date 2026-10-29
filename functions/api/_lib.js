@@ -1,7 +1,16 @@
-export const LEAGUE_ID = "135";
-export const SEASON = "2026";
-export const LIVE_STATUSES = new Set(["1H", "HT", "2H", "ET", "P", "LIVE", "BT"]);
-export const FINISHED_STATUSES = new Set(["FT", "AET", "PEN"]);
+export const SEASON = 2026;
+export const NINJAS_URL = "https://api.api-ninjas.com/v1/soccermatches";
+
+export const LEAGUES = [
+  { id: "seriea", name: "Serie A", short: "Serie A" },
+  { id: "epl", name: "Premier League", short: "Premier" },
+  { id: "laliga", name: "LaLiga", short: "LaLiga" },
+  { id: "bundesliga", name: "Bundesliga", short: "Bundesliga" },
+  { id: "ligue1", name: "Ligue 1", short: "Ligue 1" },
+  { id: "ucl", name: "Champions League", short: "Champions" },
+  { id: "uel", name: "Europa League", short: "Europa League" },
+];
+export const LEAGUE_IDS = new Set(LEAGUES.map((l) => l.id));
 
 export function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -15,115 +24,120 @@ export function json(data, status = 200, extraHeaders = {}) {
   });
 }
 
-export function errorMessage(error) {
-  return error instanceof Error ? error.message : "Errore inatteso";
+export const errorMessage = (e) => (e instanceof Error ? e.message : "Errore inatteso");
+
+export function missingConfig(env, { ninjas = false } = {}) {
+  const missing = [];
+  if (!env.SUPABASE_URL) missing.push("SUPABASE_URL");
+  if (!env.SUPABASE_SERVICE_ROLE_KEY) missing.push("SUPABASE_SERVICE_ROLE_KEY");
+  if (ninjas && !env.API_NINJAS_KEY) missing.push("API_NINJAS_KEY");
+  return missing;
 }
 
-export function normalizeStatus(code) {
-  if (LIVE_STATUSES.has(String(code ?? "").toUpperCase())) return "live";
-  if (FINISHED_STATUSES.has(String(code ?? "").toUpperCase())) return "finished";
-  return "upcoming";
-}
-
-export function formatKickoff(date) {
-  if (!date) return "";
-  const parsed = new Date(date);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return new Intl.DateTimeFormat("it-IT", {
-    timeZone: "Europe/Rome",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(parsed);
-}
-
-export function normalizeFixture(item) {
-  const fixture = item.fixture ?? {};
-  const league = item.league ?? {};
-  const teams = item.teams ?? {};
-  const goals = item.goals ?? {};
-  const code = fixture.status?.short ?? "NS";
-  return {
-    id: String(fixture.id ?? ""),
-    providerId: Number(fixture.id ?? 0),
-    kickoffAt: fixture.date ?? null,
-    kickoff: formatKickoff(fixture.date),
-    statusCode: code,
-    status: normalizeStatus(code),
-    elapsed: fixture.status?.elapsed ?? null,
-    home: teams.home?.name ?? "Casa",
-    away: teams.away?.name ?? "Trasferta",
-    homeId: Number(teams.home?.id ?? 0),
-    awayId: Number(teams.away?.id ?? 0),
-    homeLogo: teams.home?.logo ?? "",
-    awayLogo: teams.away?.logo ?? "",
-    homeGoals: goals.home ?? null,
-    awayGoals: goals.away ?? null,
-    goals: goals.home == null || goals.away == null ? "—" : `${goals.home} – ${goals.away}`,
-    corners: "—",
-    competition: league.name ?? "Serie A",
-    venue: fixture.venue?.name ?? "",
-  };
-}
-
-export async function apiFootball(env, endpoint, params = {}) {
-  if (!env.API_FOOTBALL_KEY) throw new Error("API_FOOTBALL_KEY non configurata");
-  const base = (env.API_FOOTBALL_BASE_URL || "https://v3.football.api-sports.io").replace(/\/+$/, "");
-  const url = new URL(`${base}/${endpoint.replace(/^\/+/, "")}`);
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
-  }
-  const response = await fetch(url, {
-    headers: { "x-apisports-key": env.API_FOOTBALL_KEY },
-    cf: { cacheTtl: 30, cacheEverything: true },
-  });
-  if (!response.ok) throw new Error(`API-Football ha risposto HTTP ${response.status}`);
-  const payload = await response.json();
-  if (payload.errors && Object.keys(payload.errors).length) {
-    throw new Error(`Errore API-Football: ${JSON.stringify(payload.errors).slice(0, 300)}`);
-  }
-  return payload.response ?? [];
-}
-
-export function supabaseHeaders(env, prefer = "return=representation") {
-  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error("Supabase non configurato");
-  }
+/* ---------- Supabase (PostgREST) ---------- */
+function sbHeaders(env, prefer) {
   return {
     apikey: env.SUPABASE_SERVICE_ROLE_KEY,
     authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
     "content-type": "application/json",
-    prefer,
+    ...(prefer ? { prefer } : {}),
   };
 }
 
-export async function supabaseGet(env, table, query) {
+export async function supabaseGet(env, table, query = {}) {
   const url = new URL(`/rest/v1/${table}`, env.SUPABASE_URL);
-  for (const [key, value] of Object.entries(query ?? {})) url.searchParams.set(key, String(value));
-  const response = await fetch(url, { headers: supabaseHeaders(env, "return=representation") });
-  if (!response.ok) throw new Error(`Supabase GET ${table}: HTTP ${response.status}`);
-  return response.json();
+  for (const [k, v] of Object.entries(query)) url.searchParams.set(k, String(v));
+  const res = await fetch(url, { headers: sbHeaders(env) });
+  if (!res.ok) throw new Error(`Supabase ${table}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  return res.json();
+}
+
+/** Legge tutte le righe superando il limite di 1000 righe di PostgREST. */
+export async function supabaseGetAll(env, table, query = {}, pageSize = 1000, maxPages = 12) {
+  const out = [];
+  for (let page = 0; page < maxPages; page += 1) {
+    const rows = await supabaseGet(env, table, { ...query, limit: pageSize, offset: page * pageSize });
+    out.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+  return out;
 }
 
 export async function supabaseUpsert(env, table, rows, conflict) {
-  if (!rows.length) return [];
-  const url = new URL(`/rest/v1/${table}`, env.SUPABASE_URL);
-  if (conflict) url.searchParams.set("on_conflict", conflict);
-  const response = await fetch(url, {
-    method: "POST",
-    headers: supabaseHeaders(env, "resolution=merge-duplicates,return=representation"),
-    body: JSON.stringify(rows),
-  });
-  if (!response.ok) {
-    const detail = (await response.text()).slice(0, 400);
-    throw new Error(`Supabase upsert ${table}: HTTP ${response.status} ${detail}`);
+  for (let i = 0; i < rows.length; i += 400) {
+    const url = new URL(`/rest/v1/${table}`, env.SUPABASE_URL);
+    url.searchParams.set("on_conflict", conflict);
+    const res = await fetch(url, {
+      method: "POST",
+      headers: sbHeaders(env, "resolution=merge-duplicates,return=minimal"),
+      body: JSON.stringify(rows.slice(i, i + 400)),
+    });
+    if (!res.ok) throw new Error(`Supabase upsert ${table}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
   }
-  return response.json();
 }
 
-export function requireSyncSecret(request, env) {
-  const expected = env.SYNC_SECRET;
-  const supplied = request.headers.get("x-sync-secret");
-  return Boolean(expected && supplied && expected === supplied);
+export function loadFinals(env) {
+  return supabaseGetAll(env, "matches", {
+    select: "league,kickoff_at,home_id,away_id,home_name,away_name,home_score,away_score,neutral_site",
+    status: "eq.final",
+    season: `eq.${SEASON}`,
+    order: "kickoff_at.desc,game_id.asc",
+  });
+}
+
+/* ---------- API Ninjas ---------- */
+export async function ninjasPage(env, league, offset) {
+  const url = new URL(NINJAS_URL);
+  url.searchParams.set("league", league);
+  url.searchParams.set("season", String(SEASON));
+  url.searchParams.set("offset", String(offset));
+  const res = await fetch(url, { headers: { "X-Api-Key": env.API_NINJAS_KEY, accept: "application/json" } });
+  const text = await res.text();
+  let data;
+  try { data = JSON.parse(text); } catch { throw new Error(`API Ninjas: risposta non JSON (HTTP ${res.status})`); }
+  if (!res.ok) throw new Error(`API Ninjas HTTP ${res.status}: ${String(data?.error ?? text).slice(0, 200)}`);
+  if (!Array.isArray(data)) throw new Error("API Ninjas: formato inatteso");
+  return data;
+}
+
+export function normalizeNinjas(item, league) {
+  const home = item.home_team ?? {};
+  const away = item.away_team ?? {};
+  const score = (v) => (Number.isFinite(v) ? v : null);
+  return {
+    game_id: String(item.game_id),
+    league,
+    season: Number(item.season ?? SEASON),
+    season_type: item.season_type ?? null,
+    round: item.round == null ? null : String(item.round),
+    match_date: item.date ?? null,
+    kickoff_at: item.start_time ?? (item.date ? `${item.date}T12:00:00Z` : null),
+    status: String(item.status ?? "scheduled").toLowerCase(),
+    home_id: String(home.team_id ?? home.name ?? "home"),
+    home_name: home.name ?? "Casa",
+    home_abbr: home.abbreviation ?? null,
+    away_id: String(away.team_id ?? away.name ?? "away"),
+    away_name: away.name ?? "Trasferta",
+    away_abbr: away.abbreviation ?? null,
+    home_score: score(item.home_score),
+    away_score: score(item.away_score),
+    decided_in: item.decided_in ?? null,
+    neutral_site: Boolean(item.neutral_site),
+    synced_at: new Date().toISOString(),
+  };
+}
+
+/* ---------- Politica di aggiornamento (risparmia chiamate API) ---------- */
+export const TTL = { idle: 6 * 3600e3, active: 15 * 60e3, retry: 2 * 60e3 };
+
+/** Un campionato è "attivo" se ha partite iniziate da meno di 4 ore o in partenza a breve e non ancora finali. */
+export function isActiveLeague(matches, league, now) {
+  return matches.some((m) => m.league === league && m.status !== "final" && m.kickoff_at &&
+    Date.parse(m.kickoff_at) >= now - 4 * 3600e3 && Date.parse(m.kickoff_at) <= now + 10 * 60e3);
+}
+
+export function syncDue(state, active, now) {
+  if (state?.attempted_at && now - Date.parse(state.attempted_at) < TTL.retry && state.last_error) return false;
+  if (!state?.synced_at) return true;
+  return now - Date.parse(state.synced_at) >= (active ? TTL.active : TTL.idle);
 }

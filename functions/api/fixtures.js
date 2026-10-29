@@ -1,132 +1,43 @@
-import { formatKickoff, json } from "./_lib.js";
+import {
+  LEAGUES, SEASON, errorMessage, isActiveLeague, json, loadFinals, missingConfig, supabaseGet, supabaseGetAll, syncDue,
+} from "./_lib.js";
+import { analyzeMatch, buildContext, compactPick } from "./model.js";
 
-const API_URL = "https://api.api-ninjas.com/v1/soccermatches";
-const LEAGUE = "seriea";
-const SEASON = "2026"; // Serie A 2026-27
-const PAGE_SIZE = 50;
-const MAX_PAGES = 12;
-const CACHE_SECONDS = 600;
+const COLUMNS = "game_id,league,round,kickoff_at,status,home_id,home_name,away_id,away_name,home_score,away_score,neutral_site";
 
-function normalizeNinjaMatch(item) {
-  const home = item.home_team ?? {};
-  const away = item.away_team ?? {};
-  const statusRaw = String(item.status ?? "scheduled").toLowerCase();
-  const statusCode = statusRaw === "in_progress" ? "LIVE"
-    : statusRaw === "final" ? (item.decided_in === "extra_time" ? "AET" : item.decided_in === "penalties" ? "PEN" : "FT")
-    : statusRaw === "postponed" ? "PST"
-    : statusRaw === "canceled" || statusRaw === "cancelled" ? "CANC"
-    : statusRaw === "suspended" ? "SUSP" : "NS";
-  const homeGoals = Number.isFinite(item.home_score) ? item.home_score : null;
-  const awayGoals = Number.isFinite(item.away_score) ? item.away_score : null;
-  const date = item.start_time ?? (item.date ? `${item.date}T12:00:00Z` : null);
-  const isLive = statusRaw === "in_progress";
-  const isFinished = statusRaw === "final";
-
-  return {
-    id: String(item.game_id ?? `${item.league ?? LEAGUE}-${item.date ?? "unknown"}-${home.team_id ?? home.name ?? "home"}-${away.team_id ?? away.name ?? "away"}`),
-    providerId: String(item.game_id ?? ""),
-    kickoffAt: date,
-    kickoff: formatKickoff(date),
-    statusCode,
-    status: isLive ? "live" : isFinished ? "finished" : "upcoming",
-    elapsed: null,
-    home: home.name ?? "Casa",
-    away: away.name ?? "Trasferta",
-    // API Ninjas team IDs are strings, not API-Football numeric IDs.
-    homeId: 0,
-    awayId: 0,
-    homeTeamId: String(home.team_id ?? ""),
-    awayTeamId: String(away.team_id ?? ""),
-    homeLogo: "",
-    awayLogo: "",
-    homeGoals,
-    awayGoals,
-    goals: homeGoals == null || awayGoals == null ? "—" : `${homeGoals} – ${awayGoals}`,
-    // The free API plan does not provide corner statistics.
-    corners: "—",
-    competition: "Serie A",
-    venue: item.venue?.name ?? "",
-    source: "api-ninjas",
-  };
-}
-
-async function getSeasonPage(env, offset) {
-  const url = new URL(API_URL);
-  url.searchParams.set("league", LEAGUE);
-  url.searchParams.set("season", SEASON);
-  url.searchParams.set("offset", String(offset));
-  const response = await fetch(url.toString(), {
-    headers: { "X-Api-Key": env.API_NINJAS_KEY, accept: "application/json" },
-    cf: { cacheTtl: CACHE_SECONDS, cacheEverything: true },
-  });
-  const bodyText = await response.text();
-  let payload;
-  try { payload = JSON.parse(bodyText); }
-  catch { throw new Error(`API Ninjas ha restituito una risposta non JSON (HTTP ${response.status}).`); }
-  if (!response.ok) {
-    const detail = typeof payload?.error === "string" ? payload.error : JSON.stringify(payload);
-    throw new Error(`API Ninjas HTTP ${response.status}: ${detail.slice(0, 250)}`);
-  }
-  if (!Array.isArray(payload)) throw new Error("Formato inatteso dalla Football API di API Ninjas.");
-  return payload;
-}
-
-async function loadSeason(env) {
-  if (!env.API_NINJAS_KEY) throw new Error("Manca il secret API_NINJAS_KEY nelle variabili Cloudflare.");
-  const all = [];
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const rows = await getSeasonPage(env, page * PAGE_SIZE);
-    all.push(...rows);
-    if (rows.length < PAGE_SIZE) break;
-  }
-  const byId = new Map();
-  for (const item of all) {
-    const id = item.game_id;
-    if (id) byId.set(String(id), item);
-  }
-  return [...byId.values()].map(normalizeNinjaMatch).sort((a, b) =>
-    String(a.kickoffAt ?? "").localeCompare(String(b.kickoffAt ?? ""))
-  );
-}
-
+/** GET /api/fixtures: partite da 36 ore fa a 21 giorni avanti, con il consiglio rapido (BET / EVITA). */
 export async function onRequest({ env }) {
+  const missing = missingConfig(env);
+  if (missing.length) return json({ error: `Variabili mancanti su Cloudflare: ${missing.join(", ")}` }, 503);
   try {
-    const seasonMatches = await loadSeason(env);
     const now = Date.now();
-    const live = seasonMatches.filter((m) => m.status === "live");
-    const upcoming = seasonMatches.filter((m) => m.status === "upcoming" && (!m.kickoffAt || new Date(m.kickoffAt).getTime() >= now));
-    const finished = seasonMatches.filter((m) => m.status === "finished" && (!m.kickoffAt || new Date(m.kickoffAt).getTime() < now));
-    const fixtures = [
-      ...live,
-      ...upcoming.slice(0, 20),
-      ...finished.slice(-20).reverse(),
-    ];
-    const unique = [...new Map(fixtures.map((m) => [m.id, m])).values()];
-    unique.sort((a, b) => {
-      if (a.status === "live" && b.status !== "live") return -1;
-      if (b.status === "live" && a.status !== "live") return 1;
-      if (a.status === "upcoming" && b.status !== "upcoming") return -1;
-      if (b.status === "upcoming" && a.status !== "upcoming") return 1;
-      if (a.status === "upcoming") return String(a.kickoffAt ?? "").localeCompare(String(b.kickoffAt ?? ""));
-      return String(b.kickoffAt ?? "").localeCompare(String(a.kickoffAt ?? ""));
+    const from = new Date(now - 36 * 3600e3).toISOString();
+    const to = new Date(now + 21 * 86400e3).toISOString();
+    const [window, finals, states] = await Promise.all([
+      supabaseGetAll(env, "matches", { select: COLUMNS, season: `eq.${SEASON}`, and: `(kickoff_at.gte.${from},kickoff_at.lte.${to})`, order: "kickoff_at.asc,game_id.asc" }),
+      loadFinals(env),
+      supabaseGet(env, "sync_state", { select: "*" }),
+    ]);
+    const ctx = buildContext(finals);
+    const byLeague = Object.fromEntries(states.map((s) => [s.league, s]));
+    const matches = window.map((m) => {
+      const open = m.status === "scheduled" || m.status === "in_progress";
+      const analysis = open ? analyzeMatch(m, ctx, { n: 8 }) : null;
+      return {
+        id: m.game_id, league: m.league, round: m.round, kickoffAt: m.kickoff_at, status: m.status,
+        home: m.home_name, away: m.away_name, homeScore: m.home_score, awayScore: m.away_score,
+        pick: analysis ? compactPick(analysis) : null,
+      };
     });
     return json({
-      demo: false,
-      source: "api-ninjas",
-      season: SEASON,
-      fixtures: unique,
-      updatedAt: new Date().toISOString(),
-      message: "Dati da API Ninjas. Il piano gratuito non fornisce minuto/punteggio live né statistiche corner.",
+      updatedAt: new Date(now).toISOString(),
+      historyMatches: ctx.matchCount,
+      leagues: LEAGUES.map((l) => ({ ...l, syncedAt: byLeague[l.id]?.synced_at ?? null, count: byLeague[l.id]?.matches_count ?? 0, error: byLeague[l.id]?.last_error ?? null })),
+      needsSync: LEAGUES.filter((l) => syncDue(byLeague[l.id], isActiveLeague(window, l.id, now), now)).map((l) => l.id),
+      matches,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Errore inatteso durante il recupero delle partite.";
-    console.error("Stay Live /api/fixtures API Ninjas:", message);
-    return json({
-      demo: true,
-      source: "api-ninjas",
-      fixtures: [],
-      message,
-      updatedAt: new Date().toISOString(),
-    }, 502);
+    console.error("Stay Live fixtures:", errorMessage(error));
+    return json({ error: `Impossibile leggere i dati da Supabase: ${errorMessage(error)}. Hai applicato la migrazione 202610290002?` }, 502);
   }
 }
