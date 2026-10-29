@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  MODEL, analyzeMatch, buildAccumulator, buildContext, poissonPmf, probabilities, scoreMatrix, stressedProbabilities, verdictFor,
+  MODEL, analyzeMatch, buildAccumulator, applyCap, accumulatorPlan, buildContext, estimateOdds, isPreferred, planFor, stakePlan, totalsOf, poissonPmf, probabilities, scoreMatrix, stressedProbabilities, verdictFor,
 } from "../functions/api/model.js";
-import { syncDue, TTL } from "../functions/api/_lib.js";
+import { CONTINENTS, LEAGUES, syncDue, TTL } from "../functions/api/_lib.js";
 
 const day = 86400e3;
 function league(nRounds = 12) {
@@ -91,4 +91,40 @@ test("frequenze storiche: esiti coerenti", () => {
   assert.ok(Math.abs(r.home + r.draw + r.away - 1) < 1e-9);
   assert.ok(Math.abs(r.over25 + r.under25 - 1) < 1e-9);
   assert.equal(ctx.baseRates("sconosciuto") !== null, true);
+});
+
+test("a parità di BET, Over/Under passano davanti agli altri mercati", () => {
+  const ctx = buildContext(league(12).finals);
+  const a = analyzeMatch({ league: "seriea", kickoff_at: "2026-10-30T18:00:00Z", home_id: "a", away_id: "b", neutral_site: false }, ctx, { n: 8 });
+  const bets = a.selections.filter((s) => s.verdict === "BET");
+  if (bets.some((s) => isPreferred(s)) && bets.some((s) => !isPreferred(s))) assert.ok(isPreferred(a.pick));
+  assert.equal(a.pick.verdict === "BET" || bets.length === 0, true);
+});
+
+test("i campionati hanno continente e nazione per il menu", () => {
+  for (const l of LEAGUES) { assert.ok(l.continent && l.country && l.nation, l.id); assert.ok(CONTINENTS.some((c) => c.id === l.continent), l.id); }
+});
+
+test("quota stimata: sotto la quota equa per il margine del bookmaker", () => {
+  assert.equal(estimateOdds(0.5), 1.89);
+  assert.ok(estimateOdds(0.7) < 1 / 0.7);
+});
+
+test("senza valore non si punta; con quota alta si punta con tetto", () => {
+  const none = planFor({ pLow: 0.62, p: 0.66 }, null, 100);
+  assert.equal(none.play, false);          // quota stimata < quota minima
+  assert.ok(none.conditional.play && none.need >= 1.66 && none.conditional.stake > 0);
+  const real = planFor({ pLow: 0.62, p: 0.66 }, 2.2, 100);
+  assert.equal(real.play, true);
+  assert.ok(real.stake <= 5 && real.stake >= 0.5);   // tetto 5% del budget
+  assert.ok(Math.abs(real.win - real.stake * 1.2) < 0.01);
+});
+
+test("tetto di esposizione totale e multipla", () => {
+  const plans = Array.from({ length: 8 }, () => stakePlan({ pLow: 0.65, odds: 2.4, bankroll: 200 }));
+  const capped = applyCap(plans.map((x) => ({ ...x, odds: 2.4, pLow: 0.65 })), 200);
+  assert.ok(totalsOf(capped).stake <= 200 * 0.2 + 0.5 * plans.length);
+  const acc = accumulatorPlan([{ pLow: 0.65, p: 0.7 }, { pLow: 0.62, p: 0.66 }, { pLow: 0.6, p: 0.64 }], 100);
+  assert.ok(Math.abs(acc.pLow - 0.65 * 0.62 * 0.6) < 1e-9);
+  assert.equal(accumulatorPlan([{ pLow: 0.6, p: 0.6 }], 100), null);
 });
