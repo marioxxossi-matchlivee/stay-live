@@ -74,9 +74,11 @@ async function loadMatchAnalysis() {
   $("#analysis-values").hidden = true;
   try {
     const count = $("#history-count").value;
-    const teamQuery = match.homeId && match.awayId
-      ? `homeProviderId=${encodeURIComponent(match.homeId)}&awayProviderId=${encodeURIComponent(match.awayId)}`
-      : `fixtureId=${encodeURIComponent(match.providerId ?? match.id)}`;
+    const teamQuery = match.source === "api-ninjas"
+      ? `homeName=${encodeURIComponent(match.home)}&awayName=${encodeURIComponent(match.away)}`
+      : match.homeId && match.awayId
+        ? `homeProviderId=${encodeURIComponent(match.homeId)}&awayProviderId=${encodeURIComponent(match.awayId)}`
+        : `fixtureId=${encodeURIComponent(match.providerId ?? match.id)}`;
     const response = await fetch(`/api/analysis?${teamQuery}&matches=${count}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Storico non disponibile.");
