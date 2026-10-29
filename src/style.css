@@ -132,3 +132,29 @@ h4{font:700 14px var(--body);color:var(--mute);margin:20px 0 8px}
 .method code{background:#fff;border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:13px}
 
 @media (prefers-reduced-motion:no-preference){dialog[open]{animation:pop .18s ease-out}@keyframes pop{from{opacity:0;transform:translateY(10px)}}}
+
+/* Menu campionati: continente > nazione (accordion) > campionati */
+.leaguebar{padding:2px 0 8px}
+.lg-toggle{width:100%;text-align:left;background:var(--card);font-weight:700;padding:10px 14px;border-radius:12px;color:var(--ink)}
+.league-nav{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px 12px;margin-bottom:12px;max-height:60vh;overflow-y:auto}
+.nav-all{padding:2px 0 6px}
+.continent h3{font:800 12px var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--mute);margin:12px 0 4px}
+.nation{border-top:1px solid var(--line)}
+.nation summary{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 2px;font-weight:700;cursor:pointer;list-style:none}
+.nation summary::-webkit-details-marker{display:none}
+.nation summary::after{content:"▾";color:var(--mute);margin-left:6px;transition:transform .15s}
+.nation[open] summary::after{transform:rotate(180deg)}
+.nation summary span{margin-right:auto}
+.nation summary small{color:var(--mute);font-weight:500}
+.nation-leagues{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 12px}
+
+/* Budget e puntate nel resoconto */
+.pv-bank{display:grid;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px}
+.pv-bank label{display:flex;align-items:center;gap:8px;font-weight:700}
+.pv-bank input,.pv-odds input{border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:#fff;width:92px}
+.pv-totals{font-size:14px;color:var(--ink-2);line-height:1.5}
+.pv-totals small{color:var(--mute)}
+.pv-stake{display:grid;gap:6px;background:#e8eefc;color:#1d3a8a;border-radius:10px;padding:8px 10px;font-size:14px}
+.pv-stake small{color:#5a6fae}
+.pv-odds{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px}
+.pv-no{font-style:normal;color:var(--mute)}

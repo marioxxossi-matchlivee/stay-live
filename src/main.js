@@ -1,28 +1,21 @@
 import "./style.css";
 import { MODEL, verdictFor } from "../functions/api/model.js";
+import { computePlan, isBetItem } from "./plan.js";
+import { dayKey, dayParts, eur, esc, fmtTime, num, pct } from "./format.js";
+import { buildPreviewPdf } from "./report.js";
 
 const $ = (s, r = document) => r.querySelector(s);
-const TZ = "Europe/Rome";
-const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-const pct = (p, d = 0) => (p == null ? "—" : `${(p * 100).toFixed(d).replace(".", ",")}%`);
-const num = (v, d = 2) => (v == null || !Number.isFinite(Number(v)) ? "—" : Number(v).toFixed(d).replace(".", ","));
-const fmtTime = new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
-const fmtDay = new Intl.DateTimeFormat("en-CA", { timeZone: TZ });
-const dayKey = (iso) => fmtDay.format(new Date(iso));
-const dayParts = (key) => {
-  const d = new Date(`${key}T12:00:00Z`);
-  return {
-    wd: new Intl.DateTimeFormat("it-IT", { weekday: "short", timeZone: "UTC" }).format(d).replace(".", ""),
-    dm: new Intl.DateTimeFormat("it-IT", { day: "numeric", month: "short", timeZone: "UTC" }).format(d).replace(".", ""),
-    long: new Intl.DateTimeFormat("it-IT", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(d),
-  };
-};
-
 const state = {
-  matches: [], leagues: [], league: "all", day: null, onlyBet: false, selected: new Set(),
+  matches: [], leagues: [], continents: [], league: "all", navOpen: false, openKeys: new Set(), day: null, onlyBet: false, selected: new Set(),
   n: 8, loading: false, error: null, banner: null, syncTried: false, updatedAt: null,
 };
 const leagueName = (id, short = false) => state.leagues.find((l) => l.id === id)?.[short ? "short" : "name"] ?? id;
+/** Filtro campionato: "all", id campionato oppure "n:<country>" per tutta una nazione. */
+const inScope = (leagueId) => {
+  if (state.league === "all") return true;
+  if (state.league.startsWith("n:")) return state.leagues.find((l) => l.id === leagueId)?.country === state.league.slice(2);
+  return leagueId === state.league;
+};
 const isOpen = (m) => m.status === "scheduled" || m.status === "in_progress";
 
 /* ---------- Dati ---------- */
@@ -48,7 +41,7 @@ async function load({ sync = true } = {}) {
       data = await getJson("/api/fixtures");
       state.banner = failures.length ? `Aggiornamento incompleto. ${failures[0]}` : null;
     } else state.banner = null;
-    Object.assign(state, { matches: data.matches, leagues: data.leagues, updatedAt: data.updatedAt });
+    Object.assign(state, { matches: data.matches, leagues: data.leagues, continents: data.continents ?? [], updatedAt: data.updatedAt });
   } catch (e) {
     state.error = e.message;
   } finally {
@@ -67,7 +60,7 @@ function pickChip(p) {
 }
 function visibleMatches() {
   return state.matches.filter((m) => {
-    if (state.league !== "all" && m.league !== state.league) return false;
+    if (!inScope(m.league)) return false;
     if (state.day === "results") return m.status === "final";
     if (!isOpen(m) || dayKey(m.kickoffAt) !== state.day) return false;
     return !state.onlyBet || m.pick?.verdict === "BET";
@@ -86,7 +79,7 @@ function rowHtml(m) {
     </button></div>`;
 }
 function renderDays() {
-  const pool = state.matches.filter((m) => state.league === "all" || m.league === state.league);
+  const pool = state.matches.filter((m) => inScope(m.league));
   const counts = new Map();
   for (const m of pool.filter(isOpen)) counts.set(dayKey(m.kickoffAt), (counts.get(dayKey(m.kickoffAt)) ?? 0) + 1);
   const keys = [...counts.keys()].sort();
@@ -97,9 +90,40 @@ function renderDays() {
     return `<button class="day" type="button" data-day="${k}" aria-pressed="${k === state.day}"><b>${d.wd}</b><span>${d.dm}</span><small>${counts.get(k)} gare</small></button>`;
   }).join("") + (hasResults ? `<button class="day" type="button" data-day="results" aria-pressed="${state.day === "results"}"><b>Ultimi</b><span>Risultati</span></button>` : "");
 }
+/* Menu campionati: continente > nazione (accordion) > campionati */
+function scopeLabel() {
+  if (state.league === "all") return "Tutti i campionati";
+  if (state.league.startsWith("n:")) return `${state.leagues.find((l) => l.country === state.league.slice(2))?.nation ?? ""} · tutti`;
+  const l = state.leagues.find((x) => x.id === state.league);
+  return l ? `${l.nation} · ${l.name}` : "Tutti i campionati";
+}
+function renderLeagueNav() {
+  const toggle = $("#nav-toggle");
+  toggle.textContent = `${scopeLabel()} ${state.navOpen ? "▴" : "▾"}`;
+  toggle.setAttribute("aria-expanded", String(state.navOpen));
+  const nav = $("#league-nav");
+  nav.hidden = !state.navOpen;
+  if (!state.navOpen) return;
+  const chip = (id, label) => `<button class="chip" type="button" data-league="${esc(id)}" aria-pressed="${state.league === id}">${esc(label)}</button>`;
+  const continents = state.continents.map((c) => {
+    const inC = state.leagues.filter((l) => l.continent === c.id);
+    if (!inC.length) return "";
+    const nations = [...new Map(inC.map((l) => [l.country, l])).values()]
+      .sort((a, b) => (b.international ? 1 : 0) - (a.international ? 1 : 0) || a.nation.localeCompare(b.nation, "it"));
+    const items = nations.map((n) => {
+      const ls = inC.filter((l) => l.country === n.country).sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name, "it"));
+      const key = `${c.id}:${n.country}`;
+      return `<details class="nation" data-key="${esc(key)}" ${state.openKeys.has(key) ? "open" : ""}>
+        <summary><span>${n.international ? "🏆 " : ""}${esc(n.nation)}</span><small>${ls.length} ${ls.length === 1 ? "campionato" : "campionati"}</small></summary>
+        <div class="nation-leagues">${ls.length > 1 ? chip(`n:${n.country}`, "Tutti") : ""}${ls.map((l) => chip(l.id, l.name)).join("")}</div>
+      </details>`;
+    }).join("");
+    return `<section class="continent"><h3>${esc(c.name)}</h3>${items}</section>`;
+  }).join("");
+  nav.innerHTML = `<div class="nav-all">${chip("all", "Tutti i campionati")}</div>${continents}`;
+}
 function render() {
-  $("#league-chips").innerHTML = [{ id: "all", short: "Tutti" }, ...state.leagues]
-    .map((l) => `<button class="chip" type="button" data-league="${l.id}" aria-pressed="${state.league === l.id}">${esc(l.short)}</button>`).join("");
+  renderLeagueNav();
   renderDays();
   const list = visibleMatches();
   const bets = list.filter((m) => m.pick?.verdict === "BET").length;
@@ -207,6 +231,11 @@ function applyOdds(key) {
 
 /* ---------- Preview giornata ---------- */
 let lastPreview = null;
+let lastPlan = null;
+const pvOdds = new Map(); // quote reali inserite nel resoconto: id partita -> quota
+const BANK_KEY = "stayLive.bankroll";
+let bankroll = (() => { try { const v = Number(localStorage.getItem(BANK_KEY)); return v > 0 ? v : 100; } catch { return 100; } })();
+const parsePos = (v) => { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) && n > 0 ? n : null; };
 async function makePreview() {
   const ids = [...state.selected];
   if (!ids.length) return;
@@ -214,6 +243,7 @@ async function makePreview() {
   $("#preview-body").innerHTML = `<p class="empty">Genero la preview…</p>`;
   $("#make-preview").disabled = true;
   try {
+    pvOdds.clear();
     lastPreview = await getJson(`/api/preview?ids=${ids.map(encodeURIComponent).join(",")}&n=${state.n}`);
     renderPreview();
   } catch (e) {
@@ -225,7 +255,7 @@ function previewText(pv) {
     const t = fmtTime.format(new Date(i.kickoffAt));
     const p = i.pick;
     return p && i.confidence !== "insufficiente"
-      ? `${t} ${i.home} – ${i.away} → ${p.verdict} ${p.label} (prudente ${pct(p.pLow)}, quota min ${num(p.minOdds)})`
+      ? `${t} ${i.home} – ${i.away} → ${p.verdict} ${p.label} (prudente ${pct(p.pLow)}, quota min ${num(p.minOdds)})${lastPlan?.rows.get(i.id)?.eff ? ` · punta ${eur(lastPlan.rows.get(i.id).eff.stake)}` : ""}`
       : `${t} ${i.home} – ${i.away} → EVITA (dati insufficienti)`;
   });
   const acc = pv.summary.accumulator;
@@ -243,15 +273,72 @@ function renderPreview() {
       <strong>${pv.summary.bets} BET su ${pv.summary.selected} partite</strong>
       <span>${acc ? `Multipla più solida: ${acc.ids.map((id) => esc(byId.get(id).home)).join(" + ")}. Probabilità prudente ${pct(acc.pLow)}, quota minima ${num(acc.minOdds)}.` : "Servono almeno 2 BET per proporre una multipla."}</span>
     </div>
-    <div class="pv-actions"><button class="primary" id="copy-preview" type="button">Copia riepilogo</button>${navigator.share ? `<button class="ghost" id="share-preview" type="button">Condividi</button>` : ""}</div>
+    <div class="pv-bank">
+      <label>Budget <input id="bankroll" inputmode="decimal" value="${esc(String(bankroll).replace(".", ","))}" aria-label="Budget in euro" /> €</label>
+      <div id="pv-totals" class="pv-totals" aria-live="polite"></div>
+    </div>
+    <div class="pv-actions"><button class="primary" id="share-pdf" type="button">Condividi PDF</button><button class="ghost" id="copy-preview" type="button">Copia testo</button></div>
     ${pv.items.map((i) => `<article class="pv-card">
       <span class="meta"><b>${fmtTime.format(new Date(i.kickoffAt))}</b><span>${esc(leagueName(i.league, true))}</span></span>
       <span class="teams">${esc(i.home)}<i>–</i>${esc(i.away)}</span>
       ${i.pick ? pickChip({ ...i.pick, confidence: i.confidence, sample: i.sample }) : ""}
       <span class="pv-more"><span>Quota minima ${num(i.pick?.minOdds)}</span><span>Gol attesi ${num(i.lambda.total)}</span><span>Più probabile ${esc(i.topScores[0]?.score ?? "—")}</span>${i.alternatives[0] ? `<span>Alternativa: ${esc(i.alternatives[0].label)} ${pct(i.alternatives[0].pLow)}</span>` : ""}</span>
+      ${isBetItem(i) ? `<span class="pv-stake"><span data-plan="${esc(i.id)}"></span><label class="pv-odds">Quota reale <input inputmode="decimal" data-pv-odds="${esc(i.id)}" placeholder="stima ${num(i.pick.estOdds)}" aria-label="Quota reale per ${esc(i.home)} – ${esc(i.away)}" /></label></span>` : ""}
       <button class="link" type="button" data-open="${esc(i.id)}" style="justify-self:start">Vedi il calcolo</button>
     </article>`).join("")}
-    <p class="foot">Le quote minime sono quelle sotto cui non c’è margine secondo il modello. Controlla sempre la quota reale prima di giocare.</p>`;
+    <p class="foot">Le quote minime sono quelle sotto cui non c’è margine secondo il modello. Controlla sempre la quota reale prima di giocare. Nessuna stima garantisce un guadagno: gioca solo ciò che puoi permetterti di perdere.</p>`;
+  updatePlan();
+}
+
+function planLine(row) {
+  if (!row?.eff) return `<em class="pv-no">Nessuna puntata consigliata${row?.plan?.need ? `: servirebbe una quota di almeno ${num(row.plan.need)}` : ""}.</em>`;
+  const { plan: p, eff: e } = row;
+  if (p.play) return `Quota ${num(p.odds)} <small>${p.source}</small> · punta <b>${eur(e.stake)}</b> · vincita netta <b>${eur(e.win)}</b>${e.capped ? " <small>(ridotta dal tetto di esposizione)</small>" : ""}`;
+  return `Quota ${p.source} ${num(p.odds)} sotto la minima: gioca <b>solo se</b> il bookmaker paga almeno <b>${num(p.need)}</b> → punta <b>${eur(e.stake)}</b>, vincita netta <b>${eur(e.win)}</b>`;
+}
+function updatePlan() {
+  if (!lastPreview?.items.length) return;
+  lastPlan = computePlan(lastPreview, bankroll, pvOdds);
+  for (const el of document.querySelectorAll("[data-plan]")) el.innerHTML = planLine(lastPlan.rows.get(el.dataset.plan));
+  const t = lastPlan.totals, a = lastPlan.acc;
+  const pctBank = bankroll > 0 ? t.stake / bankroll : 0;
+  const accLine = a ? (a.plan.play
+    ? `Multipla (${a.legs} gare): quota ${num(a.plan.odds)} ${a.plan.source} · punta ${eur(a.eff.stake)} · vincita netta ${eur(a.eff.win)}`
+    : a.eff ? `Multipla (${a.legs} gare): solo se la quota combinata è almeno ${num(a.plan.need)} → punta ${eur(a.eff.stake)}, vincita netta ${eur(a.eff.win)}`
+    : "Multipla: nessuna puntata consigliata.") : "";
+  $("#pv-totals").innerHTML = t.count
+    ? `<b>${lastPlan.hypothetical ? "Piano se trovi almeno le quote minime" : "Piano"}</b>: ${t.count} giocate, puntata totale <b>${eur(t.stake)}</b> (${pct(pctBank, 1)} del budget), vincita netta se entrano tutte <b>${eur(t.win)}</b>, esito atteso prudente ${eur(t.ev)}.${accLine ? `<br>${accLine}` : ""}${lastPlan.hypothetical ? `<br><small>Le quote reali non sono note: con le quote stimate i BET non hanno margine. Inserisci la quota del bookmaker su ogni gara per il piano definitivo.</small>` : ""}`
+    : `Nessuna puntata consigliata con queste quote. Inserisci la quota reale del bookmaker oppure non giocare.`;
+}
+
+
+/* ---------- PDF del riepilogo ---------- */
+async function sharePdf(btn) {
+  if (!lastPreview?.items.length) return;
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "Creo il PDF…";
+  try {
+    updatePlan();
+    const bytes = buildPreviewPdf(lastPreview, leagueName, lastPlan);
+    const name = `stay-live-${dayKey(lastPreview.items[0].kickoffAt)}.pdf`;
+    const file = new File([bytes], name, { type: "application/pdf" });
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: "Stay Live · preview", text: "Preview partite scelte" });
+    } else {
+      // Browser senza condivisione di file (es. desktop): scarica il PDF.
+      const url = URL.createObjectURL(file);
+      const a = Object.assign(document.createElement("a"), { href: url, download: name });
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }
+  } catch (e) {
+    if (e?.name !== "AbortError") btn.textContent = "Errore nel PDF";
+    else btn.textContent = label;
+    setTimeout(() => { btn.textContent = label; }, 2500);
+    btn.disabled = false;
+    return;
+  }
+  btn.textContent = label; btn.disabled = false;
 }
 
 /* ---------- Metodo ---------- */
@@ -266,6 +353,7 @@ function renderMethod() {
     <li><b>Probabilità</b><span>Distribuzione di Poisson indipendente per le due squadre, punteggi da 0–0 a 10–10. 1X2, doppia chance, Over/Under 1,5 · 2,5 · 3,5 ed entrambe segnano sono somme di queste caselle, quindi sempre coerenti tra loro.</span></li>
     <li><b>Probabilità prudente</b><span>Il campione è piccolo, quindi le attese gol sono incerte di circa ±${num(M.uncertainty)} ÷ √partite. Si ricalcola in 5 scenari e si tiene il peggiore.</span></li>
     <li><b>BET o EVITA</b><span>BET se il campione è di almeno ${M.betSample} partite, la probabilità prudente è almeno ${pct(M.betThreshold)} e supera di ${M.minEdge * 100} punti la frequenza storica di quell’esito nel campionato. La <b>quota minima</b> è ${num(M.edgeMargin)} ÷ probabilità prudente. Con la tua quota: BET se probabilità prudente × quota ≥ ${num(M.edgeMargin)}.</span></li>
+    <li><b>Mercati preferiti</b><span>Tra i BET della stessa partita, Over/Under sui gol passano davanti a 1X2, doppia chance ed entrambe segnano (a parità di BET, non cambia la soglia). I corner non sono calcolabili con i dati disponibili.</span></li>
     <li><b>Multipla</b><span>Fino a 4 BET di partite diverse con le probabilità prudenti più alte; la probabilità combinata è il prodotto (partite considerate indipendenti).</span></li>
   </ol>
   <p><b>Limiti.</b> Le soglie sono scelte ragionevoli ma non calibrate su uno storico lungo. I bookmaker conoscono molto più di questo modello e applicano un margine: senza la quota reale, un BET significa solo “alta probabilità”, non “scommessa di valore”.</p></div>`;
@@ -276,12 +364,26 @@ document.addEventListener("click", (e) => {
   const t = e.target;
   if (t.closest("[data-close]")) t.closest("dialog").close();
   else if (t.tagName === "DIALOG") t.close();
-  const chip = t.closest("[data-league]"); if (chip) { state.league = chip.dataset.league; render(); }
+  const chip = t.closest("[data-league]");
+  if (chip) {
+    state.league = chip.dataset.league;
+    const code = state.league.startsWith("n:") ? state.league.slice(2) : state.leagues.find((l) => l.id === state.league)?.country;
+    const l = state.leagues.find((x) => x.country === code);
+    if (l) state.openKeys.add(`${l.continent}:${l.country}`);
+    state.navOpen = false; render();
+  }
+  if (t.closest("#nav-toggle")) { state.navOpen = !state.navOpen; render(); }
   const day = t.closest("[data-day]"); if (day) { state.day = day.dataset.day; render(); }
   const open = t.closest("[data-open]"); if (open) openDetail(open.dataset.open);
   if (t.closest("#copy-preview")) navigator.clipboard?.writeText(previewText(lastPreview)).then(() => { t.textContent = "Copiato"; });
-  if (t.closest("#share-preview")) navigator.share?.({ text: previewText(lastPreview) }).catch(() => {});
+  if (t.closest("#share-pdf")) sharePdf(t.closest("#share-pdf"));
 });
+// <details> non propaga "toggle": lo ascoltiamo in cattura per ricordare quali nazioni sono aperte.
+document.addEventListener("toggle", (e) => {
+  const d = e.target;
+  if (!(d instanceof HTMLDetailsElement) || !d.dataset.key) return;
+  d.open ? state.openKeys.add(d.dataset.key) : state.openKeys.delete(d.dataset.key);
+}, true);
 document.addEventListener("change", (e) => {
   const t = e.target;
   if (t.matches("[data-sel]")) { t.checked ? state.selected.add(t.dataset.sel) : state.selected.delete(t.dataset.sel); render(); }
@@ -291,6 +393,8 @@ document.addEventListener("change", (e) => {
 });
 document.addEventListener("input", (e) => {
   const t = e.target;
+  if (t.id === "bankroll") { const v = parsePos(t.value); if (v) { bankroll = v; try { localStorage.setItem(BANK_KEY, String(v)); } catch { /* storage non disponibile */ } updatePlan(); } return; }
+  if (t.matches("[data-pv-odds]")) { const v = parsePos(t.value); v > 1 ? pvOdds.set(t.dataset.pvOdds, v) : pvOdds.delete(t.dataset.pvOdds); updatePlan(); return; }
   if (!t.matches("[data-odds]") || !detailState) return;
   oddsInput.set(`${detailState.id}:${t.dataset.odds}`, t.value);
   applyOdds(t.dataset.odds);
