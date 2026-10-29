@@ -1,114 +1,153 @@
-import { json, supabaseGet } from "./_lib.js";
+import { json } from "./_lib.js";
 import { average, confidence, poissonProbabilityOver } from "./model.js";
 
-async function teamHistory(env, teamId, limit) {
-  const rows = await supabaseGet(env, "team_match_stats", {
-    select: "is_home,goals,corners,fixture:fixtures!inner(id,kickoff_at,status,home_goals,away_goals,home_team_id,away_team_id)",
-    team_id: `eq.${teamId}`,
-    "fixture.status": "in.(FT,AET,PEN,finished)",
-    order: "fixture(kickoff_at).desc",
-    limit: String(limit),
+const API_URL = "https://api.api-ninjas.com/v1/soccermatches";
+const LEAGUE = "seriea";
+const SEASON = "2026";
+const PAGE_SIZE = 50;
+const MAX_PAGES = 12;
+
+function cleanName(value) {
+  return String(value ?? "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/\b(fc|afc|ac|as|ssc|cf)\b/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function matchTeam(item, target) {
+  const name = cleanName(target);
+  const providerName = cleanName(item?.name);
+  const providerId = cleanName(item?.team_id);
+  return Boolean(name && (
+    providerName === name ||
+    providerName.includes(name) ||
+    name.includes(providerName) ||
+    providerId === name ||
+    providerId.endsWith(name)
+  ));
+}
+
+async function getPage(env, offset) {
+  const url = new URL(API_URL);
+  url.searchParams.set("league", LEAGUE);
+  url.searchParams.set("season", SEASON);
+  url.searchParams.set("offset", String(offset));
+  const response = await fetch(url.toString(), {
+    headers: { "X-Api-Key": env.API_NINJAS_KEY, accept: "application/json" },
+    cf: { cacheTtl: 600, cacheEverything: true },
   });
-  return rows;
+  const text = await response.text();
+  let data;
+  try { data = JSON.parse(text); }
+  catch { throw new Error(`Risposta API Ninjas non valida (HTTP ${response.status}).`); }
+  if (!response.ok) {
+    const detail = typeof data?.error === "string" ? data.error : JSON.stringify(data);
+    throw new Error(`API Ninjas HTTP ${response.status}: ${detail.slice(0, 220)}`);
+  }
+  if (!Array.isArray(data)) throw new Error("Formato inatteso restituito da API Ninjas.");
+  return data;
+}
+
+async function loadSeason(env) {
+  if (!env.API_NINJAS_KEY) throw new Error("Manca il secret API_NINJAS_KEY su Cloudflare.");
+  const all = [];
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const rows = await getPage(env, page * PAGE_SIZE);
+    all.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+  }
+  const byId = new Map();
+  for (const item of all) {
+    const id = item.game_id ?? `${item.date}-${item.home_team?.team_id}-${item.away_team?.team_id}`;
+    byId.set(String(id), item);
+  }
+  return [...byId.values()];
+}
+
+function isFinished(item) {
+  return String(item.status ?? "").toLowerCase() === "final" &&
+    Number.isFinite(item.home_score) && Number.isFinite(item.away_score);
+}
+
+function teamHistory(rows, teamName, limit) {
+  return rows
+    .filter(isFinished)
+    .filter((item) => matchTeam(item.home_team, teamName) || matchTeam(item.away_team, teamName))
+    .sort((a, b) => String(b.start_time ?? b.date ?? "").localeCompare(String(a.start_time ?? a.date ?? "")))
+    .slice(0, limit)
+    .map((item) => {
+      const isHome = matchTeam(item.home_team, teamName);
+      return {
+        goalsFor: Number(isHome ? item.home_score : item.away_score),
+        goalsAgainst: Number(isHome ? item.away_score : item.home_score),
+        corners: null,
+        date: item.start_time ?? item.date ?? null,
+      };
+    });
 }
 
 export async function onRequest({ request, env }) {
   const url = new URL(request.url);
-  let homeId = Number(url.searchParams.get("homeTeamId"));
-  let awayId = Number(url.searchParams.get("awayTeamId"));
-  const homeProviderId = Number(url.searchParams.get("homeProviderId"));
-  const awayProviderId = Number(url.searchParams.get("awayProviderId"));
-  const fixtureId = Number(url.searchParams.get("fixtureId"));
+  const homeName = url.searchParams.get("homeName") ?? "";
+  const awayName = url.searchParams.get("awayName") ?? "";
   const requested = Number(url.searchParams.get("matches") ?? 5);
   const limit = requested === 10 ? 10 : 5;
-  if (Number.isInteger(homeProviderId) && homeProviderId > 0 && Number.isInteger(awayProviderId) && awayProviderId > 0) {
-    try {
-      const [homeTeamRows, awayTeamRows] = await Promise.all([
-        supabaseGet(env, "teams", { select: "id", provider: "eq.api-football", provider_id: `eq.${homeProviderId}`, limit: "1" }),
-        supabaseGet(env, "teams", { select: "id", provider: "eq.api-football", provider_id: `eq.${awayProviderId}`, limit: "1" }),
-      ]);
-      if (homeTeamRows[0]?.id && awayTeamRows[0]?.id) {
-        homeId = Number(homeTeamRows[0].id);
-        awayId = Number(awayTeamRows[0].id);
-      }
-    } catch (error) {
-      console.error("Stay Live analysis team lookup:", error.message);
-    }
+
+  if (!homeName || !awayName || cleanName(homeName) === cleanName(awayName)) {
+    return json({ error: "Non riesco a identificare entrambe le squadre per l'analisi." }, 400);
   }
-  if (Number.isInteger(fixtureId) && fixtureId > 0 && !(homeId > 0 && awayId > 0)) {
-    try {
-      const fixtureRows = await supabaseGet(env, "fixtures", {
-        select: "id,provider_id,home_team_id,away_team_id,home:teams!fixtures_home_team_id_fkey(name),away:teams!fixtures_away_team_id_fkey(name)",
-        provider: "eq.api-football",
-        provider_id: `eq.${fixtureId}`,
-        limit: "1",
-      });
-      if (fixtureRows.length) {
-        homeId = Number(fixtureRows[0].home_team_id);
-        awayId = Number(fixtureRows[0].away_team_id);
-      }
-    } catch (error) {
-      console.error("Stay Live analysis fixture lookup:", error.message);
-    }
-  }
-  if (!Number.isInteger(homeId) || homeId <= 0 || !Number.isInteger(awayId) || awayId <= 0 || homeId === awayId) {
-    return json({ error: "Storico non disponibile per questa partita. Sincronizza prima le partite concluse in Supabase." }, 404);
-  }
+
   try {
-    const [homeRows, awayRows] = await Promise.all([
-      teamHistory(env, homeId, limit),
-      teamHistory(env, awayId, limit),
-    ]);
-    const homeGoalsFor = average(homeRows.map((r) => r.goals == null ? NaN : Number(r.goals)));
-    const homeCornersFor = average(homeRows.map((r) => r.corners == null ? NaN : Number(r.corners)));
-    const awayGoalsFor = average(awayRows.map((r) => r.goals == null ? NaN : Number(r.goals)));
-    const awayCornersFor = average(awayRows.map((r) => r.corners == null ? NaN : Number(r.corners)));
-    const homeOppGoals = average(homeRows.map((r) => {
-      const f = r.fixture;
-      if (!f) return NaN;
-      const value = Number(f.home_team_id) === homeId ? f.away_goals : f.home_goals;
-      return value == null ? NaN : Number(value);
-    }));
-    const awayOppGoals = average(awayRows.map((r) => {
-      const f = r.fixture;
-      if (!f) return NaN;
-      const value = Number(f.home_team_id) === awayId ? f.away_goals : f.home_goals;
-      return value == null ? NaN : Number(value);
-    }));
-    const expectedHomeGoals = homeGoalsFor == null || awayOppGoals == null ? null : (homeGoalsFor + awayOppGoals) / 2;
-    const expectedAwayGoals = awayGoalsFor == null || homeOppGoals == null ? null : (awayGoalsFor + homeOppGoals) / 2;
-    const expectedGoals = expectedHomeGoals == null || expectedAwayGoals == null ? null : expectedHomeGoals + expectedAwayGoals;
-    const expectedCorners = homeCornersFor == null || awayCornersFor == null ? null : homeCornersFor + awayCornersFor;
+    const rows = await loadSeason(env);
+    const homeRows = teamHistory(rows, homeName, limit);
+    const awayRows = teamHistory(rows, awayName, limit);
+    if (!homeRows.length || !awayRows.length) {
+      return json({
+        error: `Storico insufficiente per ${!homeRows.length ? homeName : awayName}. Verifica i nomi restituiti da API Ninjas e riprova.`,
+      }, 404);
+    }
+
+    const homeGoalsFor = average(homeRows.map((r) => r.goalsFor));
+    const homeGoalsAgainst = average(homeRows.map((r) => r.goalsAgainst));
+    const awayGoalsFor = average(awayRows.map((r) => r.goalsFor));
+    const awayGoalsAgainst = average(awayRows.map((r) => r.goalsAgainst));
+    const expectedHome = homeGoalsFor == null || awayGoalsAgainst == null ? null : (homeGoalsFor + awayGoalsAgainst) / 2;
+    const expectedAway = awayGoalsFor == null || homeGoalsAgainst == null ? null : (awayGoalsFor + homeGoalsAgainst) / 2;
+    const expectedTotal = expectedHome == null || expectedAway == null ? null : expectedHome + expectedAway;
 
     return json({
-      source: "supabase-team-match-stats",
-      teams: { homeTeamId: homeId, awayTeamId: awayId },
+      source: "api-ninjas-season-history",
+      teams: { home: homeName, away: awayName },
       sampleSize: { home: homeRows.length, away: awayRows.length, requested: limit },
       confidence: confidence(Math.min(homeRows.length, awayRows.length)),
+      recentMatches: {
+        home: homeRows,
+        away: awayRows,
+      },
       goals: {
         homeAverageFor: homeGoalsFor,
         awayAverageFor: awayGoalsFor,
-        expectedHome: expectedHomeGoals,
-        expectedAway: expectedAwayGoals,
-        homeConcededAverage: homeOppGoals,
-        awayConcededAverage: awayOppGoals,
-        expectedTotal: expectedGoals,
-        over15: expectedGoals == null ? null : Number((poissonProbabilityOver(expectedGoals, 1.5) * 100).toFixed(1)),
-        over25: expectedGoals == null ? null : Number((poissonProbabilityOver(expectedGoals, 2.5) * 100).toFixed(1)),
-        over35: expectedGoals == null ? null : Number((poissonProbabilityOver(expectedGoals, 3.5) * 100).toFixed(1)),
+        expectedHome,
+        expectedAway,
+        homeConcededAverage: homeGoalsAgainst,
+        awayConcededAverage: awayGoalsAgainst,
+        expectedTotal,
+        over15: expectedTotal == null ? null : Number((poissonProbabilityOver(expectedTotal, 1.5) * 100).toFixed(1)),
+        over25: expectedTotal == null ? null : Number((poissonProbabilityOver(expectedTotal, 2.5) * 100).toFixed(1)),
+        over35: expectedTotal == null ? null : Number((poissonProbabilityOver(expectedTotal, 3.5) * 100).toFixed(1)),
       },
       corners: {
-        homeAverageFor: homeCornersFor,
-        awayAverageFor: awayCornersFor,
-        expectedTotal: expectedCorners,
-        over75: expectedCorners == null ? null : Number((poissonProbabilityOver(expectedCorners, 7.5) * 100).toFixed(1)),
-        over85: expectedCorners == null ? null : Number((poissonProbabilityOver(expectedCorners, 8.5) * 100).toFixed(1)),
-        over95: expectedCorners == null ? null : Number((poissonProbabilityOver(expectedCorners, 9.5) * 100).toFixed(1)),
+        homeAverageFor: null,
+        awayAverageFor: null,
+        expectedTotal: null,
+        over75: null,
+        over85: null,
+        over95: null,
       },
-      disclaimer: "Stime sperimentali basate su medie semplici e distribuzione di Poisson. Non sono un consiglio di scommessa e non sono validate; un campione ridotto aumenta l'incertezza.",
+      disclaimer: "Analisi sperimentale basata sulle ultime partite concluse disponibili nella stagione 2026 di API Ninjas. Il provider non restituisce statistiche corner in questo endpoint; le stime non sono un consiglio di scommessa.",
     });
   } catch (error) {
-    console.error("Stay Live analysis error:", error.message);
-    return json({ error: "Analisi non disponibile: verifica che Supabase contenga statistiche storiche per entrambe le squadre." }, 503);
+    console.error("Stay Live API Ninjas analysis:", error instanceof Error ? error.message : error);
+    return json({ error: error instanceof Error ? error.message : "Errore durante l'analisi." }, 503);
   }
 }
