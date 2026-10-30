@@ -158,3 +158,4 @@ h4{font:700 14px var(--body);color:var(--mute);margin:20px 0 8px}
 .pv-stake small{color:#5a6fae}
 .pv-odds{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px}
 .pv-no{font-style:normal;color:var(--mute)}
+.pv-qstatus{margin:-6px 0 12px;font-size:13px;color:var(--mute)}

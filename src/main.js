@@ -232,7 +232,8 @@ function applyOdds(key) {
 /* ---------- Preview giornata ---------- */
 let lastPreview = null;
 let lastPlan = null;
-const pvOdds = new Map(); // quote reali inserite nel resoconto: id partita -> quota
+const pvOdds = new Map(); // quote inserite a mano nel resoconto: id partita -> quota
+const pvMarket = new Map(); // quote di mercato (The Odds API): id partita -> { median, best, bestBookmaker, books }
 const BANK_KEY = "stayLive.bankroll";
 let bankroll = (() => { try { const v = Number(localStorage.getItem(BANK_KEY)); return v > 0 ? v : 100; } catch { return 100; } })();
 const parsePos = (v) => { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) && n > 0 ? n : null; };
@@ -243,7 +244,7 @@ async function makePreview() {
   $("#preview-body").innerHTML = `<p class="empty">Genero la preview…</p>`;
   $("#make-preview").disabled = true;
   try {
-    pvOdds.clear();
+    pvOdds.clear(); pvMarket.clear();
     lastPreview = await getJson(`/api/preview?ids=${ids.map(encodeURIComponent).join(",")}&n=${state.n}`);
     renderPreview();
   } catch (e) {
@@ -277,7 +278,8 @@ function renderPreview() {
       <label>Budget <input id="bankroll" inputmode="decimal" value="${esc(String(bankroll).replace(".", ","))}" aria-label="Budget in euro" /> €</label>
       <div id="pv-totals" class="pv-totals" aria-live="polite"></div>
     </div>
-    <div class="pv-actions"><button class="primary" id="share-pdf" type="button">Condividi PDF</button><button class="ghost" id="copy-preview" type="button">Copia testo</button></div>
+    <div class="pv-actions"><button class="primary" id="share-pdf" type="button">Condividi PDF</button><button class="ghost" id="load-quotes" type="button">Preleva quote reali</button><button class="ghost" id="copy-preview" type="button">Copia testo</button></div>
+    <p class="pv-qstatus" id="quotes-status" aria-live="polite"></p>
     ${pv.items.map((i) => `<article class="pv-card">
       <span class="meta"><b>${fmtTime.format(new Date(i.kickoffAt))}</b><span>${esc(leagueName(i.league, true))}</span></span>
       <span class="teams">${esc(i.home)}<i>–</i>${esc(i.away)}</span>
@@ -290,15 +292,38 @@ function renderPreview() {
   updatePlan();
 }
 
+async function loadQuotes(btn) {
+  if (!lastPreview?.items.length) return;
+  const label = btn.textContent, status = $("#quotes-status");
+  btn.disabled = true; btn.textContent = "Cerco le quote…"; status.textContent = "";
+  try {
+    const data = await getJson(`/api/quotes?ids=${lastPreview.items.map((i) => encodeURIComponent(i.id)).join(",")}&n=${state.n}`);
+    for (const [id, q] of Object.entries(data.quotes)) pvMarket.set(id, q);
+    const bets = lastPreview.items.filter(isBetItem).length;
+    const parts = [`Quote di mercato per ${Object.keys(data.quotes).length} BET su ${bets}`];
+    if (data.usage?.spent) parts.push(`spesi ${data.usage.spent} crediti`);
+    if (data.usage?.remaining != null) parts.push(`${data.usage.remaining} crediti residui nel mese`);
+    if (data.unmatched?.length) parts.push(`${data.unmatched.length} senza quota (partita non trovata o mercato non offerto)`);
+    if (data.skipped) parts.push(`${data.skipped} rinviate (massimo ${12} per volta)`);
+    if (data.blocked) parts.push(data.blocked);
+    if (data.errors?.length) parts.push(data.errors[0]);
+    status.textContent = `${parts.join(" · ")}. Sono quote di bookmaker europei: confrontale con quelle del tuo.`;
+    updatePlan();
+  } catch (e) { status.textContent = `Quote non disponibili: ${e.message}`; }
+  btn.textContent = label; btn.disabled = false;
+}
+
 function planLine(row) {
   if (!row?.eff) return `<em class="pv-no">Nessuna puntata consigliata${row?.plan?.need ? `: servirebbe una quota di almeno ${num(row.plan.need)}` : ""}.</em>`;
   const { plan: p, eff: e } = row;
-  if (p.play) return `Quota ${num(p.odds)} <small>${p.source}</small> · punta <b>${eur(e.stake)}</b> · vincita netta <b>${eur(e.win)}</b>${e.capped ? " <small>(ridotta dal tetto di esposizione)</small>" : ""}`;
-  return `Quota ${p.source} ${num(p.odds)} sotto la minima: gioca <b>solo se</b> il bookmaker paga almeno <b>${num(p.need)}</b> → punta <b>${eur(e.stake)}</b>, vincita netta <b>${eur(e.win)}</b>`;
+  const q = row.quote && p.source === "mercato" ? ` <small>(mediana di ${row.quote.books} bookmaker · migliore ${num(row.quote.best)} su ${esc(row.quote.bestBookmaker ?? "—")})</small>` : "";
+  if (p.play) return `Quota ${num(p.odds)} <small>${p.source}</small>${q} · punta <b>${eur(e.stake)}</b> · vincita netta <b>${eur(e.win)}</b>${e.capped ? " <small>(ridotta dal tetto di esposizione)</small>" : ""}`;
+  return `Quota ${p.source} ${num(p.odds)}${q} sotto la minima: gioca <b>solo se</b> il bookmaker paga almeno <b>${num(p.need)}</b> → punta <b>${eur(e.stake)}</b>, vincita netta <b>${eur(e.win)}</b>`;
 }
 function updatePlan() {
   if (!lastPreview?.items.length) return;
-  lastPlan = computePlan(lastPreview, bankroll, pvOdds);
+  lastPlan = computePlan(lastPreview, bankroll, pvOdds, pvMarket);
+  for (const el of document.querySelectorAll("[data-pv-odds]")) { const m = pvMarket.get(el.dataset.pvOdds); if (m) el.placeholder = `mercato ${num(m.median)}`; }
   for (const el of document.querySelectorAll("[data-plan]")) el.innerHTML = planLine(lastPlan.rows.get(el.dataset.plan));
   const t = lastPlan.totals, a = lastPlan.acc;
   const pctBank = bankroll > 0 ? t.stake / bankroll : 0;
@@ -307,7 +332,7 @@ function updatePlan() {
     : a.eff ? `Multipla (${a.legs} gare): solo se la quota combinata è almeno ${num(a.plan.need)} → punta ${eur(a.eff.stake)}, vincita netta ${eur(a.eff.win)}`
     : "Multipla: nessuna puntata consigliata.") : "";
   $("#pv-totals").innerHTML = t.count
-    ? `<b>${lastPlan.hypothetical ? "Piano se trovi almeno le quote minime" : "Piano"}</b>: ${t.count} giocate, puntata totale <b>${eur(t.stake)}</b> (${pct(pctBank, 1)} del budget), vincita netta se entrano tutte <b>${eur(t.win)}</b>, esito atteso prudente ${eur(t.ev)}.${accLine ? `<br>${accLine}` : ""}${lastPlan.hypothetical ? `<br><small>Le quote reali non sono note: con le quote stimate i BET non hanno margine. Inserisci la quota del bookmaker su ogni gara per il piano definitivo.</small>` : ""}`
+    ? `<b>${lastPlan.hypothetical ? "Piano se trovi almeno le quote minime" : "Piano"}</b>: ${t.count} giocate, puntata totale <b>${eur(t.stake)}</b> (${pct(pctBank, 1)} del budget), vincita netta se entrano tutte <b>${eur(t.win)}</b>, esito atteso prudente ${eur(t.ev)}.${accLine ? `<br>${accLine}` : ""}${lastPlan.hypothetical ? `<br><small>Dove la quota è solo stimata i BET non hanno margine. Premi “Preleva quote reali” o inserisci la quota del tuo bookmaker.</small>` : ""}`
     : `Nessuna puntata consigliata con queste quote. Inserisci la quota reale del bookmaker oppure non giocare.`;
 }
 
@@ -377,6 +402,7 @@ document.addEventListener("click", (e) => {
   const open = t.closest("[data-open]"); if (open) openDetail(open.dataset.open);
   if (t.closest("#copy-preview")) navigator.clipboard?.writeText(previewText(lastPreview)).then(() => { t.textContent = "Copiato"; });
   if (t.closest("#share-pdf")) sharePdf(t.closest("#share-pdf"));
+  if (t.closest("#load-quotes")) loadQuotes(t.closest("#load-quotes"));
 });
 // <details> non propaga "toggle": lo ascoltiamo in cattura per ricordare quali nazioni sono aperte.
 document.addEventListener("toggle", (e) => {

@@ -16,18 +16,21 @@ const eff = (x) => {
  * Restituisce per ogni BET { plan, eff }: `plan` è il calcolo alla quota usata (inserita o stimata),
  * `eff` la puntata consigliata dopo il tetto di esposizione totale.
  */
-export function computePlan(pv, bankroll, oddsMap = new Map()) {
+export function computePlan(pv, bankroll, oddsMap = new Map(), marketMap = new Map()) {
+  // Priorità: quota inserita a mano > quota di mercato (The Odds API, mediana) > quota stimata.
+  const quoteOf = (id) => oddsMap.get(id) ?? marketMap.get(id)?.median ?? null;
+  const sourceOf = (id) => (oddsMap.has(id) ? "inserita" : marketMap.has(id) ? "mercato" : null);
   const bets = pv.items.filter(isBetItem);
-  const singles = bets.map((i) => planFor(i.pick, oddsMap.get(i.id) ?? null, bankroll));
+  const singles = bets.map((i) => planFor(i.pick, quoteOf(i.id), bankroll, { source: sourceOf(i.id) }));
   const byId = new Map(bets.map((i) => [i.id, i]));
   const legs = (pv.summary.accumulator?.ids ?? []).map((id) => byId.get(id)).filter(Boolean)
-    .map((i) => ({ pLow: i.pick.pLow, p: i.pick.p, odds: oddsMap.get(i.id) ?? null }));
+    .map((i) => ({ pLow: i.pick.pLow, p: i.pick.p, odds: quoteOf(i.id) }));
   const acc = legs.length >= 2 ? accumulatorPlan(legs, bankroll) : null;
   const raw = [...singles, acc];
   const capped = applyCap(raw.map(eff), bankroll);
   return {
     bankroll,
-    rows: new Map(bets.map((i, k) => [i.id, { plan: singles[k], eff: capped[k] }])),
+    rows: new Map(bets.map((i, k) => [i.id, { plan: singles[k], eff: capped[k], quote: marketMap.get(i.id) ?? null }])),
     acc: acc ? { plan: acc, eff: capped[singles.length], legs: legs.length } : null,
     totals: totalsOf(capped),
     hypothetical: raw.some((x) => x && !x.play), // almeno una giocata dipende da una quota da trovare
