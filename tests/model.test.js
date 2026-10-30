@@ -4,7 +4,7 @@ import {
   MODEL, analyzeMatch, buildAccumulator, applyCap, accumulatorPlan, buildContext, estimateOdds, isPreferred, planFor, stakePlan, totalsOf, poissonPmf, probabilities, scoreMatrix, stressedProbabilities, verdictFor,
 } from "../functions/api/model.js";
 import { matchEvent, nameSimilarity, pricesFor, summarizePrices } from "../functions/api/_odds.js";
-import { computePlan } from "../src/plan.js";
+import { computePlan, multipleSets } from "../src/plan.js";
 import { CONTINENTS, LEAGUES, syncDue, TTL } from "../functions/api/_lib.js";
 
 const day = 86400e3;
@@ -177,4 +177,19 @@ test("la quota di mercato ha priorità sulla stima, quella inserita su entrambe"
   assert.equal(mk.rows.get("g1").plan.odds, 2.1);
   assert.equal(user.rows.get("g1").plan.source, "inserita");
   assert.equal(user.rows.get("g1").plan.odds, 1.9);
+});
+
+test("multiple: tre proposte distinte, singole separate", () => {
+  const mk = (i, pLow) => ({ id: `g${i}`, kickoffAt: `2026-10-31T1${i}:00:00Z`, home: "A", away: "B", confidence: "buona", pick: { verdict: "BET", label: "Over 2,5", pLow, p: pLow + 0.05, minOdds: 1.6, estOdds: 1.5 } });
+  const sizes = (n) => multipleSets(Array.from({ length: n }, (_, i) => mk(i, 0.7 - i * 0.02))).map((x) => x.items.length);
+  assert.deepEqual([sizes(1), sizes(2), sizes(3), sizes(4), sizes(7)], [[], [2], [2, 3], [2, 3, 4], [2, 3, 5]]);
+  const items = Array.from({ length: 4 }, (_, i) => mk(i, 0.7 - i * 0.02));
+  const plan = computePlan({ items, summary: {} }, 100, new Map(items.map((i) => [i.id, 1.9])));
+  assert.equal(plan.multiples.length, 3);
+  assert.equal(plan.rows.size, 4);
+  const sicura = plan.multiples[0];
+  assert.ok(Math.abs(sicura.plan.odds - 1.9 * 1.9) < 0.01);       // quota combinata = prodotto
+  assert.ok(sicura.items.every((i) => i.pick.pLow >= 0.66));      // le più probabili
+  assert.ok(plan.totals.stake <= 100 * 0.2 + 0.5 * 7);            // tetto di esposizione
+  assert.ok(plan.totalsMultiples.count + plan.totalsSingles.count === plan.totals.count);
 });
