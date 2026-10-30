@@ -47,6 +47,12 @@ Fonte unica del codice: `functions/api/model.js` (tutte le costanti sono lì e c
 
 Limiti: soglie non calibrate su uno storico lungo; nessuna quota reale, infortuni o formazioni; API Ninjas non fornisce corner né quote, quindi i mercati corner non sono calcolabili; copre solo 8 competizioni (5 campionati top europei, Champions, Europa League, MLS), nessuna serie minore. Senza la quota del bookmaker "BET" significa solo "alta probabilità rispetto alla norma", non "scommessa di valore".
 
+## Infortuni, squalifiche e probabili formazioni (scraping)
+
+Migrazione: `supabase/migrations/202610310001_availability.sql` (crea `match_availability` e `scrape_state`). `/api/availability?ids=…` legge la cache e, solo per partite entro 48 ore, riscarica le fonti: ogni 60 minuti tra 24 e 48 ore dal match, ogni 30 minuti nelle ultime 24 ore, una richiesta per fonte e campionato (non per partita). Fonti: Transfermarkt (Serie A, Premier, LaLiga, Bundesliga, Ligue 1), PremierInjuries (Premier), probabili formazioni Sky Sport (Serie A). Se una fonte fallisce o blocca, l'errore va in `scrape_state` con backoff 10 min → 6 ore e l'app usa il modello statistico standard. Parser puri in `functions/api/_sources.js`, politica e fusione in `_scrape.js`.
+
+Verifica dal sito pubblicato (nessuna scrittura su Supabase): `curl -H "x-sync-secret: $SYNC_SECRET" "https://<sito>/api/scrape-debug?source=transfermarkt&league=seriea"`. Opzionale `LINEUPS_URL_SERIEA` per fissare a mano la pagina delle formazioni.
+
 ## Sviluppo
 
 ```bash
