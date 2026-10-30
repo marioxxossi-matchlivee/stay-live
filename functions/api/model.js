@@ -316,7 +316,7 @@ export function accumulatorPlan(legs, bankroll) {
   const pLow = prod((l) => l.pLow), p = prod((l) => l.p);
   const allReal = legs.every((l) => Number.isFinite(l.odds) && l.odds > 1);
   const odds = round(prod((l) => (Number.isFinite(l.odds) && l.odds > 1 ? l.odds : estimateOdds(l.p))), 2);
-  return planFor({ pLow, p }, odds, bankroll, { maxPct: MODEL.maxAccStakePct, source: allReal ? "inserita" : "stimata" });
+  return planFor({ pLow, p }, odds, bankroll, { maxPct: MODEL.maxAccStakePct, source: allReal ? "reale" : "stimata" });
 }
 
 /** Se la somma delle puntate supera maxTotalPct del budget, le riduce tutte nella stessa proporzione. */
