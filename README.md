@@ -23,6 +23,12 @@ Nel resoconto (preview) inserisci il **budget**; per ogni BET puoi scrivere la *
 
 Attenzione: una quota stimata dal modello non può creare un vantaggio (il margine del bookmaker lo toglie per costruzione). Il piano è affidabile solo con quote reali; nessuna stima garantisce un guadagno.
 
+## Quote reali (The Odds API, piano gratuito)
+
+Nel resoconto il pulsante **Preleva quote reali** chiede a The Odds API la quota del solo mercato consigliato (BET) di ogni partita scelta. Per non sprecare i 500 crediti mensili: l'elenco eventi è gratuito, si spende 1 credito per partita e mercato (`totals`+`alternate_totals` contano 1 se ne risponde uno solo), le quote restano in cache 3 ore su Supabase (`odds_quotes`), al massimo 12 partite per richiesta e stop sotto 40 crediti residui (`odds_usage`). Il piano usa la **mediana** dei bookmaker (mostra anche la migliore); priorità: quota inserita a mano > mercato > stima.
+
+Setup: crea la chiave su the-odds-api.com, aggiungi `ODDS_API_KEY` (e opzionale `ODDS_REGIONS`, default `eu`) alle variabili di Cloudflare, applica `supabase/migrations/202610300001_odds_quotes.sql` (già applicata sul tuo progetto). I bookmaker della regione `eu` non sono necessariamente quelli italiani ADM: controlla sempre la quota sul tuo.
+
 ## Come arrivano i dati
 
 `/api/fixtures` legge da Supabase. Se i dati di un campionato sono vecchi, la pagina chiama `/api/sync?league=…`, che interroga API Ninjas **solo se serve**: ogni 6 ore, oppure ogni 15 minuti per i campionati con partite iniziate da meno di 4 ore o in partenza. Un sync costa circa 8 chiamate per campionato; con dati freschi ne costa 0, quindi chiunque apra il sito non può consumare la quota. Errori: nuovo tentativo dopo 2 minuti. Nessun dato demo: se qualcosa manca viene mostrato l'errore reale.
