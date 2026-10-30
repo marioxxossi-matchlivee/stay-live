@@ -252,27 +252,34 @@ async function makePreview() {
   } finally { $("#make-preview").disabled = false; }
 }
 function previewText(pv) {
-  const lines = pv.items.map((i) => {
-    const t = fmtTime.format(new Date(i.kickoffAt));
-    const p = i.pick;
-    return p && i.confidence !== "insufficiente"
-      ? `${t} ${i.home} – ${i.away} → ${p.verdict} ${p.label} (prudente ${pct(p.pLow)}, quota min ${num(p.minOdds)})${lastPlan?.rows.get(i.id)?.eff ? ` · punta ${eur(lastPlan.rows.get(i.id).eff.stake)}` : ""}`
-      : `${t} ${i.home} – ${i.away} → EVITA (dati insufficienti)`;
-  });
-  const acc = pv.summary.accumulator;
-  const accLine = acc ? `\nMultipla (${acc.ids.length} gare): prob. prudente ${pct(acc.pLow)}, quota minima ${num(acc.minOdds)}` : "";
-  return `Stay Live · preview ${dayParts(dayKey(pv.items[0].kickoffAt)).long}\n${lines.join("\n")}${accLine}\nStime statistiche, non garanzie.`;
+  const when = (i) => fmtTime.format(new Date(i.kickoffAt));
+  const stakeOf = (e) => (e ? ` · punta ${eur(e.stake)}` : "");
+  const multi = (lastPlan?.multiples ?? []).map((m) => `${m.label} (${m.items.length} gare): ${m.items.map((i) => `${i.home}-${i.away} ${i.pick.label}`).join(" + ")} · prob. prudente ${pct(m.plan.pLow)} · quota ${num(m.plan.odds)} ${m.plan.source}${stakeOf(m.eff)}${m.eff ? ` · vincita netta ${eur(m.eff.win)}` : ""}`);
+  const singles = pv.items.filter(isBetItem).map((i) => `${when(i)} ${i.home} – ${i.away} → ${i.pick.label} (prudente ${pct(i.pick.pLow)}, quota min ${num(i.pick.minOdds)})${stakeOf(lastPlan?.rows.get(i.id)?.eff)}`);
+  const skip = pv.items.filter((i) => !isBetItem(i)).map((i) => `${when(i)} ${i.home} – ${i.away}`);
+  return [`Stay Live · preview ${dayParts(dayKey(pv.items[0].kickoffAt)).long}`,
+    multi.length ? `\nMULTIPLE\n${multi.join("\n")}` : "", singles.length ? `\nSINGOLE\n${singles.join("\n")}` : "", skip.length ? `\nDA EVITARE\n${skip.join("\n")}` : "",
+    "\nStime statistiche, non garanzie."].filter(Boolean).join("\n");
+}
+function singleCard(i) {
+  return `<article class="pv-card${isBetItem(i) ? "" : " is-skip"}">
+      <span class="meta"><b>${fmtTime.format(new Date(i.kickoffAt))}</b><span>${esc(leagueName(i.league, true))}</span></span>
+      <span class="teams">${esc(i.home)}<i>–</i>${esc(i.away)}</span>
+      ${i.pick ? pickChip({ ...i.pick, confidence: i.confidence, sample: i.sample }) : ""}
+      <span class="pv-more"><span>Quota minima ${num(i.pick?.minOdds)}</span><span>Gol attesi ${num(i.lambda.total)}</span><span>Più probabile ${esc(i.topScores[0]?.score ?? "—")}</span>${i.alternatives[0] ? `<span>Alternativa: ${esc(i.alternatives[0].label)} ${pct(i.alternatives[0].pLow)}</span>` : ""}</span>
+      ${isBetItem(i) ? `<span class="pv-stake"><span data-plan="${esc(i.id)}"></span><label class="pv-odds">Quota reale <input inputmode="decimal" data-pv-odds="${esc(i.id)}" placeholder="stima ${num(i.pick.estOdds)}" aria-label="Quota reale per ${esc(i.home)} – ${esc(i.away)}" /></label></span>` : ""}
+      <button class="link" type="button" data-open="${esc(i.id)}" style="justify-self:start">Vedi il calcolo</button>
+    </article>`;
 }
 function renderPreview() {
   const pv = lastPreview;
   if (!pv.items.length) { $("#preview-body").innerHTML = `<p class="empty">Nessuna partita trovata.</p>`; return; }
-  const acc = pv.summary.accumulator;
-  const byId = new Map(pv.items.map((i) => [i.id, i]));
+  const bets = pv.items.filter(isBetItem), rest = pv.items.filter((i) => !isBetItem(i));
   $("#preview-body").innerHTML = `
     <h2 class="d-title">Preview delle partite scelte</h2>
     <div class="pv-sum">
       <strong>${pv.summary.bets} BET su ${pv.summary.selected} partite</strong>
-      <span>${acc ? `Multipla più solida: ${acc.ids.map((id) => esc(byId.get(id).home)).join(" + ")}. Probabilità prudente ${pct(acc.pLow)}, quota minima ${num(acc.minOdds)}.` : "Servono almeno 2 BET per proporre una multipla."}</span>
+      <span>Prima le multiple, poi le singole consigliate, infine le partite da evitare.</span>
     </div>
     <div class="pv-bank">
       <label>Budget <input id="bankroll" inputmode="decimal" value="${esc(String(bankroll).replace(".", ","))}" aria-label="Budget in euro" /> €</label>
@@ -280,16 +287,29 @@ function renderPreview() {
     </div>
     <div class="pv-actions"><button class="primary" id="share-pdf" type="button">Condividi PDF</button><button class="ghost" id="load-quotes" type="button">Preleva quote reali</button><button class="ghost" id="copy-preview" type="button">Copia testo</button></div>
     <p class="pv-qstatus" id="quotes-status" aria-live="polite"></p>
-    ${pv.items.map((i) => `<article class="pv-card">
-      <span class="meta"><b>${fmtTime.format(new Date(i.kickoffAt))}</b><span>${esc(leagueName(i.league, true))}</span></span>
-      <span class="teams">${esc(i.home)}<i>–</i>${esc(i.away)}</span>
-      ${i.pick ? pickChip({ ...i.pick, confidence: i.confidence, sample: i.sample }) : ""}
-      <span class="pv-more"><span>Quota minima ${num(i.pick?.minOdds)}</span><span>Gol attesi ${num(i.lambda.total)}</span><span>Più probabile ${esc(i.topScores[0]?.score ?? "—")}</span>${i.alternatives[0] ? `<span>Alternativa: ${esc(i.alternatives[0].label)} ${pct(i.alternatives[0].pLow)}</span>` : ""}</span>
-      ${isBetItem(i) ? `<span class="pv-stake"><span data-plan="${esc(i.id)}"></span><label class="pv-odds">Quota reale <input inputmode="decimal" data-pv-odds="${esc(i.id)}" placeholder="stima ${num(i.pick.estOdds)}" aria-label="Quota reale per ${esc(i.home)} – ${esc(i.away)}" /></label></span>` : ""}
-      <button class="link" type="button" data-open="${esc(i.id)}" style="justify-self:start">Vedi il calcolo</button>
-    </article>`).join("")}
+    <section class="pv-section pv-multi-sec"><h3><span>Multiple consigliate</span></h3><div id="pv-multiples"></div></section>
+    <section class="pv-section"><h3><span>Singole consigliate</span><small>${bets.length}</small></h3>${bets.length ? bets.map(singleCard).join("") : `<p class="empty">Nessun BET tra le partite scelte.</p>`}</section>
+    ${rest.length ? `<section class="pv-section pv-skip-sec"><h3><span>Da evitare</span><small>${rest.length}</small></h3>${rest.map(singleCard).join("")}</section>` : ""}
     <p class="foot">Le quote minime sono quelle sotto cui non c’è margine secondo il modello. Controlla sempre la quota reale prima di giocare. Nessuna stima garantisce un guadagno: gioca solo ciò che puoi permetterti di perdere.</p>`;
   updatePlan();
+}
+
+function multiLine(m) {
+  const { plan: p, eff: e } = m;
+  if (!e) return `<em class="pv-no">Nessuna puntata consigliata${p.need ? `: servirebbe una quota combinata di almeno ${num(p.need)}` : ""}.</em>`;
+  if (p.play) return `Quota ${num(p.odds)} <small>${p.source}</small> · punta <b>${eur(e.stake)}</b> · vincita netta <b>${eur(e.win)}</b>${e.capped ? " <small>(ridotta dal tetto di esposizione)</small>" : ""}`;
+  return `Quota ${p.source} ${num(p.odds)} sotto la minima: gioca <b>solo se</b> la quota combinata è almeno <b>${num(p.need)}</b> → punta <b>${eur(e.stake)}</b>, vincita netta <b>${eur(e.win)}</b>`;
+}
+function renderMultiples(plan) {
+  const el = $("#pv-multiples");
+  if (!plan.multiples.length) { el.innerHTML = `<p class="empty">Servono almeno 2 BET per comporre una multipla.</p>`; return; }
+  el.innerHTML = plan.multiples.map((m) => `<article class="pv-multi-card">
+      <header><b>${esc(m.label)}</b><span class="pill">${m.items.length} gare</span></header>
+      <p class="note">${esc(m.note)}</p>
+      <ol class="legs">${m.legs.map((l) => `<li><span class="t">${fmtTime.format(new Date(l.item.kickoffAt))}</span><span class="m">${esc(l.item.home)} – ${esc(l.item.away)}</span><b>${esc(l.item.pick.label)}</b><small>${num(l.odds)} ${esc(l.source)}</small></li>`).join("")}</ol>
+      <div class="mstats"><span>Probabilità prudente <b>${pct(m.plan.pLow)}</b></span><span>Quota minima <b>${num(m.minOdds)}</b></span></div>
+      <div class="pv-stake">${multiLine(m)}</div>
+    </article>`).join("");
 }
 
 async function loadQuotes(btn) {
@@ -322,17 +342,17 @@ function planLine(row) {
 }
 function updatePlan() {
   if (!lastPreview?.items.length) return;
-  lastPlan = computePlan(lastPreview, bankroll, pvOdds, pvMarket);
-  for (const el of document.querySelectorAll("[data-pv-odds]")) { const m = pvMarket.get(el.dataset.pvOdds); if (m) el.placeholder = `mercato ${num(m.median)}`; }
-  for (const el of document.querySelectorAll("[data-plan]")) el.innerHTML = planLine(lastPlan.rows.get(el.dataset.plan));
-  const t = lastPlan.totals, a = lastPlan.acc;
-  const pctBank = bankroll > 0 ? t.stake / bankroll : 0;
-  const accLine = a ? (a.plan.play
-    ? `Multipla (${a.legs} gare): quota ${num(a.plan.odds)} ${a.plan.source} · punta ${eur(a.eff.stake)} · vincita netta ${eur(a.eff.win)}`
-    : a.eff ? `Multipla (${a.legs} gare): solo se la quota combinata è almeno ${num(a.plan.need)} → punta ${eur(a.eff.stake)}, vincita netta ${eur(a.eff.win)}`
-    : "Multipla: nessuna puntata consigliata.") : "";
+  const plan = lastPlan = computePlan(lastPreview, bankroll, pvOdds, pvMarket);
+  for (const el of document.querySelectorAll("[data-pv-odds]")) {
+    const m = pvMarket.get(el.dataset.pvOdds);
+    if (m) el.placeholder = `mercato ${num(m.median)}`;
+  }
+  for (const el of document.querySelectorAll("[data-plan]")) el.innerHTML = planLine(plan.rows.get(el.dataset.plan));
+  renderMultiples(plan);
+  const t = plan.totals, ts = plan.totalsSingles, tm = plan.totalsMultiples;
+  const line = (label, x) => (x.count ? `${label}: ${x.count} ${x.count === 1 ? "giocata" : "giocate"}, puntata <b>${eur(x.stake)}</b>, vincita netta se entrano tutte <b>${eur(x.win)}</b>` : `${label}: nessuna puntata consigliata`);
   $("#pv-totals").innerHTML = t.count
-    ? `<b>${lastPlan.hypothetical ? "Piano se trovi almeno le quote minime" : "Piano"}</b>: ${t.count} giocate, puntata totale <b>${eur(t.stake)}</b> (${pct(pctBank, 1)} del budget), vincita netta se entrano tutte <b>${eur(t.win)}</b>, esito atteso prudente ${eur(t.ev)}.${accLine ? `<br>${accLine}` : ""}${lastPlan.hypothetical ? `<br><small>Dove la quota è solo stimata i BET non hanno margine. Premi “Preleva quote reali” o inserisci la quota del tuo bookmaker.</small>` : ""}`
+    ? `<b>${plan.hypothetical ? "Piano se trovi almeno le quote minime" : "Piano"}</b><br>${line("Multiple", tm)}<br>${line("Singole", ts)}<br>Totale puntato <b>${eur(t.stake)}</b> (${pct(bankroll > 0 ? t.stake / bankroll : 0, 1)} del budget) · esito atteso prudente ${eur(t.ev)}${plan.hypothetical ? `<br><small>Dove la quota è solo stimata i BET non hanno margine. Premi “Preleva quote reali” o inserisci la quota del tuo bookmaker.</small>` : ""}`
     : `Nessuna puntata consigliata con queste quote. Inserisci la quota reale del bookmaker oppure non giocare.`;
 }
 
@@ -379,7 +399,7 @@ function renderMethod() {
     <li><b>Probabilità prudente</b><span>Il campione è piccolo, quindi le attese gol sono incerte di circa ±${num(M.uncertainty)} ÷ √partite. Si ricalcola in 5 scenari e si tiene il peggiore.</span></li>
     <li><b>BET o EVITA</b><span>BET se il campione è di almeno ${M.betSample} partite, la probabilità prudente è almeno ${pct(M.betThreshold)} e supera di ${M.minEdge * 100} punti la frequenza storica di quell’esito nel campionato. La <b>quota minima</b> è ${num(M.edgeMargin)} ÷ probabilità prudente. Con la tua quota: BET se probabilità prudente × quota ≥ ${num(M.edgeMargin)}.</span></li>
     <li><b>Mercati preferiti</b><span>Tra i BET della stessa partita, Over/Under sui gol passano davanti a 1X2, doppia chance ed entrambe segnano (a parità di BET, non cambia la soglia). I corner non sono calcolabili con i dati disponibili.</span></li>
-    <li><b>Multipla</b><span>Fino a 4 BET di partite diverse con le probabilità prudenti più alte; la probabilità combinata è il prodotto (partite considerate indipendenti).</span></li>
+    <li><b>Multiple</b><span>Tre proposte tra i BET di partite diverse: sicura (le 2 più probabili), equilibrata (3) e ambiziosa (fino a 5). La probabilità combinata è il prodotto (partite considerate indipendenti) e la quota combinata il prodotto delle quote: anche il margine del bookmaker si moltiplica, per questo le puntate sulle multiple sono più basse.</span></li>
   </ol>
   <p><b>Limiti.</b> Le soglie sono scelte ragionevoli ma non calibrate su uno storico lungo. I bookmaker conoscono molto più di questo modello e applicano un margine: senza la quota reale, un BET significa solo “alta probabilità”, non “scommessa di valore”.</p></div>`;
 }

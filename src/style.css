@@ -159,3 +159,23 @@ h4{font:700 14px var(--body);color:var(--mute);margin:20px 0 8px}
 .pv-odds{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px}
 .pv-no{font-style:normal;color:var(--mute)}
 .pv-qstatus{margin:-6px 0 12px;font-size:13px;color:var(--mute)}
+
+/* Resoconto: sezioni separate (multiple / singole / da evitare) */
+.pv-section{margin:22px 0 6px}
+.pv-section>h3{display:flex;align-items:center;justify-content:space-between;gap:8px;font:800 17px var(--head);margin:0 0 10px;padding-left:10px;border-left:4px solid var(--ink)}
+.pv-section>h3 small{font:600 13px var(--body);color:var(--mute)}
+.pv-multi-sec>h3{border-left-color:#2f5bea;color:#1d3a8a}
+.pv-skip-sec>h3{border-left-color:#b9c2cf;color:var(--mute)}
+.pv-card.is-skip{opacity:.72}
+.pv-multi-card{background:#f3f6ff;border:1px solid #c9d6ee;border-left:4px solid #2f5bea;border-radius:14px;padding:12px 14px;margin-bottom:10px;display:grid;gap:8px}
+.pv-multi-card header{display:flex;align-items:center;justify-content:space-between}
+.pv-multi-card header b{font:800 17px var(--head);color:#1d3a8a}
+.pv-multi-card .pill{background:#2f5bea;color:#fff;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:700}
+.pv-multi-card .note{margin:0;font-size:13px;color:var(--mute)}
+.pv-multi-card .legs{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.pv-multi-card .legs li{display:grid;grid-template-columns:auto 1fr auto;gap:2px 8px;align-items:baseline;font-size:14px}
+.pv-multi-card .legs .t{color:var(--mute);font-size:12px}
+.pv-multi-card .legs .m{font-weight:700}
+.pv-multi-card .legs b{color:#0b5c38;white-space:nowrap}
+.pv-multi-card .legs small{grid-column:2/4;color:var(--mute)}
+.pv-multi-card .mstats{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--ink-2)}
