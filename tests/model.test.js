@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   MODEL, analyzeMatch, buildAccumulator, applyCap, accumulatorPlan, buildContext, estimateOdds, isPreferred, planFor, stakePlan, totalsOf, poissonPmf, probabilities, scoreMatrix, stressedProbabilities, verdictFor,
 } from "../functions/api/model.js";
+import { matchEvent, nameSimilarity, pricesFor, summarizePrices } from "../functions/api/_odds.js";
+import { computePlan } from "../src/plan.js";
 import { CONTINENTS, LEAGUES, syncDue, TTL } from "../functions/api/_lib.js";
 
 const day = 86400e3;
@@ -127,4 +129,52 @@ test("tetto di esposizione totale e multipla", () => {
   const acc = accumulatorPlan([{ pLow: 0.65, p: 0.7 }, { pLow: 0.62, p: 0.66 }, { pLow: 0.6, p: 0.64 }], 100);
   assert.ok(Math.abs(acc.pLow - 0.65 * 0.62 * 0.6) < 1e-9);
   assert.equal(accumulatorPlan([{ pLow: 0.6, p: 0.6 }], 100), null);
+});
+
+test("abbinamento squadre tra API Ninjas e The Odds API", () => {
+  assert.ok(nameSimilarity("Internazionale", "Inter Milan") >= 1);
+  assert.ok(nameSimilarity("Hellas Verona", "Verona") >= 1);
+  assert.ok(nameSimilarity("Atlético Madrid", "Atletico Madrid") >= 1);
+  assert.ok(nameSimilarity("Lazio", "Roma") < 0.5);
+  const events = [
+    { id: "e1", commence_time: "2026-10-31T18:45:00Z", home_team: "Inter Milan", away_team: "Fiorentina" },
+    { id: "e2", commence_time: "2026-10-31T18:45:00Z", home_team: "Napoli", away_team: "Lazio" },
+    { id: "e3", commence_time: "2026-11-01T14:00:00Z", home_team: "AC Milan", away_team: "Torino" },
+  ];
+  assert.equal(matchEvent({ kickoff_at: "2026-10-31T18:45:00Z", home_name: "Internazionale", away_name: "Fiorentina" }, events).id, "e1");
+  assert.equal(matchEvent({ kickoff_at: "2026-10-31T18:45:00Z", home_name: "Napoli", away_name: "SS Lazio" }, events).id, "e2");
+  assert.equal(matchEvent({ kickoff_at: "2026-10-31T18:45:00Z", home_name: "Juventus", away_name: "Genoa" }, events), null);
+});
+
+test("lettura delle quote per mercato e mediana", () => {
+  const ev = { home_team: "Inter Milan", away_team: "Fiorentina", bookmakers: [
+    { key: "a", title: "Alfa", markets: [{ key: "h2h", outcomes: [{ name: "Inter Milan", price: 1.5 }, { name: "Draw", price: 4.2 }, { name: "Fiorentina", price: 6 }] },
+      { key: "totals", outcomes: [{ name: "Over", point: 2.5, price: 1.8 }, { name: "Under", point: 2.5, price: 2 }] }] },
+    { key: "b", title: "Beta", markets: [{ key: "h2h", outcomes: [{ name: "Inter Milan", price: 1.55 }, { name: "Draw", price: 4 }, { name: "Fiorentina", price: 5.5 }] },
+      { key: "alternate_totals", outcomes: [{ name: "Over", point: 1.5, price: 1.3 }, { name: "Over", point: 2.5, price: 1.9 }] },
+      { key: "btts", outcomes: [{ name: "Yes", price: 1.85 }, { name: "No", price: 1.95 }] },
+      { key: "double_chance", outcomes: [{ name: "Inter Milan or Draw", price: 1.15 }, { name: "Fiorentina or Draw", price: 2.6 }] }] },
+    { key: "c", title: "Gamma", markets: [{ key: "h2h", outcomes: [{ name: "Inter Milan", price: 1.6 }, { name: "Draw", price: 4 }, { name: "Fiorentina", price: 5 }] }] },
+  ] };
+  const home = summarizePrices(pricesFor("home", ev));
+  assert.deepEqual([home.median, home.best, home.bestBookmaker, home.books], [1.55, 1.6, "Gamma", 3]);
+  assert.equal(summarizePrices(pricesFor("over25", ev)).books, 2);
+  assert.equal(pricesFor("over15", ev)[0].price, 1.3);
+  assert.equal(pricesFor("btts", ev)[0].price, 1.85);
+  assert.equal(pricesFor("dc1x", ev)[0].price, 1.15);
+  assert.equal(pricesFor("dcx2", ev)[0].price, 2.6);
+  assert.equal(pricesFor("under35", ev).length, 0);
+});
+
+test("la quota di mercato ha priorità sulla stima, quella inserita su entrambe", () => {
+  const pick = { verdict: "BET", label: "Over 2,5", pLow: 0.62, p: 0.66, minOdds: 1.66, estOdds: 1.43 };
+  const pv = { items: [{ id: "g1", pick, confidence: "buona", home: "A", away: "B" }], summary: { accumulator: null } };
+  const est = computePlan(pv, 100);
+  const mk = computePlan(pv, 100, new Map(), new Map([["g1", { median: 2.1, best: 2.2, bestBookmaker: "X", books: 5 }]]));
+  const user = computePlan(pv, 100, new Map([["g1", 1.9]]), new Map([["g1", { median: 2.1 }]]));
+  assert.equal(est.rows.get("g1").plan.source, "stimata");
+  assert.equal(mk.rows.get("g1").plan.source, "mercato");
+  assert.equal(mk.rows.get("g1").plan.odds, 2.1);
+  assert.equal(user.rows.get("g1").plan.source, "inserita");
+  assert.equal(user.rows.get("g1").plan.odds, 1.9);
 });
