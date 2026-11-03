@@ -5,14 +5,15 @@ import { analyzeMatch, buildContext, compactPick } from "./model.js";
 
 const COLUMNS = "game_id,league,round,kickoff_at,status,home_id,home_name,away_id,away_name,home_score,away_score,neutral_site";
 
-/** GET /api/fixtures: partite da 36 ore fa a 21 giorni avanti, con il consiglio rapido (BET / EVITA). */
+/** GET /api/fixtures: partite da 36 ore fa a 21 giorni avanti (variabile FIXTURES_DAYS, 3-30), con il consiglio rapido (BET / EVITA). */
 export async function onRequest({ env }) {
+  const days = Math.min(30, Math.max(3, Number(env.FIXTURES_DAYS) || 21));
   const missing = missingConfig(env);
   if (missing.length) return json({ error: `Variabili mancanti su Cloudflare: ${missing.join(", ")}` }, 503);
   try {
     const now = Date.now();
     const from = new Date(now - 36 * 3600e3).toISOString();
-    const to = new Date(now + 21 * 86400e3).toISOString();
+    const to = new Date(now + days * 86400e3).toISOString();
     const [window, finals, states] = await Promise.all([
       supabaseGetAll(env, "matches", { select: COLUMNS, season: `eq.${SEASON}`, and: `(kickoff_at.gte.${from},kickoff_at.lte.${to})`, order: "kickoff_at.asc,game_id.asc" }),
       loadFinals(env),

@@ -49,6 +49,7 @@ export async function onRequest({ request, env }) {
       const pick = a.pick;
       if (!pick || pick.verdict !== "BET" || a.sample < MODEL.betSample) continue;       // quota solo per i BET
       if (m.status !== "scheduled" || Date.parse(m.kickoff_at) < now) continue;          // non per partite già iniziate
+      if (!oddsKeyOf[m.league]) continue;                                                // campionato senza chiave The Odds API (quote da API-Football)
       const hit = cached.find((c) => c.game_id === m.game_id && c.selection === pick.key);
       if (hit && now - Date.parse(hit.captured_at) < QUOTE_TTL) {
         quotes[m.game_id] = shape(hit, pick.key, true);

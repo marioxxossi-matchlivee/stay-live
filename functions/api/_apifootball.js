@@ -1,0 +1,296 @@
+/**
+ * Client API-Football (v3) + cache su Supabase.
+ * Parte pura (testabile): stagione, chiave di cache, TTL, scelta della partita, id dei mercati, riepilogo quote.
+ * Parte con I/O: afFetch (una richiesta), loadSections (cache -> richieste solo se scadute), resolveFixture (abbinamento).
+ * Ogni errore diventa un campo `error` nella sezione: il chiamante non riceve mai eccezioni per colpa del provider.
+ */
+import { LEAGUES, supabaseGet, supabaseUpsert } from "./_lib.js";
+import { bestTeam } from "./_scrape.js";
+
+/** id campionato di Stay Live -> id campionato di API-Football (si definisce in LEAGUES, _lib.js). */
+export const AF_LEAGUES = Object.fromEntries(LEAGUES.filter((l) => l.afId).map((l) => [l.id, l.afId]));
+const CALENDAR_YEAR = new Set(LEAGUES.filter((l) => l.calendarYear).map((l) => l.id));
+const MIN = 60e3, H = 3600e3, D = 24 * H;
+
+export class AfError extends Error {
+  constructor(message, { status = null } = {}) { super(message); this.status = status; }
+}
+
+const iso = (ms) => new Date(ms).toISOString();
+const num = (x) => (x == null || x === "" || !Number.isFinite(Number(x)) ? null : Number(x));
+export const dayKey = (ms) => iso(ms).slice(0, 10);
+
+/** Stagione di API-Football: l'anno di inizio (da luglio in poi) per l'Europa, l'anno solare per la MLS. */
+export function seasonFor(league, kickoffIso) {
+  const d = new Date(kickoffIso);
+  const y = d.getUTCFullYear();
+  return CALENDAR_YEAR.has(league) ? y : d.getUTCMonth() >= 6 ? y : y - 1;
+}
+
+export const cacheKey = (endpoint, params = {}) =>
+  `${endpoint}?${Object.entries(params).filter(([, v]) => v != null && v !== "").sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}=${v}`).join("&")}`;
+
+/** Quanto resta valida una risposta in cache. Piu' vicino al match = piu' frequente; partita finita = dati stabili. */
+export function ttlFor(kind, { kickoff = null, now = Date.now(), finished = false } = {}) {
+  const toKo = kickoff == null ? Infinity : kickoff - now;
+  const live = toKo <= 3 * H && toKo >= -3 * H;
+  switch (kind) {
+    case "fixture": return finished ? 7 * D : live ? 5 * MIN : toKo <= 24 * H ? 30 * MIN : 2 * H;
+    case "fixture-list": return 6 * H;
+    case "injuries": return finished ? 7 * D : toKo <= 24 * H ? 30 * MIN : 60 * MIN;
+    case "predictions": return finished ? 7 * D : 6 * H;
+    case "odds": return finished ? 7 * D : toKo <= 6 * H ? 15 * MIN : toKo <= 24 * H ? 30 * MIN : 60 * MIN;
+    case "odds-bets": return 30 * D;
+    case "h2h": return 7 * D;
+    case "team-stats": return 12 * H;
+    case "standings": return 6 * H;
+    case "coverage": return D;
+    default: return H;
+  }
+}
+
+/** Richieste da fare per una partita (una per sezione della schermata di dettaglio). */
+export function planFor({ fixtureId, leagueId, season, homeId, awayId, kickoff, finished = false, now = Date.now(), betIds = { goals: 5, corners: 45 } }) {
+  const c = { kickoff, now, finished };
+  const plan = [
+    { section: "fixture", endpoint: "fixtures", params: { id: fixtureId }, ttl: ttlFor("fixture", c) },
+    { section: "injuries", endpoint: "injuries", params: { fixture: fixtureId }, ttl: ttlFor("injuries", c) },
+    { section: "predictions", endpoint: "predictions", params: { fixture: fixtureId }, ttl: ttlFor("predictions", c) },
+    { section: "oddsGoals", endpoint: "odds", params: { fixture: fixtureId, bet: betIds.goals }, ttl: ttlFor("odds", c) },
+    { section: "oddsCorners", endpoint: "odds", params: { fixture: fixtureId, bet: betIds.corners }, ttl: ttlFor("odds", c) },
+    { section: "standings", endpoint: "standings", params: { league: leagueId, season }, ttl: ttlFor("standings", c) },
+    { section: "coverage", endpoint: "leagues", params: { id: leagueId, season }, ttl: ttlFor("coverage", c) },
+  ];
+  if (homeId && awayId) {
+    plan.push({ section: "h2h", endpoint: "fixtures/headtohead", params: { h2h: `${homeId}-${awayId}`, last: 10 }, ttl: ttlFor("h2h", c) });
+    plan.push({ section: "teamHome", endpoint: "teams/statistics", params: { league: leagueId, season, team: homeId }, ttl: ttlFor("team-stats", c) });
+    plan.push({ section: "teamAway", endpoint: "teams/statistics", params: { league: leagueId, season, team: awayId }, ttl: ttlFor("team-stats", c) });
+  }
+  return plan;
+}
+
+/* ---------- Abbinamento partite ---------- */
+/** Partita API-Football che corrisponde a quella dell'app: stesso orario (+-3 ore) e squadre abbinate entrambe. */
+export function pickFixture(match, fixtures) {
+  const t = Date.parse(match.kickoff_at);
+  return (fixtures ?? [])
+    .map((f) => ({ f, dt: Math.abs(Date.parse(f.fixture?.date) - t) }))
+    .filter(({ f, dt }) => dt <= 3 * H && bestTeam(match.home_name, [f.teams?.home?.name ?? ""]) && bestTeam(match.away_name, [f.teams?.away?.name ?? ""]))
+    .sort((a, b) => a.dt - b.dt)[0]?.f ?? null;
+}
+
+/* ---------- Quote: riepilogo Over/Under gol e corner ---------- */
+/** Id dei mercati: letti dall'elenco ufficiale (odds/bets) per nome, con valori noti come ripiego. */
+export function betIdsFrom(resp) {
+  const find = (re) => (resp ?? []).find((b) => re.test(String(b.name ?? "")))?.id;
+  return { goals: find(/^goals over\/under$/i) ?? 5, corners: find(/^corners over.?under$/i) ?? 45 };
+}
+
+const median = (a) => { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length ? (s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2) : null; };
+const r2 = (x) => Math.round(x * 100) / 100;
+
+function collect(response, nameRe, exRe) {
+  const lines = {};
+  for (const fx of response ?? []) for (const bk of fx.bookmakers ?? []) for (const bet of bk.bets ?? []) {
+    if (!nameRe.test(String(bet.name ?? "")) || (exRe && exRe.test(String(bet.name ?? "")))) continue;
+    for (const v of bet.values ?? []) {
+      const m = String(v.value).match(/^(over|under)\s+(\d+(?:\.\d+)?)$/i);
+      const odd = Number(v.odd);
+      if (!m || !(odd > 1)) continue;
+      ((lines[m[2]] ??= { over: [], under: [] })[m[1].toLowerCase()]).push({ odd, book: bk.name });
+    }
+  }
+  return lines;
+}
+
+const agg = (arr) => (arr?.length ? { best: arr.reduce((a, b) => (b.odd > a.odd ? b : a)), median: r2(median(arr.map((x) => x.odd))), n: arr.length } : null);
+const toLine = ([l, v]) => ({ line: Number(l), over: agg(v.over), under: agg(v.under) });
+
+/** Miglior quota e mediana tra i bookmaker per l'Over/Under 2.5 e per ogni linea gol/corner. */
+export function summarizeOdds(goalsResp, cornersResp) {
+  const g = collect(goalsResp, /^goals over\/under$/i);
+  const c = collect(cornersResp, /corners?.*over.?under|total corners/i, /1st|2nd|first|second|half|home|away|asian|team/i);
+  const goalLines = Object.entries(g).map(toLine).sort((a, b) => a.line - b.line);
+  const cornerLines = Object.entries(c).map(toLine).sort((a, b) => a.line - b.line);
+  const balanced = cornerLines.filter((x) => x.over && x.under).sort((a, b) => Math.abs(a.over.median - a.under.median) - Math.abs(b.over.median - b.under.median));
+  const books = new Set([...Object.values(g), ...Object.values(c)].flatMap((l) => [...l.over, ...l.under].map((x) => x.book)));
+  return {
+    ou25: g["2.5"] ? { over: agg(g["2.5"].over), under: agg(g["2.5"].under) } : null,
+    goalLines,
+    corners: { lines: cornerLines, mainLine: balanced[0]?.line ?? null },
+    bookmakers: books.size,
+  };
+}
+
+/* ---------- Rete ---------- */
+export async function afFetch(env, endpoint, params = {}, { timeoutMs = 9000 } = {}) {
+  const base = (env.API_FOOTBALL_BASE_URL || "https://v3.football.api-sports.io").replace(/\/$/, "");
+  const url = new URL(`${base}/${endpoint}`);
+  for (const [k, v] of Object.entries(params)) if (v != null && v !== "") url.searchParams.set(k, String(v));
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: ctl.signal, headers: { "x-apisports-key": env.API_FOOTBALL_KEY, accept: "application/json" } });
+    const body = await res.json().catch(() => null);
+    const errs = Array.isArray(body?.errors) ? body.errors : Object.values(body?.errors ?? {});
+    const meta = { status: res.status, remaining: num(res.headers.get("x-ratelimit-requests-remaining")), limit: num(res.headers.get("x-ratelimit-requests-limit")) };
+    if (!res.ok || !body || errs.length) throw Object.assign(new AfError(errs.join("; ") || `HTTP ${res.status}`, { status: res.status }), { meta });
+    return { response: body.response ?? [], results: body.results ?? 0, ...meta };
+  } catch (e) {
+    if (e?.name === "AbortError") throw new AfError("Timeout");
+    throw e;
+  } finally { clearTimeout(timer); }
+}
+
+/**
+ * Per ogni richiesta del piano: cache valida -> nessuna chiamata; altrimenti chiamata live (massimo `maxLive` per volta,
+ * e nessuna se il residuo giornaliero e' sotto `reserve`). In caso di errore si restituisce l'ultima risposta salvata (stale).
+ */
+export async function loadSections(env, reqs, now = Date.now(), { maxLive = 14, reserve = 300 } = {}) {
+  if (!reqs.length) return { sections: {}, usage: null };
+  const keys = reqs.map((r) => cacheKey(r.endpoint, r.params));
+  const [rows, usageRows] = await Promise.all([
+    supabaseGet(env, "af_cache", { select: "cache_key,response,results,fetched_at,expires_at,error", cache_key: `in.(${keys.map((k) => `"${k}"`).join(",")})`, limit: keys.length }),
+    supabaseGet(env, "af_usage", { select: "*", day: `eq.${dayKey(now)}`, limit: 1 }),
+  ]);
+  const byKey = new Map(rows.map((r) => [r.cache_key, r]));
+  const usage = usageRows[0] ?? null;
+  const canSpend = !(usage?.remaining != null && usage.remaining < reserve);
+  const sections = {};
+  const todo = [];
+  reqs.forEach((r, i) => {
+    const row = byKey.get(keys[i]);
+    const view = (extra) => ({ data: row?.response ?? null, results: row?.results ?? 0, fetchedAt: row?.fetched_at ?? null, source: "cache", stale: false, error: null, ...extra });
+    if (row && !row.error && now - Date.parse(row.fetched_at) < r.ttl) sections[r.section] = view({});
+    else if (row?.error && Date.parse(row.expires_at) > now) sections[r.section] = view({ stale: Boolean(row.response), error: row.error });   // errore recente: non si insiste
+    else todo.push({ r, key: keys[i], row, view });
+  });
+  const live = canSpend ? todo.slice(0, maxLive) : [];
+  for (const t of todo.slice(live.length)) sections[t.r.section] = t.view({ stale: Boolean(t.row?.response), deferred: true, error: canSpend ? "Aggiornamento rimandato (limite di richieste per volta)" : "Limite giornaliero quasi esaurito" });
+  const settled = await Promise.allSettled(live.map((t) => afFetch(env, t.r.endpoint, t.r.params)));
+  const writes = [];
+  let remaining = usage?.remaining ?? null, limit = usage?.limit_day ?? null;
+  live.forEach((t, i) => {
+    const s = settled[i];
+    const base = { cache_key: t.key, endpoint: t.r.endpoint, params: t.r.params };
+    if (s.status === "fulfilled") {
+      remaining = s.value.remaining ?? remaining; limit = s.value.limit ?? limit;
+      writes.push({ ...base, response: s.value.response, results: s.value.results, http_status: s.value.status, error: null, fetched_at: iso(now), expires_at: iso(now + t.r.ttl) });
+      sections[t.r.section] = { data: s.value.response, results: s.value.results, fetchedAt: iso(now), source: "live", stale: false, error: null };
+    } else {
+      const e = s.reason;
+      remaining = e?.meta?.remaining ?? remaining; limit = e?.meta?.limit ?? limit;
+      const msg = String(e?.message ?? e).slice(0, 300);
+      writes.push({ ...base, http_status: e?.status ?? null, error: msg, expires_at: iso(now + 10 * MIN) });   // fetched_at e response restano quelli precedenti
+      sections[t.r.section] = t.view({ stale: Boolean(t.row?.response), error: msg });
+    }
+  });
+  if (writes.length) {
+    await supabaseUpsert(env, "af_cache", writes, "cache_key").catch((e) => console.error("Stay Live af_cache:", e?.message ?? e));
+    await supabaseUpsert(env, "af_usage", [{ day: dayKey(now), requests: (usage?.requests ?? 0) + live.length, limit_day: limit, remaining, updated_at: iso(now) }], "day").catch(() => {});
+  }
+  return { sections, usage: { day: dayKey(now), requests: (usage?.requests ?? 0) + live.length, limit, remaining } };
+}
+
+/** Partite sincronizzate da API-Football: game_id "af-<fixture>", squadre "af-<team>". Nessuna ricerca necessaria. */
+export function directMap(match) {
+  const fx = /^af-(\d+)$/.exec(String(match.game_id ?? ""));
+  const team = (id) => { const m = /^af-(\d+)$/.exec(String(id ?? "")); return m ? Number(m[1]) : null; };
+  const leagueId = AF_LEAGUES[match.league];
+  if (!fx || !leagueId) return null;
+  return { game_id: match.game_id, fixture_id: Number(fx[1]), league_id: leagueId, season: Number(match.season) || seasonFor(match.league, match.kickoff_at), home_team_id: team(match.home_id), away_team_id: team(match.away_id), home_name: match.home_name, away_name: match.away_name };
+}
+
+/** Collegamento partita dell'app -> partita API-Football (cercata per campionato, stagione e data; poi salvata). */
+export async function resolveFixture(env, match, now = Date.now()) {
+  const direct = directMap(match);
+  if (direct) return { map: direct };
+  const [saved] = await supabaseGet(env, "af_fixture_map", { select: "*", game_id: `eq.${match.game_id}`, limit: 1 });
+  if (saved) return { map: saved };
+  const leagueId = AF_LEAGUES[match.league];
+  if (!leagueId) return { error: `Campionato "${match.league}" non collegato ad API-Football.` };
+  const season = seasonFor(match.league, match.kickoff_at);
+  const t = Date.parse(match.kickoff_at);
+  const { sections } = await loadSections(env, [{ section: "list", endpoint: "fixtures", params: { league: leagueId, season, from: dayKey(t - D), to: dayKey(t + D), timezone: "UTC" }, ttl: ttlFor("fixture-list") }], now);
+  const f = pickFixture(match, sections.list?.data);
+  if (!f) return { error: sections.list?.error ? `API-Football: ${sections.list.error}` : "Partita non trovata su API-Football (squadre o orario non corrispondono)." };
+  const map = { game_id: match.game_id, fixture_id: f.fixture.id, league_id: leagueId, season, home_team_id: f.teams.home.id, away_team_id: f.teams.away.id, home_name: f.teams.home.name, away_name: f.teams.away.name };
+  await supabaseUpsert(env, "af_fixture_map", [map], "game_id").catch((e) => console.error("Stay Live af_fixture_map:", e?.message ?? e));
+  return { map };
+}
+
+/* ---------- Partite da API-Football (campionati senza API Ninjas) ---------- */
+const AF_STATUS = {
+  TBD: "scheduled", NS: "scheduled", "1H": "in_progress", HT: "in_progress", "2H": "in_progress", ET: "in_progress", BT: "in_progress", P: "in_progress", SUSP: "in_progress", INT: "in_progress", LIVE: "in_progress",
+  FT: "final", AET: "final", PEN: "final", AWD: "final", WO: "final", PST: "postponed", CANC: "canceled", ABD: "canceled",
+};
+
+const roundText = (r) => { const t = String(r ?? "").trim(); const m = /^Regular Season - (\d+)$/i.exec(t); return m ? m[1] : t || null; };
+const roundType = (r) => (/league phase|group/i.test(r ?? "") ? "league_phase" : /final|round of|play-?off|knockout|qualif/i.test(r ?? "") ? "knockout" : "regular");
+
+/** Partita API-Football -> riga della tabella `matches` (stessa forma di API Ninjas). Risultato = 90 minuti (senza supplementari/rigori). */
+export function normalizeAfFixture(f, cfg, season, now = Date.now()) {
+  const st = f.fixture?.status?.short ?? "NS";
+  const status = AF_STATUS[st] ?? "scheduled";
+  const ft = f.score?.fulltime ?? {};
+  const final = status === "final";
+  const pick = (a, b) => (final ? (Number.isFinite(a) ? a : Number.isFinite(b) ? b : null) : Number.isFinite(b) ? b : null);
+  const date = f.fixture?.date ?? null;
+  return {
+    game_id: `af-${f.fixture.id}`,
+    league: cfg.id,
+    season,
+    season_type: cfg.international ? roundType(f.league?.round) : "regular",
+    round: roundText(f.league?.round),
+    match_date: date ? date.slice(0, 10) : null,
+    kickoff_at: date,
+    status,
+    home_id: `af-${f.teams.home.id}`,
+    home_name: f.teams.home.name ?? "Casa",
+    home_abbr: null,
+    away_id: `af-${f.teams.away.id}`,
+    away_name: f.teams.away.name ?? "Trasferta",
+    away_abbr: null,
+    home_score: pick(ft.home, f.goals?.home),
+    away_score: pick(ft.away, f.goals?.away),
+    decided_in: st === "AET" ? "extra_time" : st === "PEN" ? "penalties" : null,
+    neutral_site: false,
+    synced_at: new Date(now).toISOString(),
+  };
+}
+
+/** Controllo anti-errore: l'id configurato deve davvero essere il campionato previsto (paese ed eventuale nome). */
+export function leagueCheck(cfg, apiLeague) {
+  if (!apiLeague) return null;
+  const country = String(apiLeague.country ?? "").toLowerCase();
+  const name = String(apiLeague.name ?? "").toLowerCase();
+  const okCountry = !cfg.afCountry || country.includes(cfg.afCountry.toLowerCase());
+  const okName = !cfg.afName || name.includes(cfg.afName.toLowerCase());
+  return okCountry && okName ? null : `L'id ${cfg.afId} di API-Football corrisponde a "${apiLeague.name}" (${apiLeague.country}), non a ${cfg.name}: sincronizzazione annullata.`;
+}
+
+/** Conta le richieste fatte oggi e il residuo comunicato da API-Football (stessa tabella usata dalla schermata di dettaglio). */
+export async function trackUsage(env, now, meta, spent = 1) {
+  const [u] = await supabaseGet(env, "af_usage", { select: "*", day: `eq.${dayKey(now)}`, limit: 1 });
+  await supabaseUpsert(env, "af_usage", [{ day: dayKey(now), requests: (u?.requests ?? 0) + spent, limit_day: meta?.limit ?? u?.limit_day ?? null, remaining: meta?.remaining ?? u?.remaining ?? null, updated_at: iso(now) }], "day");
+}
+
+/** Tutta la stagione di un campionato con UNA richiesta (partite giocate e da giocare). */
+export async function fetchAfSeason(env, cfg, now = Date.now(), { reserve = 200 } = {}) {
+  const [u] = await supabaseGet(env, "af_usage", { select: "remaining", day: `eq.${dayKey(now)}`, limit: 1 });
+  if (u?.remaining != null && u.remaining < reserve) throw new AfError(`Limite giornaliero API-Football quasi esaurito (${u.remaining} richieste): sincronizzazione rimandata.`);
+  const season = seasonFor(cfg.id, iso(now));
+  let res;
+  try {
+    res = await afFetch(env, "fixtures", { league: cfg.afId, season, timezone: "UTC" }, { timeoutMs: 20000 });
+  } catch (e) {
+    await trackUsage(env, now, e?.meta, 1).catch(() => {});
+    throw e;
+  }
+  await trackUsage(env, now, res, 1).catch(() => {});
+  const bad = leagueCheck(cfg, res.response[0]?.league);
+  if (bad) throw new AfError(bad);
+  const seen = new Map();
+  for (const f of res.response) if (f.fixture?.id && f.teams?.home?.id && f.teams?.away?.id && f.fixture.date) seen.set(f.fixture.id, normalizeAfFixture(f, cfg, season, now));
+  return [...seen.values()];
+}

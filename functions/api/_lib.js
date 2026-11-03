@@ -5,7 +5,7 @@ export const NINJAS_URL = "https://api.api-ninjas.com/v1/soccermatches";
  * Campionati disponibili. `continent` e `country`/`nation` alimentano il menu ad accordion:
  * continente > nazione > campionati. Le coppe internazionali stanno nel continente con un
  * gruppo proprio (international: true). `tier` = categoria (1 = massima serie).
- * Per aggiungere un campionato nuovo (se l'API lo espone) basta una riga qui. `oddsKey` = chiave sport di The Odds API per le quote.
+ * Per aggiungere un campionato basta una riga qui. Senza `provider` le partite arrivano da API Ninjas (solo gli 8 campionati principali); con `provider: "apifootball"` arrivano da API-Football (`afId` = id campionato, `afCountry`/`afName` = controllo anti-errore sull'id, `calendarYear` = stagione che coincide con l'anno solare). `oddsKey` = chiave sport di The Odds API per le quote.
  */
 export const CONTINENTS = [
   { id: "europa", name: "Europa" },
@@ -17,14 +17,38 @@ export const CONTINENTS = [
 ];
 
 export const LEAGUES = [
-  { id: "seriea", oddsKey: "soccer_italy_serie_a", name: "Serie A", short: "Serie A", continent: "europa", country: "IT", nation: "Italia", tier: 1 },
-  { id: "epl", oddsKey: "soccer_epl", name: "Premier League", short: "Premier", continent: "europa", country: "GB", nation: "Inghilterra", tier: 1 },
-  { id: "laliga", oddsKey: "soccer_spain_la_liga", name: "LaLiga", short: "LaLiga", continent: "europa", country: "ES", nation: "Spagna", tier: 1 },
-  { id: "bundesliga", oddsKey: "soccer_germany_bundesliga", name: "Bundesliga", short: "Bundesliga", continent: "europa", country: "DE", nation: "Germania", tier: 1 },
-  { id: "ligue1", oddsKey: "soccer_france_ligue_one", name: "Ligue 1", short: "Ligue 1", continent: "europa", country: "FR", nation: "Francia", tier: 1 },
-  { id: "ucl", oddsKey: "soccer_uefa_champs_league", name: "Champions League", short: "Champions", continent: "europa", country: "UEFA-C", nation: "Coppe europee", international: true, tier: 0 },
-  { id: "uel", oddsKey: "soccer_uefa_europa_league", name: "Europa League", short: "Europa League", continent: "europa", country: "UEFA-C", nation: "Coppe europee", international: true, tier: 0 },
-  { id: "mls", oddsKey: "soccer_usa_mls", name: "MLS", short: "MLS", continent: "nord-america", country: "US", nation: "Stati Uniti", tier: 1 },
+  { id: "seriea", oddsKey: "soccer_italy_serie_a", afId: 135, name: "Serie A", short: "Serie A", continent: "europa", country: "IT", nation: "Italia", tier: 1 },
+  { id: "epl", oddsKey: "soccer_epl", afId: 39, name: "Premier League", short: "Premier", continent: "europa", country: "GB", nation: "Inghilterra", tier: 1 },
+  { id: "laliga", oddsKey: "soccer_spain_la_liga", afId: 140, name: "LaLiga", short: "LaLiga", continent: "europa", country: "ES", nation: "Spagna", tier: 1 },
+  { id: "bundesliga", oddsKey: "soccer_germany_bundesliga", afId: 78, name: "Bundesliga", short: "Bundesliga", continent: "europa", country: "DE", nation: "Germania", tier: 1 },
+  { id: "ligue1", oddsKey: "soccer_france_ligue_one", afId: 61, name: "Ligue 1", short: "Ligue 1", continent: "europa", country: "FR", nation: "Francia", tier: 1 },
+  { id: "ucl", oddsKey: "soccer_uefa_champs_league", afId: 2, name: "Champions League", short: "Champions", continent: "europa", country: "UEFA-C", nation: "Coppe europee", international: true, tier: 0 },
+  { id: "uel", oddsKey: "soccer_uefa_europa_league", afId: 3, name: "Europa League", short: "Europa League", continent: "europa", country: "UEFA-C", nation: "Coppe europee", international: true, tier: 0 },
+  { id: "mls", oddsKey: "soccer_usa_mls", afId: 253, calendarYear: true, name: "MLS", short: "MLS", continent: "nord-america", country: "US", nation: "Stati Uniti", tier: 1 },
+  { id: "serieb", name: "Serie B", short: "Serie B", continent: "europa", country: "IT", nation: "Italia", tier: 2, provider: "apifootball", afId: 136, afCountry: "Italy", afName: "Serie B" },
+  { id: "championship", name: "Championship", short: "Championship", continent: "europa", country: "GB", nation: "Inghilterra", tier: 2, provider: "apifootball", afId: 40, afCountry: "England", afName: "Championship" },
+  { id: "league1", name: "League One", short: "League One", continent: "europa", country: "GB", nation: "Inghilterra", tier: 3, provider: "apifootball", afId: 41, afCountry: "England", afName: "League One" },
+  { id: "bundesliga2", name: "2. Bundesliga", short: "2. Bundesliga", continent: "europa", country: "DE", nation: "Germania", tier: 2, provider: "apifootball", afId: 79, afCountry: "Germany", afName: "2. Bundesliga" },
+  { id: "ligue2", name: "Ligue 2", short: "Ligue 2", continent: "europa", country: "FR", nation: "Francia", tier: 2, provider: "apifootball", afId: 62, afCountry: "France", afName: "Ligue 2" },
+  { id: "segunda", name: "Segunda División", short: "Segunda", continent: "europa", country: "ES", nation: "Spagna", tier: 2, provider: "apifootball", afId: 141, afCountry: "Spain", afName: "Segunda" },
+  { id: "eredivisie", name: "Eredivisie", short: "Eredivisie", continent: "europa", country: "NL", nation: "Paesi Bassi", tier: 1, provider: "apifootball", afId: 88, afCountry: "Netherlands", afName: "Eredivisie" },
+  { id: "primeira", name: "Primeira Liga", short: "Primeira", continent: "europa", country: "PT", nation: "Portogallo", tier: 1, provider: "apifootball", afId: 94, afCountry: "Portugal", afName: "Primeira" },
+  { id: "proleague", name: "Pro League", short: "Pro League", continent: "europa", country: "BE", nation: "Belgio", tier: 1, provider: "apifootball", afId: 144, afCountry: "Belgium" },
+  { id: "scottish", name: "Scottish Premiership", short: "Scozia", continent: "europa", country: "GB-SCT", nation: "Scozia", tier: 1, provider: "apifootball", afId: 179, afCountry: "Scotland" },
+  { id: "superlig", name: "Süper Lig", short: "Süper Lig", continent: "europa", country: "TR", nation: "Turchia", tier: 1, provider: "apifootball", afId: 203, afCountry: "Turkey" },
+  { id: "greece", name: "Super League", short: "Grecia", continent: "europa", country: "GR", nation: "Grecia", tier: 1, provider: "apifootball", afId: 197, afCountry: "Greece" },
+  { id: "austria", name: "Bundesliga austriaca", short: "Austria", continent: "europa", country: "AT", nation: "Austria", tier: 1, provider: "apifootball", afId: 218, afCountry: "Austria" },
+  { id: "swiss", name: "Super League svizzera", short: "Svizzera", continent: "europa", country: "CH", nation: "Svizzera", tier: 1, provider: "apifootball", afId: 207, afCountry: "Switzerland" },
+  { id: "denmark", name: "Superliga", short: "Superliga", continent: "europa", country: "DK", nation: "Danimarca", tier: 1, provider: "apifootball", afId: 119, afCountry: "Denmark" },
+  { id: "poland", name: "Ekstraklasa", short: "Ekstraklasa", continent: "europa", country: "PL", nation: "Polonia", tier: 1, provider: "apifootball", afId: 106, afCountry: "Poland", afName: "Ekstraklasa" },
+  { id: "czech", name: "Prima lega ceca", short: "Rep. Ceca", continent: "europa", country: "CZ", nation: "Repubblica Ceca", tier: 1, provider: "apifootball", afId: 345, afCountry: "Czech" },
+  { id: "croatia", name: "HNL", short: "HNL", continent: "europa", country: "HR", nation: "Croazia", tier: 1, provider: "apifootball", afId: 210, afCountry: "Croatia" },
+  { id: "romania", name: "Liga 1", short: "Romania", continent: "europa", country: "RO", nation: "Romania", tier: 1, provider: "apifootball", afId: 283, afCountry: "Romania" },
+  { id: "serbia", name: "SuperLiga", short: "Serbia", continent: "europa", country: "RS", nation: "Serbia", tier: 1, provider: "apifootball", afId: 286, afCountry: "Serbia" },
+  { id: "hungary", name: "NB I", short: "Ungheria", continent: "europa", country: "HU", nation: "Ungheria", tier: 1, provider: "apifootball", afId: 271, afCountry: "Hungary" },
+  { id: "eliteserien", name: "Eliteserien", short: "Eliteserien", continent: "europa", country: "NO", nation: "Norvegia", tier: 1, provider: "apifootball", afId: 103, afCountry: "Norway", afName: "Eliteserien", calendarYear: true },
+  { id: "allsvenskan", name: "Allsvenskan", short: "Allsvenskan", continent: "europa", country: "SE", nation: "Svezia", tier: 1, provider: "apifootball", afId: 113, afCountry: "Sweden", afName: "Allsvenskan", calendarYear: true },
+  { id: "uecl", name: "Conference League", short: "Conference", continent: "europa", country: "UEFA-C", nation: "Coppe europee", tier: 0, international: true, provider: "apifootball", afId: 848, afCountry: "World", afName: "Conference" },
 ];
 export const LEAGUE_IDS = new Set(LEAGUES.map((l) => l.id));
 
@@ -42,11 +66,12 @@ export function json(data, status = 200, extraHeaders = {}) {
 
 export const errorMessage = (e) => (e instanceof Error ? e.message : "Errore inatteso");
 
-export function missingConfig(env, { ninjas = false } = {}) {
+export function missingConfig(env, { ninjas = false, apifootball = false } = {}) {
   const missing = [];
   if (!env.SUPABASE_URL) missing.push("SUPABASE_URL");
   if (!env.SUPABASE_SERVICE_ROLE_KEY) missing.push("SUPABASE_SERVICE_ROLE_KEY");
   if (ninjas && !env.API_NINJAS_KEY) missing.push("API_NINJAS_KEY");
+  if (apifootball && !env.API_FOOTBALL_KEY) missing.push("API_FOOTBALL_KEY");
   return missing;
 }
 

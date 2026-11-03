@@ -141,7 +141,7 @@ export function parseProbableLineups(html) {
     const seg = lines.slice(h.i + 1, end).join(" | ");
     const xiRaw = h.m[3].split(/\bAll\.|\bAllenatore\b|\bA disp\b/i)[0];
     const xi = xiRaw.split(/[;,]/).map((s) => s.replace(/\([^)]*\)/g, "").trim()).filter(Boolean);
-    const block = { team: h.m[1].trim().replace(/\s+/g, " "), formation: h.m[2], xi, complete: xi.length >= 10 && xi.length <= 11, suspended: [], unavailable: [], warned: [], doubts: [] };
+    const block = { team: h.m[1].trim().replace(/\s+/g, " "), formation: h.m[2], xi, complete: xi.length === 11, suspended: [], unavailable: [], warned: [], doubts: [] };
     const hits = [...seg.matchAll(LABEL)];
     hits.forEach((hit, n) => {
       const raw = seg.slice(hit.index + hit[0].length, hits[n + 1]?.index ?? seg.length).replace(/[|\s]+$/, "");
