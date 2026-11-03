@@ -53,6 +53,14 @@ Migrazione: `supabase/migrations/202610310001_availability.sql` (crea `match_ava
 
 Verifica dal sito pubblicato (nessuna scrittura su Supabase): `curl -H "x-sync-secret: $SYNC_SECRET" "https://<sito>/api/scrape-debug?source=transfermarkt&league=seriea"`. Opzionale `LINEUPS_URL_SERIEA` per fissare a mano la pagina delle formazioni.
 
+## API-Football (piano a pagamento)
+
+Migrazione: `supabase/migrations/202611030001_apifootball.sql` (`af_fixture_map`, `af_cache`, `af_usage`). Variabile Cloudflare: `API_FOOTBALL_KEY` (secret). `/api/match-detail?id=<game_id>` collega la partita dell'app a quella di API-Football e restituisce tutto ciò che il piano fornisce: partita (arbitro, stadio, eventi, formazioni, statistiche e giocatori a partita iniziata), infortuni, pronostico del provider, quote Over/Under gol e corner con miglior quota e mediana tra bookmaker, scontri diretti, classifica, statistiche stagionali delle squadre e copertura dati del campionato. Ogni risposta del provider è salvata in `af_cache` con scadenza per tipo di dato (5 min–30 giorni) e il residuo giornaliero è tracciato in `af_usage`: se una chiamata fallisce si usa l'ultima risposta salvata.
+
+## Campionati (32)
+
+I 8 campionati principali (Serie A, Premier, LaLiga, Bundesliga, Ligue 1, Champions, Europa League, MLS) restano su API Ninjas. Gli altri 24 arrivano da API-Football (`provider: "apifootball"` in `functions/api/_lib.js`): Serie B, Championship, League One, 2. Bundesliga, Ligue 2, Segunda División, Eredivisie, Primeira Liga, Pro League, Scottish Premiership, Süper Lig, Super League greca e svizzera, Bundesliga austriaca, Superliga danese, Ekstraklasa, prima lega ceca, HNL, Liga 1 romena, SuperLiga serba, NB I, Eliteserien, Allsvenskan, Conference League. Una richiesta scarica l'intera stagione di un campionato; si ripete ogni 6 ore (15 minuti con partite in corso). Prima di scrivere, `afCountry`/`afName` verificano che l'id API-Football sia davvero il campionato previsto. Per aggiungerne un altro basta una riga in `LEAGUES`. Se `/api/fixtures` va in errore per il tempo di calcolo (Cloudflare 1102) imposta `FIXTURES_DAYS` (es. 10) o passa a Workers Paid.
+
 ## Sviluppo
 
 ```bash
