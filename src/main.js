@@ -34,10 +34,19 @@ async function load({ sync = true } = {}) {
     if (sync && !state.syncTried && data.needsSync.length) {
       state.syncTried = true;
       const failures = [];
-      for (const id of data.needsSync) {
-        state.banner = `Aggiorno ${data.leagues.find((l) => l.id === id)?.name ?? id}…`; render();
-        try { await getJson(`/api/sync?league=${id}`); } catch (e) { failures.push(`${id}: ${e.message}`); }
-      }
+      const queue = [...data.needsSync];
+      const total = queue.length;
+      let done = 0;
+      const worker = async () => {          // 4 campionati alla volta: con tanti campionati il primo avvio resta rapido
+        while (queue.length) {
+          const id = queue.shift();
+          try { await getJson(`/api/sync?league=${id}`); } catch (e) { failures.push(`${data.leagues.find((l) => l.id === id)?.name ?? id}: ${e.message}`); }
+          done += 1;
+          state.banner = `Aggiorno i campionati… ${done}/${total}`; render();
+        }
+      };
+      state.banner = `Aggiorno i campionati… 0/${total}`; render();
+      await Promise.all(Array.from({ length: Math.min(4, total) }, worker));
       data = await getJson("/api/fixtures");
       state.banner = failures.length ? `Aggiornamento incompleto. ${failures[0]}` : null;
     } else state.banner = null;
