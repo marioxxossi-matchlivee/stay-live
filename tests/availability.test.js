@@ -141,3 +141,12 @@ test("righe: fonti diverse si fondono senza cancellarsi e il quadro resta coeren
   assert.deepEqual([merged.injuries.home[0].role, merged.injuries.home[0].value, merged.injuries.home[0].src], ["F", 90e6, ["premierinjuries", "transfermarkt"]]);
   assert.equal(merged.last_scraped_at, "2026-10-30T12:05:00.000Z");
 });
+
+test("formazioni reali (Adnkronos, derby): 11 nomi = completa, un nome mancante nel testo = incompleta", () => {
+  const html = `<p><strong>Milan (3-4-2-1)</strong>: Maignan; De Winter, Pavlovic, Gila; Hutchinson, Modric, Rabiot, Estupinan; Pulisic, Cissè; Ramos. All. Amorim.</p><p><strong>Inter (3-5-2)</strong>: Martinez; Bisseck, Akanji, Bastoni; , Barella, Calhanoglu, Zielinski, Dimarco; Thuram, Bonny. All. Chivu</p>`;
+  const [milan, inter] = parseProbableLineups(html);
+  assert.deepEqual([milan.team, milan.formation, milan.xi.length, milan.complete], ["Milan", "3-4-2-1", 11, true]);
+  assert.deepEqual([inter.team, inter.formation, inter.xi.length, inter.complete], ["Inter", "3-5-2", 10, false]);
+  assert.equal(bestTeam("AC Milan", [milan.team, inter.team]), "Milan");
+  assert.equal(bestTeam("Internazionale", [milan.team, inter.team]), "Inter");
+});
