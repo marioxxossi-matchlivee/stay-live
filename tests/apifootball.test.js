@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AF_LEAGUES, betIdsFrom, pickCoach, cacheKey, directMap, leagueCheck, normalizeAfFixture, pickFixture, planFor, seasonFor, summarizeOdds, ttlFor } from "../functions/api/_apifootball.js";
+import { AF_LEAGUES, afFetch, rateGate, betIdsFrom, pickCoach, cacheKey, directMap, leagueCheck, normalizeAfFixture, pickFixture, planFor, seasonFor, summarizeOdds, ttlFor } from "../functions/api/_apifootball.js";
 import { LEAGUES } from "../functions/api/_lib.js";
 
 test("stagione: Europa dall'anno d'inizio (da luglio), MLS anno solare", () => {
@@ -147,4 +147,28 @@ test("allenatore attuale: incarico senza data di fine presso la squadra", () => 
   assert.deepEqual([pickCoach(list, 10).name, pickCoach(list, 10).since, pickCoach(list, 10).nationality], ["Mister Attuale", "2024-07-01", "Italy"]);
   assert.equal(pickCoach([], 10), null);
   assert.equal(pickCoach(undefined, 10), null);
+});
+
+test("rateGate: le richieste partono distanziate, anche se chieste insieme", async () => {
+  const t0 = Date.now();
+  const starts = await Promise.all([0, 1, 2, 3].map(() => rateGate(60).then(() => Date.now() - t0)));
+  starts.sort((a, b) => a - b);
+  for (let i = 1; i < starts.length; i += 1) assert.ok(starts[i] - starts[i - 1] >= 45, `distanza ${starts[i] - starts[i - 1]} ms`);
+});
+
+test("afFetch: riprova dopo 'Too many requests' e poi riesce", async () => {
+  const real = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    const limited = calls < 2;
+    return new Response(JSON.stringify(limited ? { errors: { rateLimit: "Too many requests. You have exceeded the limit of requests per minute of your subscription." }, response: [] } : { errors: [], results: 1, response: [{ ok: 1 }] }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  try {
+    const r = await afFetch({ API_FOOTBALL_KEY: "k", API_FOOTBALL_MIN_GAP_MS: "0" }, "fixtures", { id: 1 }, { retries: 2 });
+    assert.equal(calls, 2);
+    assert.deepEqual(r.response, [{ ok: 1 }]);
+    calls = -10;   // sempre limitato: senza retries l'errore arriva subito, marcato come rateLimited
+    await assert.rejects(afFetch({ API_FOOTBALL_KEY: "k", API_FOOTBALL_MIN_GAP_MS: "0" }, "fixtures", { id: 1 }), (e) => e.rateLimited === true);
+  } finally { globalThis.fetch = real; }
 });
