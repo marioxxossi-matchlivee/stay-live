@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AF_LEAGUES, betIdsFrom, cacheKey, directMap, leagueCheck, normalizeAfFixture, pickFixture, planFor, seasonFor, summarizeOdds, ttlFor } from "../functions/api/_apifootball.js";
+import { AF_LEAGUES, betIdsFrom, pickCoach, cacheKey, directMap, leagueCheck, normalizeAfFixture, pickFixture, planFor, seasonFor, summarizeOdds, ttlFor } from "../functions/api/_apifootball.js";
 import { LEAGUES } from "../functions/api/_lib.js";
 
 test("stagione: Europa dall'anno d'inizio (da luglio), MLS anno solare", () => {
@@ -32,10 +32,10 @@ test("TTL: piu' frequente vicino al match, stabile a partita finita", () => {
   assert.equal(ttlFor("odds-bets", {}), 30 * 86400e3);
 });
 
-test("piano richieste: 10 sezioni con squadre note, 7 senza", () => {
+test("piano richieste: 12 sezioni con squadre note, 7 senza", () => {
   const base = { fixtureId: 99, leagueId: 135, season: 2026, kickoff: Date.parse("2026-10-31T19:45:00Z"), now: Date.parse("2026-10-30T12:00:00Z") };
   const full = planFor({ ...base, homeId: 489, awayId: 505 });
-  assert.deepEqual(full.map((r) => r.section), ["fixture", "injuries", "predictions", "oddsGoals", "oddsCorners", "standings", "coverage", "h2h", "teamHome", "teamAway"]);
+  assert.deepEqual(full.map((r) => r.section), ["fixture", "injuries", "predictions", "oddsGoals", "oddsCorners", "standings", "coverage", "h2h", "teamHome", "teamAway", "coachHome", "coachAway"]);
   assert.deepEqual(full.find((r) => r.section === "h2h").params, { h2h: "489-505", last: 10 });
   assert.deepEqual(full.find((r) => r.section === "oddsCorners").params, { fixture: 99, bet: 45 });
   assert.equal(planFor(base).length, 7);
@@ -137,4 +137,14 @@ test("configurazione campionati: 32 voci coerenti", () => {
   assert.equal(seasonFor("eliteserien", "2027-04-03T10:00:00Z"), 2027);                         // stagione solare
   assert.equal(seasonFor("eredivisie", "2027-04-03T10:00:00Z"), 2026);
   assert.equal(AF_LEAGUES.eredivisie, 88);
+});
+
+test("allenatore attuale: incarico senza data di fine presso la squadra", () => {
+  const list = [
+    { id: 1, name: "Ex Mister", age: 60, team: { id: 10 }, career: [{ team: { id: 10 }, start: "2019-01-01", end: "2024-06-30" }] },
+    { id: 2, name: "Mister Attuale", age: 45, nationality: "Italy", team: { id: 10 }, career: [{ team: { id: 99 }, start: "2015-01-01", end: "2018-01-01" }, { team: { id: 10 }, start: "2024-07-01", end: null }] },
+  ];
+  assert.deepEqual([pickCoach(list, 10).name, pickCoach(list, 10).since, pickCoach(list, 10).nationality], ["Mister Attuale", "2024-07-01", "Italy"]);
+  assert.equal(pickCoach([], 10), null);
+  assert.equal(pickCoach(undefined, 10), null);
 });
