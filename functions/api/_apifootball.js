@@ -176,7 +176,14 @@ async function afFetchOnce(env, endpoint, params, { timeoutMs }) {
     const res = await fetch(url, { signal: ctl.signal, headers: { "x-apisports-key": env.API_FOOTBALL_KEY, accept: "application/json" } });
     const body = await res.json().catch(() => null);
     const errs = Array.isArray(body?.errors) ? body.errors : Object.values(body?.errors ?? {});
-    const meta = { status: res.status, remaining: num(res.headers.get("x-ratelimit-requests-remaining")), limit: num(res.headers.get("x-ratelimit-requests-limit")) };
+    const meta = {
+      status: res.status,
+      remaining: num(res.headers.get("x-ratelimit-requests-remaining")),   // residuo giornaliero
+      limit: num(res.headers.get("x-ratelimit-requests-limit")),
+      minuteRemaining: num(res.headers.get("x-ratelimit-remaining")),     // residuo del minuto in corso (se il piano lo comunica)
+      minuteLimit: num(res.headers.get("x-ratelimit-limit")),
+      retryAfterMs: num(res.headers.get("retry-after")) != null ? Number(res.headers.get("retry-after")) * 1000 : null,
+    };
     if (!res.ok || !body || errs.length) {
       const rateLimited = res.status === 429 || errs.some((m) => RATE_RE.test(String(m)));
       throw Object.assign(new AfError(errs.join("; ") || `HTTP ${res.status}`, { status: res.status }), { meta, rateLimited });
@@ -188,12 +195,19 @@ async function afFetchOnce(env, endpoint, params, { timeoutMs }) {
   } finally { clearTimeout(timer); }
 }
 
+/** Attese (ms) suggerite al browser prima di richiedere di nuovo i dati mancanti. */
+export const RETRY_HINT = { batch: 1500, rateLimit: 20000 };
+
 /**
- * Per ogni richiesta del piano: cache valida -> nessuna chiamata; altrimenti chiamata live (massimo `maxLive` per volta,
- * e nessuna se il residuo giornaliero e' sotto `reserve`). In caso di errore si restituisce l'ultima risposta salvata (stale).
+ * Per ogni richiesta del piano: cache valida -> nessuna chiamata; altrimenti chiamata live, UNA ALLA VOLTA e in ordine.
+ * - Al massimo `maxLive` chiamate per volta (env API_FOOTBALL_MAX_PER_CALL, default 8): le altre restano «rimandate» e il browser le richiede da solo.
+ * - Al primo «Too many requests» (dopo un solo nuovo tentativo breve) ci si ferma: insistere peggiora solo il blocco. Le sezioni non scaricate
+ *   restano rimandate e `retry.afterMs` dice al browser quando riprovare. Anche se il piano comunica 0 richieste residue nel minuto ci si ferma prima.
+ * - Nessuna chiamata se il residuo giornaliero e' sotto `reserve`. In caso di errore si restituisce l'ultima risposta salvata (stale).
+ * Risultato: `sections`, `usage` e `retry` ({ pending: sezioni ancora da scaricare, afterMs }).
  */
-export async function loadSections(env, reqs, now = Date.now(), { maxLive = 14, reserve = 300 } = {}) {
-  if (!reqs.length) return { sections: {}, usage: null };
+export async function loadSections(env, reqs, now = Date.now(), { maxLive = num(env?.API_FOOTBALL_MAX_PER_CALL) ?? 8, reserve = 300 } = {}) {
+  if (!reqs.length) return { sections: {}, usage: null, retry: { pending: 0, afterMs: 0 } };
   const keys = reqs.map((r) => cacheKey(r.endpoint, r.params));
   const [rows, usageRows] = await Promise.all([
     supabaseGet(env, "af_cache", { select: "cache_key,response,results,fetched_at,expires_at,error", cache_key: `in.(${keys.map((k) => `"${k}"`).join(",")})`, limit: keys.length }),
@@ -204,38 +218,55 @@ export async function loadSections(env, reqs, now = Date.now(), { maxLive = 14, 
   const canSpend = !(usage?.remaining != null && usage.remaining < reserve);
   const sections = {};
   const todo = [];
+  let afterMs = 0;
+  const later = (ms) => { afterMs = Math.max(afterMs, ms); };
   reqs.forEach((r, i) => {
     const row = byKey.get(keys[i]);
     const view = (extra) => ({ data: row?.response ?? null, results: row?.results ?? 0, fetchedAt: row?.fetched_at ?? null, source: "cache", stale: false, error: null, ...extra });
+    const blockedMs = row?.error ? Date.parse(row.expires_at) - now : 0;
     if (row && !row.error && now - Date.parse(row.fetched_at) < r.ttl) sections[r.section] = view({});
-    else if (row?.error && !RATE_RE.test(row.error) && Date.parse(row.expires_at) > now) sections[r.section] = view({ stale: Boolean(row.response), error: row.error });   // errore recente: non si insiste
+    else if (row?.error && RATE_RE.test(row.error) && blockedMs > 0) {                       // limite appena superato: si aspetta, senza insistere
+      sections[r.section] = view({ stale: Boolean(row.response), deferred: true, error: "Limite di richieste al minuto: nuovo tentativo automatico" });
+      later(blockedMs + 500);
+    } else if (row?.error && !RATE_RE.test(row.error) && blockedMs > 0) sections[r.section] = view({ stale: Boolean(row.response), error: row.error });   // errore recente: non si insiste
     else todo.push({ r, key: keys[i], row, view });
   });
-  const live = canSpend ? todo.slice(0, maxLive) : [];
-  for (const t of todo.slice(live.length)) sections[t.r.section] = t.view({ stale: Boolean(t.row?.response), deferred: true, error: canSpend ? "Aggiornamento rimandato (limite di richieste per volta)" : "Limite giornaliero quasi esaurito" });
-  const settled = await Promise.allSettled(live.map((t) => afFetch(env, t.r.endpoint, t.r.params, { retries: 2 })));
+  const live = [];
   const writes = [];
   let remaining = usage?.remaining ?? null, limit = usage?.limit_day ?? null;
-  live.forEach((t, i) => {
-    const s = settled[i];
+  let spent = 0, stopped = null;
+  for (const t of todo) {
+    if (!canSpend) { sections[t.r.section] = t.view({ stale: Boolean(t.row?.response), deferred: true, error: "Limite giornaliero quasi esaurito" }); continue; }
+    if (stopped || spent >= maxLive) {
+      sections[t.r.section] = t.view({ stale: Boolean(t.row?.response), deferred: true, error: stopped ?? "In coda: lo scarico continua da solo" });
+      later(stopped ? RETRY_HINT.rateLimit : RETRY_HINT.batch);
+      continue;
+    }
+    spent += 1; live.push(t);
     const base = { cache_key: t.key, endpoint: t.r.endpoint, params: t.r.params };
-    if (s.status === "fulfilled") {
-      remaining = s.value.remaining ?? remaining; limit = s.value.limit ?? limit;
-      writes.push({ ...base, response: s.value.response, results: s.value.results, http_status: s.value.status, error: null, fetched_at: iso(now), expires_at: iso(now + t.r.ttl) });
-      sections[t.r.section] = { data: s.value.response, results: s.value.results, fetchedAt: iso(now), source: "live", stale: false, error: null };
-    } else {
-      const e = s.reason;
+    try {
+      const v = await afFetch(env, t.r.endpoint, t.r.params, { retries: 1 });
+      remaining = v.remaining ?? remaining; limit = v.limit ?? limit;
+      writes.push({ ...base, response: v.response, results: v.results, http_status: v.status, error: null, fetched_at: iso(now), expires_at: iso(now + t.r.ttl) });
+      sections[t.r.section] = { data: v.response, results: v.results, fetchedAt: iso(now), source: "live", stale: false, error: null };
+      if (v.minuteRemaining != null && v.minuteRemaining <= 0) { stopped = "Limite di richieste al minuto: nuovo tentativo automatico"; later(RETRY_HINT.rateLimit); }
+    } catch (e) {
       remaining = e?.meta?.remaining ?? remaining; limit = e?.meta?.limit ?? limit;
       const msg = String(e?.message ?? e).slice(0, 300);
-      writes.push({ ...base, http_status: e?.status ?? null, error: msg, expires_at: iso(now + (e?.rateLimited ? 20e3 : 10 * MIN)) });   // fetched_at e response restano quelli precedenti
-      sections[t.r.section] = t.view({ stale: Boolean(t.row?.response), error: msg });
+      writes.push({ ...base, http_status: e?.status ?? null, error: msg, expires_at: iso(now + (e?.rateLimited ? RETRY_HINT.rateLimit : 10 * MIN)) });   // fetched_at e response restano quelli precedenti
+      if (e?.rateLimited) {
+        stopped = "Limite di richieste al minuto: nuovo tentativo automatico";
+        sections[t.r.section] = t.view({ stale: Boolean(t.row?.response), deferred: true, error: msg });
+        later(Math.max(e?.meta?.retryAfterMs ?? 0, RETRY_HINT.rateLimit));
+      } else sections[t.r.section] = t.view({ stale: Boolean(t.row?.response), error: msg });
     }
-  });
+  }
   if (writes.length) {
     await supabaseUpsert(env, "af_cache", writes, "cache_key").catch((e) => console.error("Stay Live af_cache:", e?.message ?? e));
     await supabaseUpsert(env, "af_usage", [{ day: dayKey(now), requests: (usage?.requests ?? 0) + live.length, limit_day: limit, remaining, updated_at: iso(now) }], "day").catch(() => {});
   }
-  return { sections, usage: { day: dayKey(now), requests: (usage?.requests ?? 0) + live.length, limit, remaining } };
+  const pending = Object.values(sections).filter((x) => x.deferred).length;
+  return { sections, usage: { day: dayKey(now), requests: (usage?.requests ?? 0) + live.length, limit, remaining }, retry: { pending, afterMs: pending ? afterMs || RETRY_HINT.batch : 0 } };
 }
 
 /** Partite sincronizzate da API-Football: game_id "af-<fixture>", squadre "af-<team>". Nessuna ricerca necessaria. */

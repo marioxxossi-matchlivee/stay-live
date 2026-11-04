@@ -2,6 +2,7 @@ import {
   CONTINENTS, LEAGUES, SEASON, errorMessage, isActiveLeague, json, loadFinals, missingConfig, supabaseGet, supabaseGetAll, syncDue,
 } from "./_lib.js";
 import { analyzeMatch, buildContext, compactPick } from "./model.js";
+import { loadLogoIndex, needsTeamList, withLogos } from "./_crests.js";
 
 const COLUMNS = "game_id,league,round,kickoff_at,status,home_id,home_name,away_id,away_name,home_score,away_score,neutral_site";
 
@@ -14,10 +15,11 @@ export async function onRequest({ env }) {
     const now = Date.now();
     const from = new Date(now - 36 * 3600e3).toISOString();
     const to = new Date(now + days * 86400e3).toISOString();
-    const [window, finals, states] = await Promise.all([
+    const [window, finals, states, logos] = await Promise.all([
       supabaseGetAll(env, "matches", { select: COLUMNS, season: `eq.${SEASON}`, and: `(kickoff_at.gte.${from},kickoff_at.lte.${to})`, order: "kickoff_at.asc,game_id.asc" }),
       loadFinals(env),
       supabaseGet(env, "sync_state", { select: "*" }),
+      loadLogoIndex(env),
     ]);
     const ctx = buildContext(finals);
     const byLeague = Object.fromEntries(states.map((s) => [s.league, s]));
@@ -26,7 +28,7 @@ export async function onRequest({ env }) {
       const analysis = open ? analyzeMatch(m, ctx, { n: 8 }) : null;
       return {
         id: m.game_id, league: m.league, round: m.round, kickoffAt: m.kickoff_at, status: m.status,
-        home: m.home_name, away: m.away_name, homeScore: m.home_score, awayScore: m.away_score,
+        home: m.home_name, away: m.away_name, ...withLogos(m, logos), homeScore: m.home_score, awayScore: m.away_score,
         pick: analysis ? compactPick(analysis) : null,
       };
     });
@@ -35,6 +37,7 @@ export async function onRequest({ env }) {
       historyMatches: ctx.matchCount,
       continents: CONTINENTS,
       leagues: LEAGUES.map((l) => ({ ...l, syncedAt: byLeague[l.id]?.synced_at ?? null, count: byLeague[l.id]?.matches_count ?? 0, error: byLeague[l.id]?.last_error ?? null })),
+      needsCrests: LEAGUES.filter((l) => needsTeamList(l.id) && !logos.has(l.afId) && window.some((m) => m.league === l.id)).map((l) => l.id),   // campionati con partite ma senza scudetti in cache
       needsSync: LEAGUES.filter((l) => syncDue(byLeague[l.id], isActiveLeague(window, l.id, now), now)).map((l) => l.id),
       matches,
     });

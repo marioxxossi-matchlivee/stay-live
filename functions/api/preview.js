@@ -1,5 +1,6 @@
 import { errorMessage, json, loadFinals, missingConfig, supabaseGet } from "./_lib.js";
 import { analyzeMatch, buildAccumulator, buildContext, compactPick } from "./model.js";
+import { loadLogoIndex, withLogos } from "./_crests.js";
 
 /** GET /api/preview?ids=a,b,c&n=8  ->  consiglio per ogni partita scelta + multipla suggerita. */
 export async function onRequest({ request, env }) {
@@ -12,15 +13,16 @@ export async function onRequest({ request, env }) {
   const missing = missingConfig(env);
   if (missing.length) return json({ error: `Variabili mancanti: ${missing.join(", ")}` }, 503);
   try {
-    const [matches, finals] = await Promise.all([
+    const [matches, finals, logos] = await Promise.all([
       supabaseGet(env, "matches", { select: "*", game_id: `in.(${ids.map((i) => `"${i}"`).join(",")})`, order: "kickoff_at.asc", limit: 40 }),
       loadFinals(env),
+      loadLogoIndex(env),
     ]);
     const ctx = buildContext(finals);
     const items = matches.map((m) => {
       const a = analyzeMatch(m, ctx, { n });
       return {
-        id: m.game_id, league: m.league, kickoffAt: m.kickoff_at, status: m.status, home: m.home_name, away: m.away_name,
+        id: m.game_id, league: m.league, kickoffAt: m.kickoff_at, status: m.status, home: m.home_name, away: m.away_name, ...withLogos(m, logos),
         pick: compactPick(a), alternatives: a.alternatives.slice(0, 2).map((s) => ({ label: s.label, p: s.p, pLow: s.pLow, minOdds: s.minOdds })),
         topScores: a.topScores, confidence: a.confidence, sample: a.sample, lambda: a.lambda,
       };

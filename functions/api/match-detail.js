@@ -1,4 +1,5 @@
 import { errorMessage, json, supabaseGet } from "./_lib.js";
+import { crestUrl } from "./_crests.js";
 import { betIdsFrom, loadSections, pickCoach, planFor, resolveFixture, summarizeOdds, ttlFor } from "./_apifootball.js";
 
 const COLS = "game_id,league,season,kickoff_at,status,home_id,away_id,home_name,away_name";
@@ -28,7 +29,7 @@ export async function onRequest({ request, env }) {
     const finished = match.status === "final";
     const { sections: pre } = await loadSections(env, [{ section: "bets", endpoint: "odds/bets", params: {}, ttl: ttlFor("odds-bets") }], now);
     const plan = planFor({ fixtureId: mapped.map.fixture_id, leagueId: mapped.map.league_id, season: mapped.map.season, homeId: mapped.map.home_team_id, awayId: mapped.map.away_team_id, kickoff, finished, now, betIds: betIdsFrom(pre.bets?.data) });
-    const { sections: s, usage } = await loadSections(env, plan, now);
+    const { sections: s, usage, retry } = await loadSections(env, plan, now);
 
     const fixture = s.fixture?.data?.[0] ?? null;
     const freshness = Object.fromEntries(Object.entries(s).map(([k, v]) => [k, { fetchedAt: v.fetchedAt, source: v.source, stale: v.stale, error: v.error, deferred: Boolean(v.deferred) }]));
@@ -47,6 +48,8 @@ export async function onRequest({ request, env }) {
       coverage: s.coverage?.data?.[0]?.seasons?.find((x) => x.year === mapped.map.season)?.coverage ?? null,
       freshness,
       usage,
+      retry,                                          // { pending, afterMs }: sezioni ancora da scaricare e quando richiederle (il browser lo fa da solo)
+      crests: { home: crestUrl(mapped.map.home_team_id), away: crestUrl(mapped.map.away_team_id) },
     });
   } catch (error) {
     console.error("Stay Live match-detail:", errorMessage(error));
