@@ -366,3 +366,124 @@ h4{font:700 14px var(--body);color:var(--mute);margin:20px 0 8px}
 
 @media (min-width:560px){.af-tiles{grid-template-columns:repeat(4,1fr)}.af-crest{width:64px;height:64px}.af-team b{font-size:17px}.af-big{font-size:36px}}
 @media (prefers-reduced-motion:reduce){.af-status.live b,.af-loading i{animation:none}}
+
+/* =====================================================================
+   Stile unico (quello della scheda "Dati API-Football") esteso a tutta l'app:
+   card morbide con ombra leggera, riquadri grigio chiaro, spunte verdi, etichette in maiuscoletto, scudetti.
+   ===================================================================== */
+:root{--soft:#f5f7fa;--soft-2:#e9edf2;--soft-line:#e6ebf1;--shadow:0 1px 2px #0e1a2b0f,0 4px 14px -6px #0e1a2b1f}
+
+/* Scudetti */
+.crest{position:relative;flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#fff;box-shadow:0 0 0 1px #e1e6ed;overflow:hidden}
+.crest em{font:800 10.5px var(--head);font-style:normal;color:#51627c;letter-spacing:.02em}
+.crest img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;padding:4px;background:#fff}
+.crest.sm{width:24px;height:24px}.crest.sm em{font-size:9px}.crest.sm img{padding:3px}
+.crest.xs{width:18px;height:18px}.crest.xs em{font-size:7px}.crest.xs img{padding:2px}
+.with-crest{display:flex!important;align-items:center;gap:8px}
+.tcell{display:flex;align-items:center;gap:8px;min-width:0}.tcell span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.h2h-t{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
+.af-t .crest{margin-right:0}
+
+/* Pagina */
+.top .ghost{background:transparent;border:1px solid #ffffff33;border-radius:10px;padding:6px 10px;font-size:13px}
+.top-actions{flex-wrap:wrap;justify-content:flex-end}
+.ghost{background:var(--soft);border:0;border-radius:12px;padding:8px 13px;color:var(--ink-2)}
+.ghost:hover{background:var(--soft-2)}
+.ghost:disabled{opacity:.55;cursor:wait}
+.top .ghost:hover{background:#ffffff14}
+.selbar .ghost{background:transparent;border:1px solid #ffffff33}
+.hist select{border:0;background:var(--soft);border-radius:10px}
+.lg-toggle{background:var(--card)!important;box-shadow:var(--shadow);border:0!important;border-radius:16px!important}
+.league-nav{border:0;border-radius:18px;box-shadow:var(--shadow)}
+.continent h3{letter-spacing:.1em}
+.nation{border-top:1px solid var(--soft-line)}
+.chip{border:0;background:var(--soft);border-radius:14px;padding:8px 13px;color:var(--ink)}
+.chip[aria-pressed=true]{background:var(--pitch-tint);color:#0b5c38;display:inline-flex;align-items:center;gap:7px}
+.chip[aria-pressed=true]::before{content:"✓";display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:#fff;color:var(--pitch);font:800 11px var(--body)}
+.day{border:0;background:var(--card);border-radius:16px;box-shadow:var(--shadow);padding:8px 12px}
+.day[aria-pressed=true]{background:var(--ink);color:#fff;box-shadow:none}
+.day[aria-pressed=true] b,.day[aria-pressed=true] small{color:#b8c6de}
+.banner{border-radius:14px}
+
+/* Elenco partite */
+.row{border:0;border-radius:18px;box-shadow:var(--shadow);padding:12px 14px;align-items:start}
+.row input[type=checkbox]{margin-top:3px}
+.row.sel{box-shadow:0 0 0 2px var(--pitch),var(--shadow)}
+.row-main{gap:9px}
+.fx{display:grid;gap:7px}
+.side{display:flex;align-items:center;gap:9px;min-width:0}
+.side b{font:700 15.5px/1.2 var(--head);letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.side .score{margin-left:auto;font:800 17px var(--head);font-variant-numeric:tabular-nums;padding-left:8px}
+.pick{border-radius:14px}
+.pick.bet{background:var(--pitch-tint)}
+
+/* Dettaglio, preview, metodo: stessa pelle */
+dialog{background:#fff;border-radius:22px}
+.tabs{background:var(--soft)}
+.tab[aria-pressed=true]{box-shadow:var(--shadow)}
+.verdict,.kv div,.mk,.form,.pv-card,.pv-bank{background:var(--soft);border:0;box-shadow:none}
+.verdict{border-radius:18px;border-left:0;box-shadow:inset 5px 0 0 var(--skip)}
+.verdict.bet{box-shadow:inset 5px 0 0 var(--pitch)}
+.kv div{border-radius:14px}
+.mk{border-radius:18px}
+.mk>h5{background:transparent;border-bottom:1px solid var(--soft-line);text-transform:uppercase;letter-spacing:.08em;font-size:11.5px;color:var(--mute)}
+.sl{border-bottom:1px solid var(--soft-line)}
+.sl-info input,.pv-bank input,.pv-odds input{border:1px solid var(--soft-line);border-radius:10px}
+.form{border-radius:16px}
+.form b{font-family:var(--head)}
+h4{text-transform:uppercase;letter-spacing:.1em;font-size:11.5px;font-weight:800;margin:22px 0 10px}
+.pv-card,.pv-bank{border-radius:18px}
+.pv-multi-card{border-radius:18px;border:0;background:#eef3ff;box-shadow:inset 5px 0 0 #2f5bea}
+.pv-stake{background:#fff;border-radius:12px}
+.pv-multi-card .legs .m{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.pv-multi-card .legs .m .crest+.crest{margin-left:-8px;box-shadow:0 0 0 2px #eef3ff}
+.pv-sum{border-radius:18px}
+.pv-btns{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.save{border:0;border-radius:12px;padding:8px 14px;font-weight:700;background:var(--pitch-tint);color:#0b5c38}
+.save:hover{background:#cfeadb}
+.save.done{background:var(--soft-2);color:var(--mute);cursor:default}
+.pv-multi-card .save{justify-self:start}
+.method code{background:var(--soft);border:0}
+
+/* Scheda "Dati API-Football" su foglio bianco */
+.af-sec{background:var(--soft);border:0;box-shadow:none;border-radius:18px}
+.af-sec[open]>summary{border-bottom:1px solid var(--soft-line)}
+.af-kv div,.af-list li,.af-fresh li,.af-t td{border-color:var(--soft-line)}
+.af-tiles div,.af-prob-leg div,.af-cov li{background:#fff}
+.af-t tr.me td{background:#e8f0ff}
+.af-sec>summary small{background:#fff}
+.af-pill.warn{background:var(--warn-tint);color:#8a4b00}
+.af-wait{margin:4px 0 0;font-size:12.5px;line-height:1.35;color:#8a4b00}
+.af-warn.wait{align-items:center}
+.af-spin{flex:none;width:18px;height:18px;border-radius:50%;border:2.5px solid #f0d9ae;border-top-color:#b36a00;animation:afspin .8s linear infinite}
+
+/* Le mie giocate */
+.pl-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:4px 0 8px}
+.pl-sum div{background:var(--soft);border-radius:14px;padding:10px 12px;display:grid;gap:2px}
+.pl-sum small{font:800 11px var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.pl-sum b{font:800 17px var(--head);font-variant-numeric:tabular-nums}
+.pl-sum .good b{color:#0b5c38}.pl-sum .bad b{color:#b3202a}
+.pl-note{margin:0 0 12px;font-size:12.5px;color:var(--mute)}
+.pl-card{background:var(--soft);border-radius:18px;padding:12px 14px;margin:0 0 10px;box-shadow:inset 5px 0 0 #b9c2cf}
+.pl-card.won{box-shadow:inset 5px 0 0 var(--pitch)}
+.pl-card.lost{box-shadow:inset 5px 0 0 #d9534f}
+.pl-card>header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.pl-card>header b{font:800 16px var(--head)}
+.pl-card ul{list-style:none;margin:0;padding:0;display:grid}
+.pl-leg{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:9px 0;border-bottom:1px solid var(--soft-line)}
+.pl-leg:last-child{border-bottom:0}
+.pl-t{display:flex;align-items:center;gap:6px;min-width:0}
+.pl-t .crest+.crest{margin-left:-10px;box-shadow:0 0 0 2px var(--soft)}
+.pl-t>span:last-child{display:grid;margin-left:4px;min-width:0}
+.pl-t b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pl-t small,.pl-pick small,.pl-res small{color:var(--mute);font-size:12px}
+.pl-pick{display:grid;text-align:right}
+.pl-pick b{color:#0b5c38;font-size:14px}
+.pl-res{grid-column:1/-1;display:flex;align-items:center;gap:8px}
+.pl-res b{font:800 15px var(--head);font-variant-numeric:tabular-nums}
+.pl-card>footer{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:6px;font-size:12.5px;color:var(--ink-2)}
+.pl-gain{color:#0b5c38}.pl-loss{color:#b3202a}
+@media (max-width:420px){.pl-sum{grid-template-columns:1fr 1fr}.pl-sum div:first-child{grid-column:1/-1}}
+.pl-leg.won .pl-pick b{color:#0b5c38}.pl-leg.lost .pl-pick b{color:#b3202a}.pl-leg.pending .pl-pick b,.pl-leg.void .pl-pick b{color:var(--ink-2)}
+.af-empty .af-spin{display:inline-block;vertical-align:-4px;margin-right:6px}
+@media (max-width:480px){.top{padding-top:10px;padding-bottom:10px}.top-actions{gap:5px}.top .ghost{padding:6px 9px;font-size:12.5px}}

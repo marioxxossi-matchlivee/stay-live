@@ -3,6 +3,7 @@
  * Funzioni pure: ricevono i dati e restituiscono testo, senza toccare la pagina. Ogni valore dinamico passa da esc().
  */
 import { dayKey, dayParts, esc, fmtTime, num } from "./format.js";
+import { crest as crestBase, initials } from "./ui.js";
 
 const dash = "—";
 const val = (v) => (v == null || v === "" ? dash : esc(v));
@@ -35,13 +36,9 @@ const table = (head, rows, { rowCls = [], numCols = [] } = {}) =>
   `<div class="af-scroll"><table class="af-t"><thead><tr>${head.map((h, i) => `<th${numCols.includes(i) ? ' class="n"' : ""}>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.map((r, ri) => `<tr${rowCls[ri] ? ` class="${rowCls[ri]}"` : ""}>${r.map((c, i) => `<td${numCols.includes(i) ? ' class="n"' : ""}>${c}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
 const yesNo = (v) => (v == null ? dash : v ? '<span class="af-pill ok">Sì</span>' : '<span class="af-pill off">No</span>');
 
-const initials = (n) => {
-  const w = String(n ?? "").split(/[\s.\-]+/).filter(Boolean);
-  return esc((w.length > 1 ? w[0][0] + w[1][0] : (w[0] ?? "").slice(0, 3)).toUpperCase());
-};
-/** Stemma: iniziali sempre presenti, il logo (solo https) ci si sovrappone; se non si carica resta la sigla. */
-const crest = (name, logo) =>
-  `<span class="af-crest"><em>${initials(name)}</em>${/^https:\/\//.test(String(logo ?? "")) ? `<img src="${esc(logo)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ""}</span>`;
+const crest = (name, logo) => crestBase(name, logo, "af-crest");
+const mini = (name, logo) => crestBase(name, logo, "crest sm");
+const teamCell = (t) => `<span class="tcell">${mini(t?.name, t?.logo)}<span>${val(t?.name)}</span></span>`;
 
 const roundIt = (r) => { const m = /^Regular Season - (\d+)$/i.exec(String(r ?? "")); return m ? `Giornata ${m[1]}` : r; };
 const STATUS_IT = { TBD: "Da definire", NS: "Da giocare", "1H": "Primo tempo", HT: "Intervallo", "2H": "Secondo tempo", ET: "Supplementari", BT: "Pausa", P: "Rigori", SUSP: "Sospesa", INT: "Interrotta", LIVE: "In corso", FT: "Finita", AET: "Dopo supplementari", PEN: "Dopo i rigori", PST: "Rinviata", CANC: "Annullata", ABD: "Abbandonata", AWD: "A tavolino", WO: "A tavolino" };
@@ -74,8 +71,8 @@ function matchHero(d) {
   const goals = f?.goals ?? {};
   const home = f?.teams?.home?.name ?? g0.home ?? "Casa";
   const away = f?.teams?.away?.name ?? g0.away ?? "Trasferta";
-  const logoH = f?.teams?.home?.logo ?? d.predictions?.teams?.home?.logo;
-  const logoA = f?.teams?.away?.logo ?? d.predictions?.teams?.away?.logo;
+  const logoH = f?.teams?.home?.logo ?? d.predictions?.teams?.home?.logo ?? d.crests?.home;
+  const logoA = f?.teams?.away?.logo ?? d.predictions?.teams?.away?.logo ?? d.crests?.away;
   const iso = fx.date ?? g0.kickoffAt ?? null;
   const tone = statusTone(st.short);
   const played = goals.home != null;
@@ -181,7 +178,7 @@ function injuries(d) {
   const by = new Map();
   for (const x of list) { const t = x.team?.name ?? "—"; (by.get(t) ?? by.set(t, []).get(t)).push(x); }
   const tone = (t) => (/missing|out|suspen/i.test(String(t ?? "")) ? "err" : /question|doubt/i.test(String(t ?? "")) ? "warn" : "off");
-  return [...by].map(([team, rows]) => `<h5>${esc(team)} · ${rows.length}</h5><ul class="af-list">${rows.map((r) => `<li><span class="af-av">${initials(r.player?.name)}</span><div><b>${val(r.player?.name)}</b><small>${val(r.player?.reason)}</small></div><span class="af-pill ${tone(r.player?.type)}">${val(r.player?.type)}</span></li>`).join("")}</ul>`).join("");
+  return [...by].map(([team, rows]) => `<h5 class="with-crest">${mini(team, rows[0]?.team?.logo)}${esc(team)} · ${rows.length}</h5><ul class="af-list">${rows.map((r) => `<li><span class="af-av">${initials(r.player?.name)}</span><div><b>${val(r.player?.name)}</b><small>${val(r.player?.reason)}</small></div><span class="af-pill ${tone(r.player?.type)}">${val(r.player?.type)}</span></li>`).join("")}</ul>`).join("");
 }
 
 function refereeCoaches(d) {
@@ -198,7 +195,7 @@ function refereeCoaches(d) {
 function lineups(f) {
   const L = f?.lineups ?? [];
   if (!L.length) return empty("Formazioni non ancora pubblicate (di solito circa un'ora prima del calcio d'inizio).");
-  return L.map((t) => `<h5>${esc(t.team?.name)} · ${val(t.formation)} · all. ${val(t.coach?.name)}</h5>
+  return L.map((t) => `<h5 class="with-crest">${mini(t.team?.name, t.team?.logo)}${esc(t.team?.name)} · ${val(t.formation)} · all. ${val(t.coach?.name)}</h5>
     ${table(["N.", "Titolare", "Ruolo"], (t.startXI ?? []).map((x) => [val(x.player?.number), val(x.player?.name), val(x.player?.pos)]))}
     ${(t.substitutes ?? []).length ? `<p class="af-note">Panchina: ${(t.substitutes ?? []).map((x) => `${esc(x.player?.name)}${x.player?.number ? ` (${esc(x.player.number)})` : ""}`).join(", ")}</p>` : ""}`).join("");
 }
@@ -261,7 +258,7 @@ function h2h(list) {
   const over25 = played.filter((x) => x.goals.home + x.goals.away > 2.5).length;
   const avg = played.length ? played.reduce((t, x) => t + x.goals.home + x.goals.away, 0) / played.length : null;
   const head = played.length ? `<p class="af-note">Ultimi ${played.length} scontri: Over 2,5 in <b>${over25}</b> su ${played.length} · media <b>${num(avg)}</b> gol a partita.</p>` : "";
-  return head + `<ul class="af-list af-h2h">${list.map((x) => `<li><div><small>${esc((x.fixture?.date ?? "").slice(0, 10))} · ${val(x.league?.name)}</small><span>${esc(x.teams?.home?.name)} <em>vs</em> ${esc(x.teams?.away?.name)}</span></div><b class="af-sc">${val(x.goals?.home)}–${val(x.goals?.away)}</b></li>`).join("")}</ul>`;
+  return head + `<ul class="af-list af-h2h">${list.map((x) => `<li><div><small>${esc((x.fixture?.date ?? "").slice(0, 10))} · ${val(x.league?.name)}</small><span class="h2h-t">${mini(x.teams?.home?.name, x.teams?.home?.logo)}${esc(x.teams?.home?.name)} <em>vs</em> ${mini(x.teams?.away?.name, x.teams?.away?.logo)}${esc(x.teams?.away?.name)}</span></div><b class="af-sc">${val(x.goals?.home)}–${val(x.goals?.away)}</b></li>`).join("")}</ul>`;
 }
 
 const FORM_CLS = { W: "w", D: "d", L: "l" };
@@ -273,7 +270,7 @@ function standings(d) {
   const ids = [d.fixture?.teams?.home?.id, d.fixture?.teams?.away?.id].filter(Boolean);
   const group = groups.find((g) => g.some((r) => ids.includes(r.team?.id))) ?? groups[0];
   return table(["#", "Squadra", "G", "V-N-P", "GF-GS", "DR", "Pt", "Forma"], group.map((r) => [
-    val(r.rank), val(r.team?.name), val(r.all?.played), `${val(r.all?.win)}-${val(r.all?.draw)}-${val(r.all?.lose)}`, `${val(r.all?.goals?.for)}-${val(r.all?.goals?.against)}`, val(r.goalsDiff), `<b>${val(r.points)}</b>`, formBadges(r.form),
+    val(r.rank), teamCell(r.team), val(r.all?.played), `${val(r.all?.win)}-${val(r.all?.draw)}-${val(r.all?.lose)}`, `${val(r.all?.goals?.for)}-${val(r.all?.goals?.against)}`, val(r.goalsDiff), `<b>${val(r.points)}</b>`, formBadges(r.form),
   ]), { rowCls: group.map((r) => (ids.includes(r.team?.id) ? "me" : "")), numCols: [0, 2, 3, 4, 5, 6] });
 }
 
@@ -312,7 +309,7 @@ function coverage(d) {
   }
   const fr = Object.entries(d.freshness ?? {});
   if (fr.length) {
-    out.push(`<h5>Aggiornamento dei dati</h5><ul class="af-fresh">${fr.map(([k, v]) => `<li><div class="af-fr-row"><b>${esc(FRESH_IT[k] ?? k)}</b><span class="src">${v.source === "live" ? "API-Football" : "memoria"} · ${when(v.fetchedAt)}</span>${v.error ? `<span class="af-pill err">errore</span>` : `<span class="af-pill ok">ok</span>`}</div>${v.error ? `<p class="af-err">${esc(v.error)}${v.stale ? " (dato precedente)" : ""}</p>` : ""}</li>`).join("")}</ul>`);
+    out.push(`<h5>Aggiornamento dei dati</h5><ul class="af-fresh">${fr.map(([k, v]) => `<li><div class="af-fr-row"><b>${esc(FRESH_IT[k] ?? k)}</b><span class="src">${v.source === "live" ? "API-Football" : "memoria"} · ${when(v.fetchedAt)}</span>${v.deferred ? `<span class="af-pill warn">in attesa</span>` : v.error ? `<span class="af-pill err">errore</span>` : `<span class="af-pill ok">ok</span>`}</div>${v.error ? `<p class="${v.deferred ? "af-wait" : "af-err"}">${esc(v.error)}${v.stale ? " (dato precedente)" : ""}</p>` : ""}</li>`).join("")}</ul>`);
   }
   if (d.usage) {
     const used = Number(d.usage.limit) > 0 && d.usage.remaining != null ? Math.max(0, Math.min(100, 100 - (Number(d.usage.remaining) / Number(d.usage.limit)) * 100)) : 0;
@@ -328,18 +325,22 @@ export function renderAfDetail(d) {
   const f = d.fixture;
   const errors = Object.entries(d.freshness ?? {}).filter(([, v]) => v.error && !v.stale && !v.deferred).map(([k]) => FRESH_IT[k] ?? k);
   const warn = errors.length ? `<p class="af-warn">${svg("alert")}<span>Alcuni dati non sono stati ricevuti: ${esc(errors.join(", "))}. Dettagli in fondo, in “Copertura e aggiornamento”.</span></p>` : "";
-  return `${matchHero(d)}${warn}
-    ${sec("Pronostico di API-Football", predictions(d.predictions), { open: true, icon: "pred", tone: "green" })}
-    ${sec("Quote: Over/Under gol e corner", odds(d.odds), { open: true, icon: "odds", tone: "blue" })}
-    ${sec("Infortunati e squalificati", injuries(d), { open: true, note: String((d.injuries ?? []).length), icon: "injuries", tone: "red" })}
+  const waiting = Object.values(d.freshness ?? {}).filter((v) => v.deferred).length;
+  const wait = waiting ? `<p class="af-warn wait" id="af-retry" role="status"><i class="af-spin" aria-hidden="true"></i><span>${waiting} ${waiting === 1 ? "sezione ancora da scaricare" : "sezioni ancora da scaricare"}: riprovo da solo.</span></p>` : "";
+  const fr = d.freshness ?? {};
+  const soon = (keys, body) => (keys.some((k) => fr[k]?.deferred) && body.includes('class="af-empty"') ? `<p class="af-empty"><i class="af-spin" aria-hidden="true"></i> In arrivo: sto scaricando questi dati…</p>` : body);
+  return `${matchHero(d)}${wait}${warn}
+    ${sec("Pronostico di API-Football", soon(["predictions"], predictions(d.predictions)), { open: true, icon: "pred", tone: "green" })}
+    ${sec("Quote: Over/Under gol e corner", soon(["oddsGoals", "oddsCorners"], odds(d.odds)), { open: true, icon: "odds", tone: "blue" })}
+    ${sec("Infortunati e squalificati", soon(["injuries"], injuries(d)), { open: true, note: String((d.injuries ?? []).length), icon: "injuries", tone: "red" })}
     ${sec("Arbitro e allenatori", refereeCoaches(d), { open: true, icon: "people", tone: "slate" })}
     ${sec("Dettagli partita", matchInfo(d), { icon: "match", tone: "slate" })}
-    ${sec("Formazioni", lineups(f), { icon: "lineups", tone: "green" })}
+    ${sec("Formazioni", soon(["fixture"], lineups(f)), { icon: "lineups", tone: "green" })}
     ${sec("Eventi", events(f), { icon: "events", tone: "amber" })}
     ${sec("Statistiche della partita", statistics(f), { icon: "stats", tone: "blue" })}
     ${sec("Giocatori della partita", players(f), { icon: "people", tone: "green" })}
-    ${sec("Scontri diretti", h2h(d.h2h), { icon: "h2h", tone: "amber" })}
-    ${sec("Classifica", standings(d), { icon: "table", tone: "blue" })}
-    ${sec("Statistiche stagionali delle squadre", seasonStats(d), { icon: "season", tone: "green" })}
+    ${sec("Scontri diretti", soon(["h2h"], h2h(d.h2h)), { icon: "h2h", tone: "amber" })}
+    ${sec("Classifica", soon(["standings"], standings(d)), { icon: "table", tone: "blue" })}
+    ${sec("Statistiche stagionali delle squadre", soon(["teamHome", "teamAway"], seasonStats(d)), { icon: "season", tone: "green" })}
     ${sec("Copertura e aggiornamento dati", coverage(d), { icon: "shield", tone: "slate" })}`;
 }
