@@ -243,7 +243,7 @@ async function showTab(tab) {
   if (tab !== "data") return;
   const id = detailState.id;
   if (detailState.af) { $("#pane-data").innerHTML = renderAfDetail(detailState.af); return; }
-  $("#pane-data").innerHTML = `<p class="empty">Scarico i dati da API-Football…</p>`;
+  $("#pane-data").innerHTML = `<div class="af-loading"><i></i>Scarico i dati da API-Football…</div>`;
   try {
     const data = await getJson(`/api/match-detail?id=${encodeURIComponent(id)}`);
     if (detailState?.id !== id) return;
