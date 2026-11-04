@@ -1,5 +1,5 @@
 import { errorMessage, json, supabaseGet } from "./_lib.js";
-import { betIdsFrom, loadSections, planFor, resolveFixture, summarizeOdds, ttlFor } from "./_apifootball.js";
+import { betIdsFrom, loadSections, pickCoach, planFor, resolveFixture, summarizeOdds, ttlFor } from "./_apifootball.js";
 
 const COLS = "game_id,league,season,kickoff_at,status,home_id,away_id,home_name,away_name";
 
@@ -43,6 +43,7 @@ export async function onRequest({ request, env }) {
       h2h: s.h2h?.data ?? [],
       standings: s.standings?.data?.[0]?.league?.standings ?? [],
       teamStats: { home: s.teamHome?.data ?? null, away: s.teamAway?.data ?? null },
+      coaches: { home: pickCoach(s.coachHome?.data, mapped.map.home_team_id), away: pickCoach(s.coachAway?.data, mapped.map.away_team_id) },
       coverage: s.coverage?.data?.[0]?.seasons?.find((x) => x.year === mapped.map.season)?.coverage ?? null,
       freshness,
       usage,

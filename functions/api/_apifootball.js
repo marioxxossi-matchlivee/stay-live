@@ -65,8 +65,19 @@ export function planFor({ fixtureId, leagueId, season, homeId, awayId, kickoff, 
     plan.push({ section: "h2h", endpoint: "fixtures/headtohead", params: { h2h: `${homeId}-${awayId}`, last: 10 }, ttl: ttlFor("h2h", c) });
     plan.push({ section: "teamHome", endpoint: "teams/statistics", params: { league: leagueId, season, team: homeId }, ttl: ttlFor("team-stats", c) });
     plan.push({ section: "teamAway", endpoint: "teams/statistics", params: { league: leagueId, season, team: awayId }, ttl: ttlFor("team-stats", c) });
+    plan.push({ section: "coachHome", endpoint: "coachs", params: { team: homeId }, ttl: ttlFor("h2h", c) });
+    plan.push({ section: "coachAway", endpoint: "coachs", params: { team: awayId }, ttl: ttlFor("h2h", c) });
   }
   return plan;
+}
+
+/** Allenatore attuale di una squadra: quello con un incarico senza data di fine presso quella squadra. */
+export function pickCoach(list, teamId) {
+  const coaches = Array.isArray(list) ? list : [];
+  const current = (c) => (c.career ?? []).find((x) => x.team?.id === teamId && !x.end);
+  const c = coaches.find(current) ?? coaches.find((x) => x.team?.id === teamId) ?? null;
+  if (!c) return null;
+  return { id: c.id, name: c.name, age: c.age ?? null, nationality: c.nationality ?? null, photo: c.photo ?? null, since: current(c)?.start ?? null };
 }
 
 /* ---------- Abbinamento partite ---------- */
@@ -134,7 +145,10 @@ export async function afFetch(env, endpoint, params = {}, { timeoutMs = 9000 } =
     const body = await res.json().catch(() => null);
     const errs = Array.isArray(body?.errors) ? body.errors : Object.values(body?.errors ?? {});
     const meta = { status: res.status, remaining: num(res.headers.get("x-ratelimit-requests-remaining")), limit: num(res.headers.get("x-ratelimit-requests-limit")) };
-    if (!res.ok || !body || errs.length) throw Object.assign(new AfError(errs.join("; ") || `HTTP ${res.status}`, { status: res.status }), { meta });
+    if (!res.ok || !body || errs.length) {
+      const rateLimited = res.status === 429 || errs.some((m) => /too many requests|per minute|rate limit/i.test(String(m)));
+      throw Object.assign(new AfError(errs.join("; ") || `HTTP ${res.status}`, { status: res.status }), { meta, rateLimited });
+    }
     return { response: body.response ?? [], results: body.results ?? 0, ...meta };
   } catch (e) {
     if (e?.name === "AbortError") throw new AfError("Timeout");
@@ -275,17 +289,23 @@ export async function trackUsage(env, now, meta, spent = 1) {
   await supabaseUpsert(env, "af_usage", [{ day: dayKey(now), requests: (u?.requests ?? 0) + spent, limit_day: meta?.limit ?? u?.limit_day ?? null, remaining: meta?.remaining ?? u?.remaining ?? null, updated_at: iso(now) }], "day");
 }
 
+const RATE_RETRY_MS = [4000, 10000];
+
 /** Tutta la stagione di un campionato con UNA richiesta (partite giocate e da giocare). */
 export async function fetchAfSeason(env, cfg, now = Date.now(), { reserve = 200 } = {}) {
   const [u] = await supabaseGet(env, "af_usage", { select: "remaining", day: `eq.${dayKey(now)}`, limit: 1 });
   if (u?.remaining != null && u.remaining < reserve) throw new AfError(`Limite giornaliero API-Football quasi esaurito (${u.remaining} richieste): sincronizzazione rimandata.`);
   const season = seasonFor(cfg.id, iso(now));
   let res;
-  try {
-    res = await afFetch(env, "fixtures", { league: cfg.afId, season, timezone: "UTC" }, { timeoutMs: 20000 });
-  } catch (e) {
-    await trackUsage(env, now, e?.meta, 1).catch(() => {});
-    throw e;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      res = await afFetch(env, "fixtures", { league: cfg.afId, season, timezone: "UTC" }, { timeoutMs: 20000 });
+      break;
+    } catch (e) {
+      await trackUsage(env, now, e?.meta, 1).catch(() => {});
+      if (!e?.rateLimited || attempt >= RATE_RETRY_MS.length) throw e;   // limite al minuto: si aspetta e si riprova
+      await new Promise((r) => setTimeout(r, RATE_RETRY_MS[attempt]));
+    }
   }
   await trackUsage(env, now, res, 1).catch(() => {});
   const bad = leagueCheck(cfg, res.response[0]?.league);
