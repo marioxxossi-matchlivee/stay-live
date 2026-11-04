@@ -179,3 +179,34 @@ h4{font:700 14px var(--body);color:var(--mute);margin:20px 0 8px}
 .pv-multi-card .legs b{color:#0b5c38;white-space:nowrap}
 .pv-multi-card .legs small{grid-column:2/4;color:var(--mute)}
 .pv-multi-card .mstats{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--ink-2)}
+
+/* ---------- Dettaglio: schede e dati API-Football ---------- */
+.tabs{display:flex;gap:6px;margin:0 40px 14px 0}
+.tab{flex:1;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:9px 10px;font-weight:700;font-size:14px;color:var(--ink-2)}
+.tab[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:#fff}
+.af-sec{border:1px solid var(--line);border-radius:12px;background:var(--card);margin:0 0 10px}
+.af-sec>summary{cursor:pointer;list-style:none;padding:12px 14px;font:700 15px var(--head);display:flex;justify-content:space-between;align-items:center;gap:8px}
+.af-sec>summary::-webkit-details-marker{display:none}
+.af-sec>summary::after{content:"+";font-weight:700;color:var(--mute)}
+.af-sec[open]>summary::after{content:"–"}
+.af-sec>summary small{margin-left:auto;margin-right:6px;background:var(--skip-tint);color:var(--ink-2);border-radius:999px;padding:1px 8px;font:700 12px var(--body)}
+.af-body{padding:0 14px 14px}
+.af-body h5{margin:14px 0 6px;font:700 13px var(--body);color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em}
+.af-kv{margin:0;display:grid;gap:6px}
+.af-kv div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:6px 0}
+.af-kv dt{color:var(--mute);flex:none}
+.af-kv dd{margin:0;text-align:right;font-weight:600}
+.af-kv small,.af-t small{display:block;color:var(--mute);font-weight:500;font-size:12px}
+.af-scroll{overflow-x:auto}
+.af-t{width:100%;border-collapse:collapse;font-size:14px}
+.af-t th{text-align:left;color:var(--mute);font:700 12px var(--body);padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.af-t td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.af-bars{display:grid;gap:6px;margin:10px 0 0}
+.af-bar{position:relative;display:flex;align-items:center;gap:8px;height:26px;background:var(--skip-tint);border-radius:7px;overflow:hidden}
+.af-bar i{position:absolute;inset:0 auto 0 0;background:var(--pitch-tint)}
+.af-bar span,.af-bar b{position:relative;padding:0 10px;font-weight:700}
+.af-bar b{margin-left:auto}
+.af-note{color:var(--ink-2);font-size:13px;margin:8px 0 0}
+.af-empty{color:var(--mute);margin:4px 0}
+.af-warn{background:var(--warn-tint);color:var(--warn);border-radius:10px;padding:9px 12px;margin:0 0 12px;font-weight:500}
+.af-err{color:#9b1c1c}

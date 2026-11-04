@@ -3,6 +3,7 @@ import { MODEL, verdictFor } from "../functions/api/model.js";
 import { computePlan, isBetItem } from "./plan.js";
 import { dayKey, dayParts, eur, esc, fmtTime, num, pct } from "./format.js";
 import { buildPreviewPdf } from "./report.js";
+import { renderAfDetail } from "./afdetail.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const state = {
@@ -37,7 +38,7 @@ async function load({ sync = true } = {}) {
       const queue = [...data.needsSync];
       const total = queue.length;
       let done = 0;
-      const worker = async () => {          // 4 campionati alla volta: con tanti campionati il primo avvio resta rapido
+      const worker = async () => {          // 2 campionati alla volta: API-Football limita le richieste al minuto
         while (queue.length) {
           const id = queue.shift();
           try { await getJson(`/api/sync?league=${id}`); } catch (e) { failures.push(`${data.leagues.find((l) => l.id === id)?.name ?? id}: ${e.message}`); }
@@ -46,7 +47,7 @@ async function load({ sync = true } = {}) {
         }
       };
       state.banner = `Aggiorno i campionati… 0/${total}`; render();
-      await Promise.all(Array.from({ length: Math.min(4, total) }, worker));
+      await Promise.all(Array.from({ length: Math.min(2, total) }, worker));
       data = await getJson("/api/fixtures");
       state.banner = failures.length ? `Aggiornamento incompleto. ${failures[0]}` : null;
     } else state.banner = null;
@@ -161,7 +162,7 @@ async function openDetail(id) {
   $("#detail").showModal();
   $("#detail-body").innerHTML = `<p class="empty">Calcolo in corso…</p>`;
   try {
-    detailState = { id, data: await getJson(`/api/analysis?id=${encodeURIComponent(id)}&n=${state.n}`) };
+    detailState = { id, tab: "analysis", af: null, data: await getJson(`/api/analysis?id=${encodeURIComponent(id)}&n=${state.n}`) };
     renderDetail();
   } catch (e) {
     $("#detail-body").innerHTML = `<h2 class="d-title">Analisi non disponibile</h2><p class="d-sub">${esc(e.message)}</p>`;
@@ -203,7 +204,7 @@ function renderDetail() {
   const isBet = p?.verdict === "BET";
   const kick = `${dayParts(dayKey(match.kickoffAt)).long} · ${fmtTime.format(new Date(match.kickoffAt))}`;
   const groups = [...new Set(a.selections.map((s) => s.market))];
-  $("#detail-body").innerHTML = `
+  const body = `
     <h2 class="d-title">${esc(match.home)} – ${esc(match.away)}</h2>
     <p class="d-sub">${esc(leagueName(match.league))} · ${esc(kick)}</p>
     <div class="verdict ${isBet ? "bet" : ""}">
@@ -224,7 +225,33 @@ function renderDetail() {
     ${explain(match, a)}
     <h4>Ultime partite considerate</h4>
     <div class="formrow">${formBox(match.home, a.inputs.home)}${formBox(match.away, a.inputs.away)}</div>`;
+  $("#detail-body").innerHTML = `<div class="tabs" role="tablist" aria-label="Sezioni del dettaglio">
+      <button class="tab" data-tab="analysis" aria-pressed="true">Analisi</button>
+      <button class="tab" data-tab="data" aria-pressed="false">Dati API-Football</button></div>
+    <div id="pane-analysis">${body}</div><div id="pane-data" hidden></div>`;
   for (const s of a.selections) applyOdds(s.key);
+  if (detailState.tab === "data") showTab("data");
+}
+
+/** Cambia scheda; i dati API-Football si scaricano solo alla prima apertura (poi restano in memoria finché la modale è aperta). */
+async function showTab(tab) {
+  if (!detailState) return;
+  detailState.tab = tab;
+  for (const b of document.querySelectorAll("[data-tab]")) b.setAttribute("aria-pressed", String(b.dataset.tab === tab));
+  $("#pane-analysis").hidden = tab !== "analysis";
+  $("#pane-data").hidden = tab !== "data";
+  if (tab !== "data") return;
+  const id = detailState.id;
+  if (detailState.af) { $("#pane-data").innerHTML = renderAfDetail(detailState.af); return; }
+  $("#pane-data").innerHTML = `<p class="empty">Scarico i dati da API-Football…</p>`;
+  try {
+    const data = await getJson(`/api/match-detail?id=${encodeURIComponent(id)}`);
+    if (detailState?.id !== id) return;
+    detailState.af = data;
+    $("#pane-data").innerHTML = renderAfDetail(data);
+  } catch (e) {
+    if (detailState?.id === id) $("#pane-data").innerHTML = `<p class="af-empty">Dati API-Football non disponibili: ${esc(e.message)}</p>`;
+  }
 }
 function applyOdds(key) {
   const { match, analysis: a } = detailState.data;
@@ -417,6 +444,8 @@ function renderMethod() {
 document.addEventListener("click", (e) => {
   const t = e.target;
   if (t.closest("[data-close]")) t.closest("dialog").close();
+  const tab = t.closest("[data-tab]");
+  if (tab) showTab(tab.dataset.tab);
   else if (t.tagName === "DIALOG") t.close();
   const chip = t.closest("[data-league]");
   if (chip) {
@@ -456,7 +485,7 @@ document.addEventListener("input", (e) => {
 });
 async function openDetailKeep() {
   const id = detailState.id;
-  detailState = { id, data: await getJson(`/api/analysis?id=${encodeURIComponent(id)}&n=${state.n}`) };
+  detailState = { ...detailState, id, data: await getJson(`/api/analysis?id=${encodeURIComponent(id)}&n=${state.n}`) };
   renderDetail();
 }
 $("#select-day").addEventListener("click", () => {
