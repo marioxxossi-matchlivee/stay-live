@@ -134,7 +134,39 @@ export function summarizeOdds(goalsResp, cornersResp) {
 }
 
 /* ---------- Rete ---------- */
-export async function afFetch(env, endpoint, params = {}, { timeoutMs = 9000 } = {}) {
+const RATE_RE = /too many requests|per minute|rate limit/i;
+const RATE_RETRY_DELAYS = [1500, 4000];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let gateAt = 0;
+
+/**
+ * Distanzia le richieste: ne parte al massimo una ogni `gapMs` (default 250 ms = 4 al secondo, sotto il limite di 5 al secondo
+ * del piano Pro). Senza questo, le 12 richieste di una schermata di dettaglio partivano tutte insieme e API-Football ne
+ * rifiutava la maggior parte con "Too many requests" (il messaggio dice "al minuto" anche quando il limite superato e' quello al secondo).
+ * Lo slot si prenota in modo sincrono: anche piu' chiamate contemporanee nello stesso worker restano in fila.
+ */
+export async function rateGate(gapMs = 250) {
+  const slot = Math.max(Date.now(), gateAt);
+  gateAt = slot + gapMs;
+  const wait = slot - Date.now();
+  if (wait > 0) await sleep(wait);
+}
+
+/** Una richiesta ad API-Football, in fila con le altre. Con `retries` riprova (con attesa crescente) se il limite di richieste e' superato. */
+export async function afFetch(env, endpoint, params = {}, { timeoutMs = 9000, retries = 0 } = {}) {
+  const gap = num(env.API_FOOTBALL_MIN_GAP_MS) ?? 250;
+  for (let attempt = 0; ; attempt += 1) {
+    await rateGate(gap);
+    try {
+      return await afFetchOnce(env, endpoint, params, { timeoutMs });
+    } catch (e) {
+      if (!e?.rateLimited || attempt >= retries) throw e;
+      await sleep(RATE_RETRY_DELAYS[attempt] ?? 4000);
+    }
+  }
+}
+
+async function afFetchOnce(env, endpoint, params, { timeoutMs }) {
   const base = (env.API_FOOTBALL_BASE_URL || "https://v3.football.api-sports.io").replace(/\/$/, "");
   const url = new URL(`${base}/${endpoint}`);
   for (const [k, v] of Object.entries(params)) if (v != null && v !== "") url.searchParams.set(k, String(v));
@@ -146,7 +178,7 @@ export async function afFetch(env, endpoint, params = {}, { timeoutMs = 9000 } =
     const errs = Array.isArray(body?.errors) ? body.errors : Object.values(body?.errors ?? {});
     const meta = { status: res.status, remaining: num(res.headers.get("x-ratelimit-requests-remaining")), limit: num(res.headers.get("x-ratelimit-requests-limit")) };
     if (!res.ok || !body || errs.length) {
-      const rateLimited = res.status === 429 || errs.some((m) => /too many requests|per minute|rate limit/i.test(String(m)));
+      const rateLimited = res.status === 429 || errs.some((m) => RATE_RE.test(String(m)));
       throw Object.assign(new AfError(errs.join("; ") || `HTTP ${res.status}`, { status: res.status }), { meta, rateLimited });
     }
     return { response: body.response ?? [], results: body.results ?? 0, ...meta };
@@ -176,12 +208,12 @@ export async function loadSections(env, reqs, now = Date.now(), { maxLive = 14, 
     const row = byKey.get(keys[i]);
     const view = (extra) => ({ data: row?.response ?? null, results: row?.results ?? 0, fetchedAt: row?.fetched_at ?? null, source: "cache", stale: false, error: null, ...extra });
     if (row && !row.error && now - Date.parse(row.fetched_at) < r.ttl) sections[r.section] = view({});
-    else if (row?.error && Date.parse(row.expires_at) > now) sections[r.section] = view({ stale: Boolean(row.response), error: row.error });   // errore recente: non si insiste
+    else if (row?.error && !RATE_RE.test(row.error) && Date.parse(row.expires_at) > now) sections[r.section] = view({ stale: Boolean(row.response), error: row.error });   // errore recente: non si insiste
     else todo.push({ r, key: keys[i], row, view });
   });
   const live = canSpend ? todo.slice(0, maxLive) : [];
   for (const t of todo.slice(live.length)) sections[t.r.section] = t.view({ stale: Boolean(t.row?.response), deferred: true, error: canSpend ? "Aggiornamento rimandato (limite di richieste per volta)" : "Limite giornaliero quasi esaurito" });
-  const settled = await Promise.allSettled(live.map((t) => afFetch(env, t.r.endpoint, t.r.params)));
+  const settled = await Promise.allSettled(live.map((t) => afFetch(env, t.r.endpoint, t.r.params, { retries: 2 })));
   const writes = [];
   let remaining = usage?.remaining ?? null, limit = usage?.limit_day ?? null;
   live.forEach((t, i) => {
@@ -195,7 +227,7 @@ export async function loadSections(env, reqs, now = Date.now(), { maxLive = 14, 
       const e = s.reason;
       remaining = e?.meta?.remaining ?? remaining; limit = e?.meta?.limit ?? limit;
       const msg = String(e?.message ?? e).slice(0, 300);
-      writes.push({ ...base, http_status: e?.status ?? null, error: msg, expires_at: iso(now + 10 * MIN) });   // fetched_at e response restano quelli precedenti
+      writes.push({ ...base, http_status: e?.status ?? null, error: msg, expires_at: iso(now + (e?.rateLimited ? 20e3 : 10 * MIN)) });   // fetched_at e response restano quelli precedenti
       sections[t.r.section] = t.view({ stale: Boolean(t.row?.response), error: msg });
     }
   });
