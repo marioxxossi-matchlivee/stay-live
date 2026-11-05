@@ -43,6 +43,18 @@
       </div>
       <nav class="league-nav" id="league-nav" aria-label="Campionati per nazione" hidden></nav>
       <div class="days" id="day-strip" aria-label="Giornata"></div>
+      <div class="modebar">
+        <button class="ghost mode-btn" id="mode-custom" type="button" aria-pressed="false" aria-controls="custom-panel">Modalità O/U 2,5 + corner</button>
+      </div>
+      <div class="custom-panel" id="custom-panel" hidden>
+        <div class="cp-row">
+          <label class="hist">Soglia minima
+            <select id="thr"><option value="0.55">55%</option><option value="0.6">60%</option><option value="0.65">65%</option><option value="0.7">70%</option><option value="0.75">75%</option></select></label>
+          <button class="ghost" id="find-corners" type="button">Cerca i corner</button>
+        </div>
+        <p class="pv-qstatus" id="corner-status" aria-live="polite"></p>
+        <p class="api-note">Vedi solo le partite con Over o Under 2,5 sopra la soglia, oppure con un corner sopra la soglia. Over/Under 2,5: probabilità del modello (API-Football + ultime partite). Corner: nessun modello, solo la probabilità implicita nelle quote di API-Football; le quote si scaricano solo quando premi “Cerca i corner”.</p>
+      </div>
       <div class="toolbar">
         <label class="switch"><input type="checkbox" id="only-bet" /><span>Solo BET</span></label>
         <button class="ghost" id="select-day" type="button">Seleziona tutte</button>
