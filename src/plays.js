@@ -102,5 +102,6 @@ export function playFromItem(item, quote = {}) {
 }
 export function legFromItem(item) {
   return { matchId: item.id, league: item.league, home: item.home, away: item.away, homeLogo: item.homeLogo ?? null, awayLogo: item.awayLogo ?? null, kickoffAt: item.kickoffAt,
-    key: item.pick.key, label: item.pick.label, p: item.pick.p, pLow: item.pick.pLow, minOdds: item.pick.minOdds };
+    key: item.pick.key, label: item.pick.label, p: item.pick.p, pLow: item.pick.pLow, minOdds: item.pick.minOdds,
+    basis: item.pick.basis ?? null, pApi: item.pick.pApi ?? null };
 }

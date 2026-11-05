@@ -318,9 +318,68 @@ function coverage(d) {
   return out.join("") || empty("Nessuna informazione.");
 }
 
-/** Pagina completa. `d` = risposta di /api/match-detail. */
-export function renderAfDetail(d) {
+const GOAL_KEY = /^(over|under)(15|25|35)$/;
+const soonOf = (fr) => (keys, body) => (keys.some((k) => fr[k]?.deferred) && body.includes('class="af-empty"') ? `<p class="af-empty"><i class="af-spin" aria-hidden="true"></i> In arrivo: sto scaricando questi dati…</p>` : body);
+
+/** Solo le linee Over/Under che l'app consiglia, con la quota del mercato a confronto con la quota minima. */
+function recLines(d, rec) {
+  const goalRecs = (rec ?? []).filter((r) => GOAL_KEY.test(r.key));
+  if (!goalRecs.length) return empty("Nessuna linea Over/Under consigliata per questa partita.");
+  const o = d.odds;
+  return goalRecs.map((r) => {
+    const [, side, n] = GOAL_KEY.exec(r.key);
+    const line = Number(n) / 10;
+    const agg = (o?.goalLines ?? []).find((l) => l.line === line)?.[side] ?? (line === 2.5 ? o?.ou25?.[side] : null) ?? null;
+    const best = agg?.best?.odd ?? null;
+    const state = best == null ? `<span class="af-pill off">quota non ancora pubblicata</span>` : r.minOdds != null && best >= r.minOdds ? `<span class="af-pill ok">quota di valore</span>` : `<span class="af-pill warn">sotto la minima</span>`;
+    return `<div class="af-rec"><div class="l"><b>${esc(r.label)}</b><small>quota minima ${num(r.minOdds)}</small></div><div class="q">${best != null ? `<strong>${num(best)}</strong><small>${esc(agg.best.book)} · mediana ${num(agg.median)}</small>` : "<strong>—</strong>"}</div>${state}</div>`;
+  }).join("");
+}
+
+/** Pronostico in breve: consiglio e percentuali 1X2. */
+function leanPrediction(p) {
+  if (!p) return empty("Pronostico non disponibile per questa partita (il provider non lo calcola per tutti i campionati).");
+  const pr = p.predictions ?? {}, pc = pr.percent ?? {};
+  const n = (v) => { const x = parseFloat(v); return Number.isFinite(x) && x > 0 ? x : 0; };
+  const [ph, pd, pa] = [n(pc.home), n(pc.draw), n(pc.away)];
+  const advice = `<div class="af-advice"><small>Consiglio di API-Football</small><strong>${val(pr.advice)}</strong></div>`;
+  const bar = ph + pd + pa > 0 ? `<div class="af-prob"><div class="af-prob-bar"><i class="h" style="flex:${ph}"></i><i class="d" style="flex:${pd}"></i><i class="a" style="flex:${pa}"></i></div><div class="af-prob-leg"><div class="h"><b>${val(pc.home)}</b><span>${esc(d_home(p))}</span></div><div class="d"><b>${val(pc.draw)}</b><span>Pareggio</span></div><div class="a"><b>${val(pc.away)}</b><span>${esc(d_away(p))}</span></div></div></div>` : "";
+  return advice + bar;
+}
+
+/** Versione essenziale: cosa dice API-Football, le sole linee consigliate, assenti e (se ci sono) formazioni/eventi. Il resto è a richiesta. */
+function renderLean(d, { rec = [], extra = false } = {}) {
+  const f = d.fixture;
+  const fr = d.freshness ?? {};
+  const soon = soonOf(fr);
+  const errors = Object.entries(fr).filter(([, v]) => v.error && !v.stale && !v.deferred).map(([k]) => FRESH_IT[k] ?? k);
+  const warn = errors.length ? `<p class="af-warn">${svg("alert")}<span>Alcuni dati non sono stati ricevuti: ${esc(errors.join(", "))}.</span></p>` : "";
+  const waiting = Object.values(fr).filter((v) => v.deferred).length;
+  const wait = waiting ? `<p class="af-warn wait" id="af-retry" role="status"><i class="af-spin" aria-hidden="true"></i><span>${waiting} ${waiting === 1 ? "sezione ancora da scaricare" : "sezioni ancora da scaricare"}: riprovo da solo.</span></p>` : "";
+  const has = (x) => Array.isArray(x) && x.length > 0;
+  const latest = Object.values(fr).map((v) => v.fetchedAt).filter(Boolean).sort().pop();
+  const more = extra
+    ? [sec("Pronostico completo", predictions(d.predictions), { icon: "pred", tone: "green" }), sec("Quote complete: gol e corner", odds(d.odds), { icon: "odds", tone: "blue" }),
+      sec("Statistiche stagionali delle squadre", seasonStats(d), { icon: "season", tone: "green" }), sec("Classifica", standings(d), { icon: "table", tone: "blue" }),
+      sec("Scontri diretti", h2h(d.h2h), { icon: "h2h", tone: "amber" }), sec("Arbitro e allenatori", refereeCoaches(d), { icon: "people", tone: "slate" })].join("")
+    : `<button class="ghost wide" type="button" data-af-extra>Carica anche classifica, scontri diretti, statistiche e allenatori</button><p class="af-note">Usa alcune richieste in più ad API-Football: premilo solo se ti serve.</p>`;
+  return `${matchHero(d)}${wait}${warn}
+    ${sec("Cosa dice API-Football", soon(["predictions"], leanPrediction(d.predictions)), { open: true, icon: "pred", tone: "green" })}
+    ${sec("Linee consigliate", `${soon(["oddsGoals"], recLines(d, rec))}<p class="af-note">Corner e le altre linee non sono consigliati: l'app non li stima.</p>`, { open: true, icon: "odds", tone: "blue" })}
+    ${has(d.injuries) ? sec("Infortunati e squalificati", injuries(d), { open: true, note: String(d.injuries.length), icon: "injuries", tone: "red" }) : ""}
+    ${has(f?.lineups) ? sec("Formazioni", lineups(f), { icon: "lineups", tone: "green" }) : ""}
+    ${has(f?.events) ? sec("Eventi", events(f), { icon: "events", tone: "amber" }) : ""}
+    ${has(f?.statistics) ? sec("Statistiche della partita", statistics(f), { icon: "stats", tone: "blue" }) : ""}
+    ${has(f?.players) ? sec("Giocatori della partita", players(f), { icon: "people", tone: "green" }) : ""}
+    ${more}
+    <div class="af-foot"><span>Dati scaricati ${latest ? when(latest) : dash}. Non si riscaricano finché non possono essere cambiati.</span><button class="link" type="button" data-af-refresh>Aggiorna</button></div>
+    ${sec("Stato dei dati", coverage(d), { icon: "shield", tone: "slate" })}`;
+}
+
+/** Pagina. `d` = risposta di /api/match-detail. Con `lean` (l'app) mostra solo l'essenziale; senza, tutto (come prima). */
+export function renderAfDetail(d, opts = {}) {
   if (!d) return empty("Nessun dato.");
+  if (opts.lean && d.mapped !== false) return renderLean(d, opts);
   if (d.mapped === false) return `<p class="af-empty">${esc(d.reason ?? "Partita non collegata ad API-Football.")}</p>`;
   const f = d.fixture;
   const errors = Object.entries(d.freshness ?? {}).filter(([, v]) => v.error && !v.stale && !v.deferred).map(([k]) => FRESH_IT[k] ?? k);
