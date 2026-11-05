@@ -27,6 +27,13 @@ export const MODEL = {
   maxAccStakePct: 0.02,   // massimo 2% sulla multipla
   maxTotalPct: 0.20,      // massimo 20% del budget esposto in totale
   stakeStep: 0.5,         // le puntate sono arrotondate a 0,50 €
+  // Pronostico di API-Football: input PRINCIPALE. Probabilità finale = afWeight x provider + (1 - afWeight) x ultime partite.
+  afWeight: 0.65,         // peso del pronostico API-Football (percentuali 1X2 e gol attesi dalle medie stagionali)
+  afDelta: 0.15,          // incertezza dei gol attesi del provider (stagione intera: più stabile delle sole ultime partite)
+  afMargin: 0.05,         // sulle percentuali 1X2 del provider si toglie 5 punti per la probabilità prudente
+  afAdviceShift: 0.06,    // se il provider consiglia Over/Under su una linea, quella probabilità sale di 6 punti
+  afAgree: 0.50,          // stima del provider >= 50% = conferma; < 35% = contraddice (il BET non passa)
+  afContrast: 0.35,
 };
 
 export const SELECTIONS = [
@@ -95,6 +102,37 @@ export function stressedProbabilities(lh, la, delta) {
     for (const key of Object.keys(p)) low[key] = key in low ? Math.min(low[key], p[key]) : p[key];
   }
   return low;
+}
+
+/**
+ * Probabilità "secondo API-Football" per ogni selezione (null dove il provider non dà informazione).
+ * 1X2 e doppia chance dalle sue percentuali; gol/Over/Under/BTTS da un Poisson sui suoi gol attesi (medie stagionali, avvicinate alla media del campionato
+ * quando ha giocato poco); il consiglio Over/Under sposta di afAdviceShift la linea indicata.
+ */
+export function afProbabilities(af, base) {
+  if (!af) return null;
+  const p = {}, low = {};
+  if (af.lambda) {
+    const w = Math.max(af.played ?? 0, 0);
+    const shrinkTo = (v, mu) => clamp((w * v + MODEL.shrinkK * mu) / (w + MODEL.shrinkK), MODEL.lambdaMin, MODEL.lambdaMax);
+    const lh = shrinkTo(af.lambda.home, base.home), la = shrinkTo(af.lambda.away, base.away);
+    Object.assign(p, probabilities(lh, la));
+    Object.assign(low, stressedProbabilities(lh, la, MODEL.afDelta));
+    p._lambda = { home: round(lh, 3), away: round(la, 3) };
+  }
+  if (af.percent) {
+    const { home, draw, away } = af.percent;
+    Object.assign(p, { home, draw, away, dc1x: home + draw, dcx2: draw + away, dc12: home + away });
+    for (const k of ["home", "draw", "away", "dc1x", "dcx2", "dc12"]) low[k] = Math.max(0, p[k] - MODEL.afMargin);
+  }
+  const uo = af.underOver;
+  const lineKey = uo && [1.5, 2.5, 3.5].includes(uo.line) ? String(uo.line * 10) : null;
+  if (lineKey) {
+    const key = `${uo.side}${lineKey}`, opp = `${uo.side === "over" ? "under" : "over"}${lineKey}`;
+    if (key in p) { p[key] = Math.min(0.99, p[key] + MODEL.afAdviceShift); low[key] = Math.min(p[key], low[key] + MODEL.afAdviceShift); p[opp] = Math.max(0.01, p[opp] - MODEL.afAdviceShift); low[opp] = Math.max(0, low[opp] - MODEL.afAdviceShift); }
+    else { p[key] = null; }
+  }
+  return { p, low };
 }
 
 export function confidenceLabel(sample) {
@@ -188,6 +226,7 @@ export function teamForm(teamId, before, ctx, n) {
 
 export function verdictFor(sel, sample, odds = null) {
   if (sample < MODEL.betSample) return { verdict: "EVITA", reason: `Campione troppo piccolo (${sample} partite, ne servono ${MODEL.betSample}).` };
+  if (sel.agree === "contraddice") return { verdict: "EVITA", reason: `API-Football non è d'accordo: stima ${(sel.pApi * 100).toFixed(0)}% per questo esito.` };
   if (Number.isFinite(odds) && odds > 1) {
     const ev = sel.pLow * odds;
     if (sel.pLow < MODEL.longshotFloor) return { verdict: "EVITA", reason: "Probabilità prudente troppo bassa anche con quota alta." };
@@ -201,7 +240,9 @@ export function verdictFor(sel, sample, odds = null) {
   return { verdict: "BET", reason: `Probabilità prudente ${(sel.pLow * 100).toFixed(0)}%${edgeText}. Gioca solo se la quota è almeno ${sel.minOdds.toFixed(2).replace(".", ",")}.` };
 }
 
-export function analyzeMatch(match, ctx, { n = 8 } = {}) {
+const afRank = (s) => (s.agree === "conferma" ? 0 : s.agree === "contraddice" ? 2 : 1);
+
+export function analyzeMatch(match, ctx, { n = 8, af = null } = {}) {
   const before = Date.parse(match.kickoff_at) || Date.now();
   const base = ctx.baseline(match.league);
   const home = teamForm(match.home_id, before, ctx, n);
@@ -213,17 +254,27 @@ export function analyzeMatch(match, ctx, { n = 8 } = {}) {
   const la = clamp(muA * away.attack * home.defense, MODEL.lambdaMin, MODEL.lambdaMax);
   const m = scoreMatrix(lh, la);
   const p = marketsFromMatrix(m);
-  const sample = Math.min(home.n, away.n);
-  const delta = MODEL.uncertainty / Math.sqrt(Math.max(sample, 1));
+  const recent = Math.min(home.n, away.n);
+  const afP = afProbabilities(af, base);
+  // Con il pronostico del provider il campione è la stagione intera (fino a 8 partite contano come campione pieno).
+  const sample = afP ? Math.max(recent, Math.min(af.played ?? 0, 8)) : recent;
+  const delta = MODEL.uncertainty / Math.sqrt(Math.max(recent, 1));
   const low = stressedProbabilities(lh, la, delta);
   const base_ = ctx.baseRates(match.league);
 
   const selections = SELECTIONS.map((s) => {
+    const pa = afP?.p[s.key] ?? null;                                  // stima del provider per questa selezione (null = non la fornisce)
+    const w = pa == null ? 0 : MODEL.afWeight;
+    const pFinal = w * (pa ?? 0) + (1 - w) * p[s.key];
+    const lowFinal = Math.min(pFinal, w * (afP?.low[s.key] ?? 0) + (1 - w) * Math.min(low[s.key], p[s.key]));
     const sel = {
       ...s,
-      p: round(p[s.key]),
-      pLow: round(Math.min(low[s.key], p[s.key])),
-      fairOdds: round(1 / p[s.key], 2),
+      p: round(pFinal),
+      pLow: round(lowFinal),
+      pModel: round(p[s.key]),
+      pApi: pa == null ? null : round(pa),
+      agree: pa == null ? null : pa >= MODEL.afAgree ? "conferma" : pa < MODEL.afContrast ? "contraddice" : "neutro",
+      fairOdds: round(1 / pFinal, 2),
     };
     sel.minOdds = round(MODEL.edgeMargin / sel.pLow, 2);
     sel.base = base_ ? round(base_[s.key]) : null;
@@ -235,6 +286,7 @@ export function analyzeMatch(match, ctx, { n = 8 } = {}) {
   const ranked = selections.filter((s) => s.p <= MODEL.maxUsefulProb)
     .sort((x, y) => (y.verdict === "BET") - (x.verdict === "BET")
       || (y.verdict === "BET" && isPreferred(y)) - (x.verdict === "BET" && isPreferred(x))
+      || afRank(x) - afRank(y)                                         // a parità, prima ciò che API-Football conferma
       || (y.edge ?? -1) - (x.edge ?? -1) || y.pLow - x.pLow);
   const pick = ranked[0] ?? null;
   const scores = [];
@@ -243,12 +295,15 @@ export function analyzeMatch(match, ctx, { n = 8 } = {}) {
 
   return {
     sample, confidence: confidenceLabel(sample), n,
+    basis: afP ? "api" : "storico",
+    api: af ? { used: Boolean(afP), weight: MODEL.afWeight, percent: af.percent, underOver: af.underOver, advice: af.advice, winner: af.winner, lambda: afP?.p._lambda ?? null, played: af.played } : null,
     inputs: {
       baseline: { home: round(base.home, 3), away: round(base.away, 3), perTeam: round(base.perTeam, 3), sample: base.n, scope: base.scope },
       neutral, home, away, delta: round(delta, 3),
     },
     lambda: { home: round(lh, 3), away: round(la, 3), total: round(lh + la, 3) },
     selections, pick, alternatives: ranked.slice(1, 4), topScores: scores.slice(0, 3),
+    recommended: ranked.filter((s) => s.verdict === "BET").slice(0, 3).map((s) => s.key),      // solo ciò che si consiglia di giocare (max 3), in ordine
   };
 }
 
@@ -257,7 +312,17 @@ export function compactPick(analysis) {
   const s = analysis.pick;
   if (!s) return null;
   return { key: s.key, label: s.label, market: s.market, preferred: isPreferred(s), p: s.p, pLow: s.pLow, minOdds: s.minOdds, estOdds: estimateOdds(s.p), verdict: s.verdict,
-    reason: s.reason, confidence: analysis.confidence, sample: analysis.sample, expectedGoals: analysis.lambda.total };
+    reason: s.reason, confidence: analysis.confidence, sample: analysis.sample, expectedGoals: analysis.lambda.total,
+    basis: analysis.basis, pApi: s.pApi, pModel: s.pModel, agree: s.agree };
+}
+
+/** Over/Under 2,5 in breve (per la modalità personalizzata): i due lati e il migliore. null se il campione è insufficiente. */
+export function ou25Of(analysis) {
+  if (!analysis || analysis.confidence === "insufficiente") return null;
+  const pick = (k) => { const s = analysis.selections.find((x) => x.key === k); return s ? { key: s.key, side: k.startsWith("over") ? "over" : "under", p: s.p, pLow: s.pLow, pApi: s.pApi, agree: s.agree, minOdds: s.minOdds } : null; };
+  const over = pick("over25"), under = pick("under25");
+  const best = over && under ? (over.p >= under.p ? over : under) : over ?? under;
+  return best ? { best, over, under, basis: analysis.basis, confidence: analysis.confidence } : null;
 }
 
 /** Multipla: fino a maxLegs BET con le probabilità prudenti più alte, una per partita. */

@@ -12,7 +12,10 @@ const COLS = "game_id,league,season,kickoff_at,status,home_id,away_id,home_name,
  * Ogni sezione ha `freshness` (da dove arriva, quando e' stata scaricata, eventuale errore): l'app non si rompe se una sezione manca.
  */
 export async function onRequest({ request, env }) {
-  const id = new URL(request.url).searchParams.get("id") ?? "";
+  const params = new URL(request.url).searchParams;
+  const id = params.get("id") ?? "";
+  const extra = params.get("extra") === "1";                       // classifica, scontri diretti, statistiche, allenatori, corner: solo a richiesta
+  const refresh = params.get("refresh") === "1";                   // aggiornamento manuale: riscarica i dati che possono cambiare (se hanno più di 5 minuti)
   if (!/^[\w-]{3,80}$/.test(id)) return json({ error: "Partita non valida." }, 400);
   const missing = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "API_FOOTBALL_KEY"].filter((k) => !env[k]);
   if (missing.length) return json({ error: `Variabili mancanti su Cloudflare: ${missing.join(", ")}` }, 503);
@@ -28,7 +31,9 @@ export async function onRequest({ request, env }) {
     const kickoff = Date.parse(match.kickoff_at);
     const finished = match.status === "final";
     const { sections: pre } = await loadSections(env, [{ section: "bets", endpoint: "odds/bets", params: {}, ttl: ttlFor("odds-bets") }], now);
-    const plan = planFor({ fixtureId: mapped.map.fixture_id, leagueId: mapped.map.league_id, season: mapped.map.season, homeId: mapped.map.home_team_id, awayId: mapped.map.away_team_id, kickoff, finished, now, betIds: betIdsFrom(pre.bets?.data) });
+    const VOLATILE = new Set(["fixture", "injuries", "predictions", "oddsGoals", "oddsCorners"]);
+    const plan = planFor({ fixtureId: mapped.map.fixture_id, leagueId: mapped.map.league_id, season: mapped.map.season, homeId: mapped.map.home_team_id, awayId: mapped.map.away_team_id, kickoff, finished, now, extra, betIds: betIdsFrom(pre.bets?.data) })
+      .map((r) => (refresh && !finished && VOLATILE.has(r.section) ? { ...r, ttl: Math.min(r.ttl, 5 * 60e3) } : r));
     const { sections: s, usage, retry } = await loadSections(env, plan, now);
 
     const fixture = s.fixture?.data?.[0] ?? null;
@@ -48,6 +53,7 @@ export async function onRequest({ request, env }) {
       coverage: s.coverage?.data?.[0]?.seasons?.find((x) => x.year === mapped.map.season)?.coverage ?? null,
       freshness,
       usage,
+      extra,                                          // true = classifica, scontri diretti, statistiche e allenatori inclusi
       retry,                                          // { pending, afterMs }: sezioni ancora da scaricare e quando richiederle (il browser lo fa da solo)
       crests: { home: crestUrl(mapped.map.home_team_id), away: crestUrl(mapped.map.away_team_id) },
     });

@@ -30,37 +30,45 @@ export function seasonFor(league, kickoffIso) {
 export const cacheKey = (endpoint, params = {}) =>
   `${endpoint}?${Object.entries(params).filter(([, v]) => v != null && v !== "").sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k}=${v}`).join("&")}`;
 
-/** Quanto resta valida una risposta in cache. Piu' vicino al match = piu' frequente; partita finita = dati stabili. */
+/**
+ * Quanto resta valida una risposta in cache. Regola: scaricata una volta, non si riscarica finché non può essere cambiata.
+ * Dati stabili (scontri diretti, allenatori, copertura) = settimane; dati che cambiano poco (pronostico, infortuni, classifica) = mezza giornata o più;
+ * si accorcia solo avvicinandosi al fischio d'inizio (formazioni, quote). Partita finita = definitivo.
+ */
 export function ttlFor(kind, { kickoff = null, now = Date.now(), finished = false } = {}) {
   const toKo = kickoff == null ? Infinity : kickoff - now;
+  const over = kickoff != null && toKo < -3 * H;                    // finita da un po': i dati non cambiano più
+  const done = finished || over;
   const live = toKo <= 3 * H && toKo >= -3 * H;
   switch (kind) {
-    case "fixture": return finished ? 7 * D : live ? 5 * MIN : toKo <= 24 * H ? 30 * MIN : 2 * H;
+    case "fixture": return done ? 30 * D : live ? (toKo <= 90 * MIN ? 5 * MIN : 20 * MIN) : toKo <= 48 * H ? 12 * H : 48 * H;      // formazioni escono ~1 ora prima
     case "fixture-list": return 6 * H;
-    case "injuries": return finished ? 7 * D : toKo <= 24 * H ? 30 * MIN : 60 * MIN;
-    case "predictions": return finished ? 7 * D : 6 * H;
-    case "odds": return finished ? 7 * D : toKo <= 6 * H ? 15 * MIN : toKo <= 24 * H ? 30 * MIN : 60 * MIN;
+    case "injuries": return done ? 30 * D : toKo <= 3 * H ? 2 * H : toKo <= 24 * H ? 8 * H : 24 * H;
+    case "predictions": return done ? 30 * D : 12 * H;
+    case "odds": return done ? 30 * D : toKo <= 3 * H ? 90 * MIN : toKo <= 24 * H ? 4 * H : 12 * H;
     case "odds-bets": return 30 * D;
-    case "h2h": return 7 * D;
-    case "team-stats": return 12 * H;
-    case "standings": return 6 * H;
-    case "coverage": return D;
-    default: return H;
+    case "h2h": return 30 * D;
+    case "team-stats": return 2 * D;
+    case "standings": return D;
+    case "coverage": return 30 * D;
+    default: return 12 * H;
   }
 }
 
 /** Richieste da fare per una partita (una per sezione della schermata di dettaglio). */
-export function planFor({ fixtureId, leagueId, season, homeId, awayId, kickoff, finished = false, now = Date.now(), betIds = { goals: 5, corners: 45 } }) {
+export function planFor({ fixtureId, leagueId, season, homeId, awayId, kickoff, finished = false, now = Date.now(), betIds = { goals: 5, corners: 45 }, extra = false }) {
   const c = { kickoff, now, finished };
+  // Essenziale (5 richieste): partita, infortuni, pronostico, quote gol, copertura. Il resto solo a richiesta (`extra`): meno chiamate.
   const plan = [
     { section: "fixture", endpoint: "fixtures", params: { id: fixtureId }, ttl: ttlFor("fixture", c) },
     { section: "injuries", endpoint: "injuries", params: { fixture: fixtureId }, ttl: ttlFor("injuries", c) },
     { section: "predictions", endpoint: "predictions", params: { fixture: fixtureId }, ttl: ttlFor("predictions", c) },
     { section: "oddsGoals", endpoint: "odds", params: { fixture: fixtureId, bet: betIds.goals }, ttl: ttlFor("odds", c) },
-    { section: "oddsCorners", endpoint: "odds", params: { fixture: fixtureId, bet: betIds.corners }, ttl: ttlFor("odds", c) },
-    { section: "standings", endpoint: "standings", params: { league: leagueId, season }, ttl: ttlFor("standings", c) },
     { section: "coverage", endpoint: "leagues", params: { id: leagueId, season }, ttl: ttlFor("coverage", c) },
   ];
+  if (!extra) return plan;
+  plan.push({ section: "oddsCorners", endpoint: "odds", params: { fixture: fixtureId, bet: betIds.corners }, ttl: ttlFor("odds", c) });
+  plan.push({ section: "standings", endpoint: "standings", params: { league: leagueId, season }, ttl: ttlFor("standings", c) });
   if (homeId && awayId) {
     plan.push({ section: "h2h", endpoint: "fixtures/headtohead", params: { h2h: `${homeId}-${awayId}`, last: 10 }, ttl: ttlFor("h2h", c) });
     plan.push({ section: "teamHome", endpoint: "teams/statistics", params: { league: leagueId, season, team: homeId }, ttl: ttlFor("team-stats", c) });
