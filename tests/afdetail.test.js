@@ -70,3 +70,21 @@ test("dati mancanti, partita non collegata o errore: nessuna eccezione", () => {
   assert.equal(renderAfDetail(null), '<p class="af-empty">Nessun dato.</p>');
   assert.match(renderAfDetail({ mapped: true, injuries: [], coverage: { injuries: false } }), /non ha la copertura infortuni/);
 });
+
+test("vista essenziale: solo le linee consigliate, corner nascosti, extra a richiesta", () => {
+  const goal = (line, over, under) => ({ line, over: { best: { odd: over, book: "Bet365" }, median: over - 0.05, n: 9 }, under: { best: { odd: under, book: "Pinnacle" }, median: under - 0.05, n: 9 } });
+  const d = { mapped: true, game: { home: "Inter", away: "Milan" }, injuries: [], predictions: null, fixture: null, extra: false, freshness: {},
+    odds: { bookmakers: 9, ou25: null, goalLines: [goal(1.5, 1.4, 2.9), goal(2.5, 1.95, 1.9), goal(3.5, 3.2, 1.3)], corners: { lines: [{ line: 9.5, over: { best: { odd: 1.9, book: "X" }, median: 1.85, n: 5 }, under: null }], mainLine: 9.5 } } };
+  const html = renderAfDetail(d, { lean: true, rec: [{ key: "over25", label: "Over 2,5", minOdds: 1.85 }, { key: "home", label: "1 · Vittoria casa", minOdds: 2 }] });
+  assert.ok(html.includes("Over 2,5") && html.includes("quota di valore"), "1,95 >= quota minima 1,85");
+  assert.ok(!html.includes("Under 3,5") && !html.includes("Over 1,5"), "le altre linee non compaiono");
+  assert.ok(!html.includes("Calci d'angolo") && !html.includes("9,5"), "i corner non compaiono");
+  assert.ok(html.includes("data-af-extra") && html.includes("data-af-refresh"));
+  assert.ok(!html.includes("Classifica"), "classifica solo a richiesta");
+  const low = renderAfDetail(d, { lean: true, rec: [{ key: "over25", label: "Over 2,5", minOdds: 2.2 }] });
+  assert.ok(low.includes("sotto la minima"));
+  assert.ok(renderAfDetail(d, { lean: true, rec: [] }).includes("Nessuna linea Over/Under consigliata"));
+  const withExtra = renderAfDetail({ ...d, extra: true, standings: [], h2h: [], teamStats: {}, coaches: {} }, { lean: true, rec: [], extra: true });
+  assert.ok(withExtra.includes("Classifica") && withExtra.includes("Scontri diretti") && !withExtra.includes("data-af-extra"));
+  assert.ok(renderAfDetail(d, { lean: true, rec: [] }).includes("Nessun assente") === false, "senza infortuni la sezione non compare");
+});

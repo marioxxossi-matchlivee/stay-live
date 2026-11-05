@@ -22,23 +22,27 @@ test("chiave di cache stabile (parametri ordinati, vuoti ignorati)", () => {
 test("TTL: piu' frequente vicino al match, stabile a partita finita", () => {
   const now = Date.parse("2026-10-30T12:00:00Z");
   const ko = (h) => now + h * 3600e3;
-  assert.equal(ttlFor("odds", { kickoff: ko(40), now }), 60 * 60e3);
-  assert.equal(ttlFor("odds", { kickoff: ko(10), now }), 30 * 60e3);
-  assert.equal(ttlFor("odds", { kickoff: ko(3), now }), 15 * 60e3);
+  assert.equal(ttlFor("odds", { kickoff: ko(40), now }), 12 * 3600e3);
+  assert.equal(ttlFor("odds", { kickoff: ko(10), now }), 4 * 3600e3);
+  assert.equal(ttlFor("odds", { kickoff: ko(2), now }), 90 * 60e3);
   assert.equal(ttlFor("fixture", { kickoff: ko(1), now }), 5 * 60e3);
-  assert.equal(ttlFor("injuries", { kickoff: ko(30), now }), 60 * 60e3);
-  assert.equal(ttlFor("fixture", { kickoff: ko(-5), now, finished: true }), 7 * 86400e3);
-  assert.equal(ttlFor("h2h", {}), 7 * 86400e3);
+  assert.equal(ttlFor("fixture", { kickoff: ko(100), now }), 48 * 3600e3);
+  assert.equal(ttlFor("injuries", { kickoff: ko(30), now }), 24 * 3600e3);
+  assert.equal(ttlFor("predictions", { kickoff: ko(5), now }), 12 * 3600e3);
+  assert.equal(ttlFor("fixture", { kickoff: ko(-5), now, finished: true }), 30 * 86400e3);
+  assert.equal(ttlFor("predictions", { kickoff: ko(-5), now }), 30 * 86400e3, "partita finita da ore: dato definitivo anche se l'app non l'ha ancora segnata finale");
+  assert.equal(ttlFor("h2h", {}), 30 * 86400e3);
   assert.equal(ttlFor("odds-bets", {}), 30 * 86400e3);
 });
 
-test("piano richieste: 12 sezioni con squadre note, 7 senza", () => {
+test("piano richieste: essenziale 5 sezioni, 12 con i dati extra (7 senza squadre note)", () => {
   const base = { fixtureId: 99, leagueId: 135, season: 2026, kickoff: Date.parse("2026-10-31T19:45:00Z"), now: Date.parse("2026-10-30T12:00:00Z") };
-  const full = planFor({ ...base, homeId: 489, awayId: 505 });
-  assert.deepEqual(full.map((r) => r.section), ["fixture", "injuries", "predictions", "oddsGoals", "oddsCorners", "standings", "coverage", "h2h", "teamHome", "teamAway", "coachHome", "coachAway"]);
+  assert.deepEqual(planFor({ ...base, homeId: 489, awayId: 505 }).map((r) => r.section), ["fixture", "injuries", "predictions", "oddsGoals", "coverage"]);
+  const full = planFor({ ...base, homeId: 489, awayId: 505, extra: true });
+  assert.deepEqual(full.map((r) => r.section).sort(), ["coachAway", "coachHome", "coverage", "fixture", "h2h", "injuries", "oddsCorners", "oddsGoals", "predictions", "standings", "teamAway", "teamHome"]);
   assert.deepEqual(full.find((r) => r.section === "h2h").params, { h2h: "489-505", last: 10 });
   assert.deepEqual(full.find((r) => r.section === "oddsCorners").params, { fixture: 99, bet: 45 });
-  assert.equal(planFor(base).length, 7);
+  assert.equal(planFor({ ...base, extra: true }).length, 7);
 });
 
 test("abbinamento partita: orario e squadre; 'Milan' non diventa 'Inter'", () => {
