@@ -80,18 +80,19 @@ test("se il mercato contraddice un esito, non è un BET e la ragione lo dice", (
   assert.ok(!a.legs.some((l) => l.key === "home"));
 });
 
-test("gambe per le multiple: solide, con quota di mercato dove c'è, senza tetto di probabilità utile", () => {
+test("gambe per le multiple: solo quote reali di mercato e valore atteso prudente non negativo", () => {
   const af = parseAfPrediction(afItem());
   const market = marketFrom(marketResp(1.9, 1.95, 2.0, 3.3, 3.9), null);
   const a = analyzeMatch(match, ctx, { n: 8, af, market });
   assert.ok(a.legs.length <= 3);
   for (const l of a.legs) {
-    assert.ok(l.pLow >= MODEL.legMinP && l.p <= MODEL.legMaxP && l.odds >= MODEL.legMinOdds);
-    assert.ok(["mercato", "stimata"].includes(l.oddsSource));
+    assert.ok(l.pLow >= MODEL.legMinP && l.odds >= MODEL.legMinOdds && l.pLow * l.odds >= MODEL.legMinEv);
+    assert.equal(l.oddsSource, "mercato");
     assert.notEqual(l.agree, "contraddice");
   }
-  assert.deepEqual([...a.legs].sort((x, y) => y.pLow - x.pLow).map((l) => l.key), a.legs.map((l) => l.key), "ordinate per probabilità prudente");
-  const few = analyzeMatch(match, buildContext(finals.slice(0, 3)), { n: 8 });
+  assert.deepEqual([...a.legs].sort((x, y) => y.evLow - x.evLow).map((l) => l.key), a.legs.map((l) => l.key), "ordinate per valore atteso prudente");
+  assert.deepEqual(analyzeMatch(match, ctx, { n: 8, af }).legs, [], "senza quote reali nessuna gamba");
+const few = analyzeMatch(match, buildContext(finals.slice(0, 3)), { n: 8 });
   assert.deepEqual(few.legs, [], "campione insufficiente: nessuna gamba");
 });
 
