@@ -106,10 +106,12 @@ async function fillCrests(leagueIds) {
 function meter(p) {
   return `<span class="meter" aria-hidden="true"><i style="width:${(p.pLow * 100).toFixed(1)}%"></i><b style="left:${(p.pLow * 100).toFixed(1)}%;width:${(Math.max(0, p.p - p.pLow) * 100).toFixed(1)}%"></b><u style="left:${MODEL.betThreshold * 100}%"></u></span>`;
 }
+/** Etichetta delle fonti usate dal cervello unico: API = pronostico di API-Football, Q = quote di mercato. */
+const basisTag = (b) => (!b || b === "storico" ? "" : `<i class="api-tag" title="${b === "mercato" ? "Calcolato con le quote di mercato" : b === "api" ? "Calcolato con il pronostico di API-Football" : "Calcolato con il pronostico di API-Football e le quote di mercato"}">${b === "api+mercato" ? "API+Q" : b === "api" ? "API" : "Q"}</i>`);
 function pickChip(p) {
   if (!p) return "";
   if (p.confidence === "insufficiente") return `<span class="pick none">Dati insufficienti: ${p.sample} gare di storico</span>`;
-  return `<span class="pick ${p.verdict === "BET" ? "bet" : "skip"}"><span class="pick-head"><b>${p.verdict}</b>${p.basis === "api" ? `<i class="api-tag" title="Calcolato con il pronostico di API-Football">API</i>` : ""}<span>${esc(p.label)}</span><em>${pct(p.pLow)}</em></span>${meter(p)}</span>`;
+  return `<span class="pick ${p.verdict === "BET" ? "bet" : "skip"}"><span class="pick-head"><b>${p.verdict}</b>${basisTag(p.basis)}<span>${esc(p.label)}</span><em>${pct(p.pLow)}</em></span>${meter(p)}</span>`;
 }
 function customChips(m) {
   const o = m.ou?.best, c = m.corner?.best;
@@ -251,7 +253,7 @@ function explain(match, a) {
     [a.api?.used ? "Probabilità dalle ultime partite" : "Probabilità di ogni esito", `Ogni punteggio i–j vale Poisson(${num(a.lambda.home)}; i) × Poisson(${num(a.lambda.away)}; j). Sommando le caselle giuste si ottengono tutti i mercati: ad esempio Over 2,5 = 1 − P(0, 1 o 2 gol totali) = <b>${pct(sel("over25").p, 1)}</b>; 1 = somma dei punteggi con più gol in casa = <b>${pct(sel("home").p, 1)}</b>. Più probabili: ${a.topScores.map((t) => `${t.score} (${pct(t.p, 1)})`).join(", ")}.`],
     ...(a.api?.used ? [
       ["Pronostico di API-Football", `${a.api.percent ? `Il provider stima ${esc(match.home)} ${pct(a.api.percent.home)}, pareggio ${pct(a.api.percent.draw)}, ${esc(match.away)} ${pct(a.api.percent.away)}. ` : ""}${a.api.lambda ? `Dalle medie gol della stagione (${a.api.played} partite giocate) ricavo ${num(a.api.lambda.home, 2)} gol attesi per ${esc(match.home)} e ${num(a.api.lambda.away, 2)} per ${esc(match.away)}, avvicinati alla media del campionato quando le partite sono poche. ` : ""}${a.api.underOver ? `Consiglio sui gol: ${a.api.underOver.side === "over" ? "Over" : "Under"} ${num(a.api.underOver.line, 1)} (+${MODEL.afAdviceShift * 100} punti a quella linea). ` : ""}`],
-      ["Unione con le ultime partite", `Probabilità finale = <b>${Math.round(MODEL.afWeight * 100)}%</b> × API-Football + <b>${100 - Math.round(MODEL.afWeight * 100)}%</b> × ultime ${a.n} partite, esito per esito. Per la probabilità prudente le percentuali 1X2 del provider perdono ${MODEL.afMargin * 100} punti e i suoi gol attesi vengono stressati di ±${pct(MODEL.afDelta)}. Se il provider stima un esito sotto il ${pct(MODEL.afContrast)}, il BET viene bloccato.`],
+      ["Fusione delle fonti (un solo cervello)", `Per ogni esito la probabilità finale è la media pesata delle fonti disponibili: ${fusionText(a)}. Per la probabilità prudente: ultime partite stressate sui gol attesi, API-Football meno ${MODEL.afMargin * 100} punti sulle percentuali 1X2, mercato meno ${MODEL.marketMargin * 100} punti; poi si toglie il ${pct(MODEL.spreadPenalty)} della distanza tra la fonte più alta e la più bassa${a.fusion?.absent && (a.fusion.absent.home + a.fusion.absent.away) ? ` e ${num(MODEL.injPenalty * 100, 1)} punti per ogni assente confermato (${a.fusion.absent.home + a.fusion.absent.away} in totale)` : ""}. Se API-Football o il mercato stimano un esito sotto il ${pct(MODEL.afContrast)}, non può diventare BET.`],
     ] : []),
     ["Margine di prudenza", `Con ${a.sample} partite di campione le attese gol possono sbagliare di circa ±${pct(i.delta)} (${num(MODEL.uncertainty)} ÷ √${Math.max(a.sample, 1)}). Ricalcolo 5 scenari (base, entrambe su/giù, una su e l’altra giù) e tengo il peggiore: è la <b>probabilità prudente</b>, quella che vedi in grande.`],
     ["Verdetto BET / EVITA", `BET solo se il campione è di almeno ${MODEL.betSample} partite, la probabilità prudente è almeno ${pct(MODEL.betThreshold)} e supera di almeno ${MODEL.minEdge * 100} punti la frequenza storica di quell’esito nel campionato (così non consiglio mercati “facili” sempre probabili, come Over 1,5). Quota minima = ${num(MODEL.edgeMargin)} ÷ probabilità prudente: sotto quella quota non c’è margine. Se inserisci la tua quota, BET se probabilità prudente × quota ≥ ${num(MODEL.edgeMargin)}. Esiti con quota equa sotto 1,25 non vengono proposti come scelta migliore.`],
@@ -265,8 +267,8 @@ function apiBlock(a, st) {
     const p = api.percent;
     const bar = p ? `<div class="api-bar" role="img" aria-label="Probabilità 1X2 secondo API-Football"><span class="h" style="flex:${p.home}">1 · ${pct(p.home)}</span><span class="d" style="flex:${p.draw}">X · ${pct(p.draw)}</span><span class="a" style="flex:${p.away}">2 · ${pct(p.away)}</span></div>` : "";
     const wApi = Math.round(api.weight * 100);
-    return `<section class="api-card"><h4>Pronostico di API-Football</h4>${api.advice ? `<p class="api-advice">${esc(api.advice)}</p>` : ""}${bar}
-      <p class="api-note">Peso nel verdetto: API-Football <b>${wApi}%</b> · ultime ${a.n} partite <b>${100 - wApi}%</b>.</p></section>`;
+    return `<section class="api-card"><h4>Pronostico di API-Football</h4>${api.adviceIt ? `<p class="api-advice">Consiglio: <b>${esc(api.adviceIt.label)}</b> <small>${esc(api.adviceIt.long)}</small></p>` : ""}${bar}
+      <p class="api-note">Peso nel verdetto: ${fusionText(a)}.</p></section>`;
   }
   if (st?.waiting) return `<p class="af-warn wait" role="status"><i class="af-spin" aria-hidden="true"></i><span>Scarico il pronostico di API-Football: il verdetto si aggiorna da solo appena arriva.</span></p>`;
   return `<p class="api-note warn">${st?.off ? "Chiave API-Football non configurata" : "Pronostico di API-Football non disponibile per questa partita"}: il verdetto si basa solo sulle ultime ${a.n} partite.</p>`;
@@ -290,11 +292,18 @@ function scheduleAnalysisRetry() {
   }, Math.min(60000, Math.max(2000, (st.retry.afterMs || 3000) * (1 + 0.25 * tries))));
 }
 /** Perché questa giocata: 2-3 righe, dai dati (API-Football prima, poi ultime partite). */
+/** "API-Football 40% · mercato 35% · ultime partite 25%" per questa partita. */
+function fusionText(a) {
+  const w = a.fusion?.weights ?? { storico: 1, api: 0, mercato: 0 };
+  return [w.api > 0 ? `API-Football <b>${Math.round(w.api * 100)}%</b>` : null, w.mercato > 0 ? `mercato <b>${Math.round(w.mercato * 100)}%</b>` : null, `ultime ${a.n} partite <b>${Math.round(w.storico * 100)}%</b>`].filter(Boolean).join(" · ");
+}
 function whyList(s, a) {
   const out = [];
   if (s.pApi != null) out.push(`API-Football stima il <b>${pct(s.pApi)}</b>${s.agree === "conferma" ? " e conferma" : ""}`);
   else out.push(a.basis === "storico" ? "API-Football non ha il pronostico: conto solo sulle ultime partite" : "API-Football non stima questo mercato");
+  if (s.pMarket != null) out.push(`Mercato (quote senza margine): <b>${pct(s.pMarket)}</b>${s.odds ? ` · quota ${num(s.odds.median)}` : ""}`);
   out.push(`Ultime ${a.n} partite: <b>${pct(s.pModel ?? s.p)}</b>${s.base != null ? ` (media del campionato ${pct(s.base)})` : ""}`);
+  if (s.spread >= 0.12) out.push(`Le fonti non sono del tutto d'accordo (distanza ${Math.round(s.spread * 100)} punti): probabilità prudente ridotta`);
   out.push(/^(over|under|btts|nobtts)/.test(s.key) ? `Gol attesi ${num(a.lambda.total)} · sotto la quota <b>${num(s.minOdds)}</b> non conviene` : `Sotto la quota <b>${num(s.minOdds)}</b> non conviene`);
   return out;
 }
@@ -315,17 +324,18 @@ function renderDetail() {
   const recs = (a.recommended ?? []).map((k) => a.selections.find((x) => x.key === k)).filter(Boolean);
   const rest = a.selections.filter((x) => !recs.includes(x));
   const groups = [...new Set(rest.map((x) => x.market))];
-  const noPlay = `<article class="rec none"><header><b>Nessuna giocata consigliata</b></header><p>${esc(p?.reason ?? "Dati insufficienti.")}</p>${a.api?.advice ? `<p class="why-line">API-Football suggerisce: ${esc(a.api.advice)}, ma il calcolo prudente non lo conferma.</p>` : ""}</article>`;
+  const noPlay = `<article class="rec none"><header><b>Nessuna giocata consigliata</b></header><p>${esc(p?.reason ?? "Dati insufficienti.")}</p>${a.api?.advice ? `<p class="why-line">API-Football suggerisce ${esc(a.api.adviceIt?.label ?? a.api.advice)}, ma il calcolo prudente non lo conferma.</p>` : ""}</article>`;
   const body = `
     ${matchHeader({ home: match.home, away: match.away, homeLogo: match.homeLogo, awayLogo: match.awayLogo, chips: [leagueName(match.league)],
       centre: played ? `<strong class="af-big">${esc(match.homeScore)}<i>–</i>${esc(match.awayScore)}</strong>` : `<strong class="af-big">${esc(fmtTime.format(new Date(match.kickoffAt)))}</strong>`,
       sub: played ? kick : dayParts(dayKey(match.kickoffAt)).long })}
     <section class="rec-sec"><h4>Cosa giocare <small>affidabilità ${esc(a.confidence)}</small></h4>${recs.length ? recs.map((x, i) => recCard(x, a, match.id, i)).join("") : noPlay}</section>
+    ${a.legs?.length ? `<section class="legs-sec"><h4>Per le multiple <small>le gambe più solide di questa partita</small></h4>${a.legs.map((l) => `<div class="leg-row"><b>${esc(l.label)}</b><span>prudente ${pct(l.pLow)} · quota ${num(l.odds)}${l.oddsSource === "mercato" ? "" : "*"}</span></div>`).join("")}${a.legs.some((l) => l.oddsSource !== "mercato") ? `<p class="api-note">* quota stimata: senza la quota di mercato.</p>` : ""}</section>` : ""}
     ${apiBlock(a, detailState.data.afStatus)}
     <details class="more"><summary>Tutti i mercati e come è calcolato</summary>
       <div class="kv">
         <div><small>Gol attesi</small><strong>${num(a.lambda.total)}</strong></div>
-        <div><small>Basato su</small><strong>${a.basis === "api" ? "API + storico" : "solo storico"}</strong></div>
+        <div><small>Basato su</small><strong>${a.basis === "api+mercato" ? "API + mercato + storico" : a.basis === "api" ? "API + storico" : a.basis === "mercato" ? "mercato + storico" : "solo storico"}</strong></div>
         <div><small>Campione</small><strong>${a.inputs.home.n} + ${a.inputs.away.n} gare</strong></div>
       </div>
       <label class="hist" style="margin:0 0 6px">Storico usato
@@ -445,8 +455,8 @@ function afPreviewNote(pv) {
   const st = pv.afStatus;
   if (!st || st.off) return `<p class="api-note warn">Chiave API-Football non configurata: pronostici calcolati solo sulle ultime partite.</p>`;
   const n = st.used + st.waiting + st.missing;
-  if (st.waiting) return `<p class="af-warn wait" id="pv-af" role="status"><i class="af-spin" aria-hidden="true"></i><span>Pronostici API-Football scaricati ${st.used} su ${n}: gli altri arrivano da soli e il consiglio si aggiorna.</span></p>`;
-  return `<p class="api-note ${st.used ? "ok" : "warn"}">${st.used ? `Consigli basati sul pronostico di API-Football (${st.used} partite su ${n})` : "API-Football non ha pronostici per queste partite"}${st.missing && st.used ? `; ${st.missing} solo sulle ultime partite` : ""}.</p>`;
+  if (st.retry?.pending) return `<p class="af-warn wait" id="pv-af" role="status"><i class="af-spin" aria-hidden="true"></i><span>Dati API-Football scaricati: pronostici ${st.used} su ${n}, quote ${st.market} su ${n}. Gli altri arrivano da soli e il consiglio si aggiorna.</span></p>`;
+  return `<p class="api-note ${st.used ? "ok" : "warn"}">${st.used ? `Calcolo con pronostico di API-Football (${st.used} partite su ${n}) e quote di mercato (${st.market} su ${n})` : "API-Football non ha pronostici per queste partite"}${st.missing && st.used ? `; le altre solo con ciò che c’è` : ""}.</p>`;
 }
 let pvTimer = null;
 function schedulePreviewRetry(ids, tries = 0) {
@@ -468,7 +478,7 @@ function schedulePreviewRetry(ids, tries = 0) {
 function previewText(pv) {
   const when = (i) => fmtTime.format(new Date(i.kickoffAt));
   const stakeOf = (e) => (e ? ` · punta ${eur(e.stake)}` : "");
-  const multi = (lastPlan?.multiples ?? []).map((m) => `${m.label} (${m.items.length} gare): ${m.items.map((i) => `${i.home}-${i.away} ${i.pick.label}`).join(" + ")} · prob. prudente ${pct(m.plan.pLow)} · quota ${num(m.plan.odds)} ${m.plan.source}${stakeOf(m.eff)}${m.eff ? ` · vincita netta ${eur(m.eff.win)}` : ""}`);
+  const multi = (lastPlan?.multiples ?? []).map((m) => `${m.label} (${m.items.length} gare): ${m.legs.map((l) => `${l.item.home}-${l.item.away} ${l.sel.label}`).join(" + ")} · prob. prudente ${pct(m.plan.pLow)} · quota ${num(m.plan.odds)} ${m.plan.source}${stakeOf(m.eff)}${m.eff ? ` · vincita netta ${eur(m.eff.win)}` : ""}`);
   const singles = pv.items.filter(isBetItem).map((i) => `${when(i)} ${i.home} – ${i.away} → ${i.pick.label} (prudente ${pct(i.pick.pLow)}, quota min ${num(i.pick.minOdds)})${stakeOf(lastPlan?.rows.get(i.id)?.eff)}`);
   const skip = pv.items.filter((i) => !isBetItem(i)).map((i) => `${when(i)} ${i.home} – ${i.away}`);
   return [`Stay Live · preview ${dayParts(dayKey(pv.items[0].kickoffAt)).long}`,
@@ -482,22 +492,31 @@ function whyShort(i) {
   if (!isBetItem(i)) return p.reason ?? "Da evitare";
   const parts = [];
   if (p.pApi != null) parts.push(`API-Football ${pct(p.pApi)}`);
+  if (p.pMarket != null) parts.push(`mercato ${pct(p.pMarket)}`);
   if (p.pModel != null) parts.push(`ultime partite ${pct(p.pModel)}`);
   parts.push(`quota minima ${num(p.minOdds)}`);
   return parts.join(" · ");
 }
-function singleCard(i) {
+/**
+ * Card di una giocata singola: la STESSA nel preview e nelle giocate salvate (cambiano solo stato in alto, riga di puntata e pulsanti).
+ * `i` = partita con consiglio (nel salvataggio se ne conserva una fotografia: quello che vedi qui è ciò che ritrovi nelle giocate).
+ */
+function singleCardHtml(i, { top = "", stake = "", actions = "" }) {
   const bet = isBetItem(i), p = i.pick;
   return `<article class="pv-card${bet ? "" : " is-skip"}">
-      <span class="meta"><b>${fmtTime.format(new Date(i.kickoffAt))}</b><span>${esc(leagueName(i.league, true))}</span></span>
-      <span class="fx">${sideHtml(i.home, i.homeLogo)}${sideHtml(i.away, i.awayLogo)}</span>
-      ${p ? `<div class="pv-pick"><span class="vd ${bet ? "bet" : "skip"}">${bet ? "BET" : "EVITA"}</span><b>${esc(p.label)}</b>${p.basis === "api" ? `<i class="api-tag" title="Calcolato con il pronostico di API-Football">API</i>` : ""}<em>${pct(p.pLow)}</em></div>` : ""}
+      <span class="meta"><b>${fmtTime.format(new Date(i.kickoffAt))}</b><span>${esc(leagueName(i.league, true))}</span>${top}</span>
+      <span class="fx">${sideHtml(i.home, i.homeLogo, i.homeScore)}${sideHtml(i.away, i.awayLogo, i.awayScore)}</span>
+      ${p ? `<div class="pv-pick"><span class="vd ${bet ? "bet" : "skip"}">${bet ? "BET" : "EVITA"}</span><b>${esc(p.label)}</b>${basisTag(p.basis)}<em>${pct(p.pLow)}</em></div>` : ""}
       <p class="pv-why">${esc(whyShort(i))}</p>
       ${i.corner ? `<p class="pv-why">Corner ${i.corner.best.side === "over" ? "Over" : "Under"} ${num(i.corner.best.line, 1)}: ${pct(i.corner.best.p)} · quota ${num(i.corner.best.odd)} <small>(dal mercato)</small></p>` : ""}
-      ${bet ? `<p class="pv-stake"><span data-plan="${esc(i.id)}"></span></p>
-      <details class="pv-q"><summary>Ho la quota reale</summary><label class="pv-odds">Quota <input inputmode="decimal" data-pv-odds="${esc(i.id)}" placeholder="stima ${num(p.estOdds)}" aria-label="Quota reale per ${esc(i.home)} – ${esc(i.away)}" /></label></details>` : ""}
-      <span class="pv-btns">${p ? saveButton("data-save", i.id, isSaved(singleOf(i))) : ""}<button class="link" type="button" data-open="${esc(i.id)}">Scheda partita</button></span>
+      ${stake}${actions}
     </article>`;
+}
+function singleCard(i) {
+  const bet = isBetItem(i), p = i.pick;
+  const stake = bet ? `<p class="pv-stake"><span data-plan="${esc(i.id)}"></span></p>
+      <details class="pv-q"><summary>Ho la quota reale</summary><label class="pv-odds">Quota <input inputmode="decimal" data-pv-odds="${esc(i.id)}" placeholder="stima ${num(p.estOdds)}" aria-label="Quota reale per ${esc(i.home)} – ${esc(i.away)}" /></label></details>` : "";
+  return singleCardHtml(i, { stake, actions: `<span class="pv-btns">${p ? saveButton("data-save", i.id, isSaved(singleOf(i))) : ""}<button class="link" type="button" data-open="${esc(i.id)}">Scheda partita</button></span>` });
 }
 function renderPreview() {
   const pv = lastPreview;
@@ -524,18 +543,22 @@ function multiLine(m) {
   const { plan: p, eff: e } = m;
   if (!e) return `<em class="pv-no">Nessuna puntata consigliata${p.need ? `: servirebbe una quota combinata di almeno ${num(p.need)}` : ""}.</em>`;
   if (p.play) return `Punta <b>${eur(e.stake)}</b> · vincita netta <b>${eur(e.win)}</b> <small>quota ${num(p.odds)} ${p.source}</small>`;
-  return `Gioca <b>solo se</b> la quota combinata è almeno <b>${num(p.need)}</b> → punta <b>${eur(e.stake)}</b>, vincita netta <b>${eur(e.win)}</b>`;
+  return `Quota combinata ${p.source} ${num(p.odds)}: <b>sotto la minima ${num(p.need)}</b>, non conviene. Gioca <b>solo se</b> il bookmaker paga almeno ${num(p.need)} → punta <b>${eur(e.stake)}</b>, vincita netta <b>${eur(e.win)}</b>`;
+}
+/** Card di una multipla: la STESSA nel preview e nelle giocate salvate. `m` = { label, legs: [{ item, sel, odds, source }], p, source, minOdds, plan, eff }. */
+function multiCardHtml(m, { top = "", legExtra = () => "", stake = "", actions = "" }) {
+  const est = m.source !== "mercato";
+  return `<article class="pv-multi-card">
+      <header><b>${esc(m.label)}</b>${top}<span class="pill">${m.legs.length} gare</span></header>
+      <ol class="legs">${m.legs.map((l) => `<li><span class="t">${fmtTime.format(new Date(l.item.kickoffAt))}</span><span class="m">${crest(l.item.home, l.item.homeLogo, "crest xs")}${crest(l.item.away, l.item.awayLogo, "crest xs")}${esc(l.item.home)} – ${esc(l.item.away)}</span><b>${esc(l.sel.label)}</b><small class="lg-odd">${num(l.odds)}${l.source === "mercato" ? "" : "*"}</small>${legExtra(l)}</li>`).join("")}</ol>
+      <p class="pv-why">Entrano tutte: <b>${pct(m.p)}</b> (prudente ${pct(m.plan.pLow)}) · quota totale ${num(m.plan.odds)}${est ? "*" : ""} · quota minima ${num(m.minOdds)}${est ? "<br><small>* quota stimata: preleva le quote reali per confermarla</small>" : ""}</p>
+      <div class="pv-stake">${stake}</div>${actions}
+    </article>`;
 }
 function renderMultiples(plan) {
   const el = $("#pv-multiples");
-  if (!plan.multiples.length) { el.innerHTML = `<p class="empty">Servono almeno 2 BET per comporre una multipla.</p>`; return; }
-  el.innerHTML = plan.multiples.map((m, idx) => `<article class="pv-multi-card">
-      <header><b>${esc(m.label)}</b><span class="pill">${m.items.length} gare</span></header>
-            <ol class="legs">${m.legs.map((l) => `<li><span class="t">${fmtTime.format(new Date(l.item.kickoffAt))}</span><span class="m">${crest(l.item.home, l.item.homeLogo, "crest xs")}${crest(l.item.away, l.item.awayLogo, "crest xs")}${esc(l.item.home)} – ${esc(l.item.away)}</span><b>${esc(l.item.pick.label)}</b></li>`).join("")}</ol>
-      <p class="pv-why">Probabilità prudente ${pct(m.plan.pLow)} · quota minima ${num(m.minOdds)}</p>
-      <div class="pv-stake">${multiLine(m)}</div>
-      ${saveButton("data-save-multi", String(idx), isSaved(multiOf(m)))}
-    </article>`).join("");
+  if (!plan.multiples.length) { el.innerHTML = `<p class="empty">Servono almeno 2 partite con gambe solide per comporre una multipla.</p>`; return; }
+  el.innerHTML = plan.multiples.map((m, idx) => multiCardHtml(m, { stake: multiLine(m), actions: saveButton("data-save-multi", String(idx), isSaved(multiOf(m))) })).join("");
 }
 
 async function loadQuotes(btn) {
@@ -543,7 +566,7 @@ async function loadQuotes(btn) {
   const label = btn.textContent, status = $("#quotes-status");
   btn.disabled = true; btn.textContent = "Cerco le quote…"; status.textContent = "";
   try {
-    const data = await getJson(`/api/quotes?ids=${lastPreview.items.map((i) => encodeURIComponent(i.id)).join(",")}&n=${state.n}`);
+    const data = await getJson(`/api/quotes?picks=${lastPreview.items.filter(isBetItem).map((i) => `${encodeURIComponent(i.id)}:${encodeURIComponent(i.pick.key)}`).join(",")}`);
     for (const [id, q] of Object.entries(data.quotes)) pvMarket.set(id, q);
     const bets = lastPreview.items.filter(isBetItem).length;
     const parts = [`Quote di mercato per ${Object.keys(data.quotes).length} BET su ${bets}`];
@@ -563,7 +586,7 @@ function planLine(row) {
   if (!row?.eff) return `<em class="pv-no">Nessuna puntata consigliata${row?.plan?.need ? `: servirebbe una quota di almeno ${num(row.plan.need)}` : ""}.</em>`;
   const { plan: p, eff: e } = row;
   if (p.play) return `Punta <b>${eur(e.stake)}</b> · vincita netta <b>${eur(e.win)}</b> <small>quota ${num(p.odds)} ${p.source}</small>`;
-  return `Gioca <b>solo se</b> la quota è almeno <b>${num(p.need)}</b> → punta <b>${eur(e.stake)}</b>, vincita netta <b>${eur(e.win)}</b>`;
+  return `Quota ${p.source} ${num(p.odds)}: <b>sotto la minima ${num(p.need)}</b>, non conviene. Gioca <b>solo se</b> il bookmaker paga almeno ${num(p.need)} → punta <b>${eur(e.stake)}</b>, vincita netta <b>${eur(e.win)}</b>`;
 }
 function updatePlan() {
   if (!lastPreview?.items.length) return;
@@ -585,8 +608,17 @@ let plays = loadPlays();
 let playResults = {};
 const saveButton = (attr, value, saved) => `<button class="save${saved ? " done" : ""}" type="button" ${attr}="${esc(value)}"${saved ? " disabled" : ""}>${saved ? "✓ Salvata" : "Salva giocata"}</button>`;
 const quoteOfRow = (id) => { const row = lastPlan?.rows.get(id); return { odds: row?.eff?.odds ?? row?.plan?.odds ?? null, stake: row?.eff?.stake ?? null, source: row?.plan?.source ?? null }; };
-const singleOf = (item) => playFromItem(item, quoteOfRow(item.id));
-const multiOf = (m) => ({ kind: "multiple", label: m.label, odds: m.eff?.odds ?? m.plan?.odds ?? null, stake: m.eff?.stake ?? null, oddsSource: m.plan?.source ?? null, legs: m.items.map(legFromItem) });
+/** Fotografia di ciò che vedi nel preview (consiglio, motivi, quote, puntata): è ciò che le giocate salvate mostrano, identico. */
+const snapOfSingle = (item) => {
+  const row = lastPlan?.rows.get(item.id);
+  return { kickoffAt: item.kickoffAt, league: item.league, home: item.home, away: item.away, homeLogo: item.homeLogo ?? null, awayLogo: item.awayLogo ?? null, confidence: item.confidence, pick: item.pick, corner: item.corner ?? null,
+    plan: row ? { plan: { play: row.plan?.play, odds: row.plan?.odds, source: row.plan?.source, need: row.plan?.need }, eff: row.eff ? { stake: row.eff.stake, win: row.eff.win } : null } : null };
+};
+const snapOfMulti = (m) => ({ label: m.label, p: m.p, source: m.source, minOdds: m.minOdds,
+  plan: { pLow: m.plan.pLow, odds: m.plan.odds, need: m.plan.need, play: m.plan.play, source: m.plan.source }, eff: m.eff ? { stake: m.eff.stake, win: m.eff.win } : null,
+  legs: m.legs.map((l) => ({ item: { id: l.item.id, league: l.item.league, kickoffAt: l.item.kickoffAt, home: l.item.home, away: l.item.away, homeLogo: l.item.homeLogo ?? null, awayLogo: l.item.awayLogo ?? null }, sel: { key: l.sel.key, label: l.sel.label, p: l.sel.p, pLow: l.sel.pLow }, odds: l.odds, source: l.source })) });
+const singleOf = (item) => ({ ...playFromItem(item, quoteOfRow(item.id)), snap: snapOfSingle(item) });
+const multiOf = (m) => ({ kind: "multiple", label: m.label, odds: m.eff?.odds ?? m.plan?.odds ?? null, stake: m.eff?.stake ?? null, oddsSource: m.plan?.source ?? null, legs: m.legs.map((l) => legFromItem(l.item, l.sel)), snap: snapOfMulti(m) });
 const isSaved = (cand) => plays.some((p) => signature(p) === signature(cand));
 function commitPlay(cand) {
   const r = addPlay(plays, cand);
@@ -605,6 +637,30 @@ function legHtml(l) {
     <span class="pl-pick"><b>${esc(l.label)}</b><small>prudente ${pct(l.pLow)}${l.pApi != null ? ` · API ${pct(l.pApi)}` : ""}</small></span>
     <span class="pl-res">${sc ? `<b>${sc[0]}–${sc[1]}</b>` : `<small>${l.live?.status === "in_progress" ? "in corso" : "da giocare"}</small>`}<span class="af-pill ${PLAY_PILL[l.status]}">${PLAY_IT[l.status]}</span></span></li>`;
 }
+/** Una giocata salvata: stessa card del preview (dalla fotografia salvata) + stato, risultato, esito. Le giocate vecchie senza fotografia usano la card semplice. */
+function playCard({ play, legs, status, profit }) {
+  const st = `<span class="af-pill ${PLAY_PILL[status]}">${PLAY_IT[status]}</span>`;
+  const foot = `<p class="pl-foot">Salvata ${esc(dayShort(play.savedAt))}${play.stake ? ` · puntata ${eur(play.stake)}` : ""}${profit != null ? ` · esito <b class="${profit >= 0 ? "pl-gain" : "pl-loss"}">${profit >= 0 ? "+" : ""}${eur(profit)}</b>` : ""}</p>`;
+  const del = `<button class="link" type="button" data-del-play="${esc(play.id)}">Elimina</button>`;
+  const sc = (l) => l.res ?? (l.live?.status === "final" ? [l.live.homeScore, l.live.awayScore] : null);
+  if (play.snap && play.kind === "single") {
+    const l = legs[0], r = sc(l);
+    const item = { id: l.matchId, ...play.snap, homeScore: r?.[0], awayScore: r?.[1] };
+    const bet = isBetItem(item);
+    const stake = bet && play.snap.plan ? `<p class="pv-stake">${planLine(play.snap.plan)}</p>` : "";
+    return `<div class="pl-wrap ${status}">${singleCardHtml(item, { top: st, stake, actions: `<span class="pv-btns"><button class="link" type="button" data-open="${esc(l.matchId)}">Scheda partita</button>${del}</span>${foot}` })}</div>`;
+  }
+  if (play.snap && play.kind === "multiple") {
+    const m = play.snap;
+    const legExtra = (leg) => { const l = legs.find((x) => x.matchId === leg.item.id); const r = l && sc(l); return l ? `<span class="lg-st ${l.status}">${r ? `${r[0]}–${r[1]} · ` : ""}${PLAY_IT[l.status]}</span>` : ""; };
+    const legsOpen = `<span class="pv-btns"><span class="pl-open-legs">${m.legs.map((l) => `<button class="link" type="button" data-open="${esc(l.item.id)}">${esc(l.item.home)}</button>`).join("")}</span>${del}</span>${foot}`;
+    return `<div class="pl-wrap ${status}">${multiCardHtml(m, { top: st, legExtra, stake: multiLine(m), actions: legsOpen })}</div>`;
+  }
+  return `<article class="pl-card ${status}">
+        <header><b>${esc(play.label)}</b>${st}</header>
+        <ul>${legs.map(legHtml).join("")}</ul>
+        <footer><span>Salvata ${esc(dayShort(play.savedAt))}${play.odds ? ` · quota ${num(play.odds)}${play.oddsSource ? ` (${esc(play.oddsSource)})` : ""}` : ""}${play.stake ? ` · puntata ${eur(play.stake)}` : ""}${profit != null ? ` · <b class="${profit >= 0 ? "pl-gain" : "pl-loss"}">${profit >= 0 ? "+" : ""}${eur(profit)}</b>` : ""}</span>${del}</footer></article>`;
+}
 function renderPlays(note = "") {
   const ev = evaluate(plays, playResults);
   const t = ev.total;
@@ -613,10 +669,7 @@ function renderPlays(note = "") {
     ? `<p class="empty">Nessuna giocata salvata. Dal preview premi “Salva giocata” su una singola o su una multipla: il giorno dopo le troverai qui, confrontate con i risultati.</p>`
     : `<div class="pl-sum">${tile("Centrate", t.won + t.lost ? `${t.won} su ${t.won + t.lost}${t.rate != null ? ` · ${pct(t.rate)}` : ""}` : "—", t.won + t.lost && t.rate >= 0.5 ? "good" : "")}${tile("In attesa", String(t.pending))}${tile("Esito netto", t.staked ? eur(t.profit) : "—", t.staked ? (t.profit >= 0 ? "good" : "bad") : "")}</div>
       ${t.staked ? `<p class="pl-note">Esito netto calcolato sulle ${eur(t.staked)} puntate delle giocate già concluse (con puntata e quota salvate).</p>` : ""}
-      ${ev.rows.map(({ play, legs, status, profit }) => `<article class="pl-card ${status}">
-        <header><b>${esc(play.label)}</b><span class="af-pill ${PLAY_PILL[status]}">${PLAY_IT[status]}</span></header>
-        <ul>${legs.map(legHtml).join("")}</ul>
-        <footer><span>Salvata ${esc(dayShort(play.savedAt))}${play.odds ? ` · quota ${num(play.odds)}${play.oddsSource ? ` (${esc(play.oddsSource)})` : ""}` : ""}${play.stake ? ` · puntata ${eur(play.stake)}` : ""}${profit != null ? ` · <b class="${profit >= 0 ? "pl-gain" : "pl-loss"}">${profit >= 0 ? "+" : ""}${eur(profit)}</b>` : ""}</span><button class="link" type="button" data-del-play="${esc(play.id)}">Elimina</button></footer></article>`).join("")}`;
+      ${ev.rows.map(playCard).join("")}`;
   $("#plays-body").innerHTML = `<h2 class="d-title">Le mie giocate</h2><p class="d-sub">Le previsioni salvate dal preview, confrontate con i risultati veri.</p>
     <div class="pv-actions"><button class="primary" id="refresh-plays" type="button">Aggiorna risultati</button></div><p class="pv-qstatus" id="plays-status" aria-live="polite">${esc(note)}</p>${body}
     <p class="foot">Le giocate restano salvate in questo dispositivo (non su Supabase). I risultati arrivano dalla sincronizzazione dei campionati: se una partita finita risulta ancora “in attesa”, premi Aggiorna risultati tra qualche minuto.</p>`;
@@ -677,8 +730,8 @@ async function sharePdf(btn) {
 function renderMethod() {
   const M = MODEL;
   $("#method-body").innerHTML = `<div class="method"><h2 class="d-title">Come calcoliamo le percentuali</h2>
-  <p class="d-sub">Il pronostico di API-Football pesa il ${Math.round(M.afWeight * 100)}%; il restante ${100 - Math.round(M.afWeight * 100)}% viene dai gol delle ultime partite già giocate (Poisson). Se API-Football non ha il pronostico, si usano solo le ultime partite e l’etichetta “API” non compare.</p>
-  <ol class="steps"><li><b>Pronostico di API-Football</b><span>Percentuali 1X2 del provider, gol attesi ricavati dalle medie stagionali delle due squadre (gol fatti nel proprio campo e subiti dall’avversaria) e consiglio Over/Under. Probabilità finale = ${Math.round(M.afWeight * 100)}% provider + ${100 - Math.round(M.afWeight * 100)}% ultime partite. Se il provider stima un esito sotto il ${pct(M.afContrast)} non può diventare BET; a parità, passano davanti gli esiti che conferma (da ${pct(M.afAgree)}).</span></li></ol>
+  <p class="d-sub">Un solo cervello fonde tre fonti, esito per esito: ultime partite (${Math.round(M.weights.storico * 100)}%), pronostico di API-Football (${Math.round(M.weights.api * 100)}%) e quote di mercato di API-Football senza margine (${Math.round(M.weights.mercato * 100)}%). Se una fonte manca, i pesi si ridistribuiscono sulle altre e l’etichetta (API, Q) lo dice.</p>
+  <ol class="steps"><li><b>Pronostico di API-Football</b><span>Percentuali 1X2 del provider, gol attesi ricavati dalle medie stagionali delle due squadre (gol fatti nel proprio campo e subiti dall’avversaria) e consiglio Over/Under. Se il provider o il mercato stimano un esito sotto il ${pct(M.afContrast)} non può diventare BET; a parità, passano davanti gli esiti che confermano (da ${pct(M.afAgree)}). Se le fonti sono in disaccordo, la probabilità prudente cala; gli assenti confermati aggiungono incertezza.</span></li></ol>
   <p class="d-sub">La parte sulle ultime partite funziona così:</p>
   <ol class="steps">
     <li><b>Media gol di riferimento</b><span>Gol medi in casa e in trasferta del campionato (o di tutti i campionati se ci sono meno di ${M.minLeagueMatches} partite), mescolati con ${num(M.priorHome, 1)} / ${num(M.priorAway, 1)} come se fossero ${M.priorWeight} partite.</span></li>
@@ -688,7 +741,7 @@ function renderMethod() {
     <li><b>Probabilità prudente</b><span>Il campione è piccolo, quindi le attese gol sono incerte di circa ±${num(M.uncertainty)} ÷ √partite. Si ricalcola in 5 scenari e si tiene il peggiore.</span></li>
     <li><b>BET o EVITA</b><span>BET se il campione è di almeno ${M.betSample} partite, la probabilità prudente è almeno ${pct(M.betThreshold)} e supera di ${M.minEdge * 100} punti la frequenza storica di quell’esito nel campionato. La <b>quota minima</b> è ${num(M.edgeMargin)} ÷ probabilità prudente. Con la tua quota: BET se probabilità prudente × quota ≥ ${num(M.edgeMargin)}.</span></li>
     <li><b>Mercati preferiti</b><span>Tra i BET della stessa partita, Over/Under sui gol passano davanti a 1X2, doppia chance ed entrambe segnano (a parità di BET, non cambia la soglia). I corner non sono calcolabili con i dati disponibili.</span></li>
-    <li><b>Multiple</b><span>Tre proposte tra i BET di partite diverse: sicura (le 2 più probabili), equilibrata (3) e ambiziosa (fino a 5). La probabilità combinata è il prodotto (partite considerate indipendenti) e la quota combinata il prodotto delle quote: anche il margine del bookmaker si moltiplica, per questo le puntate sulle multiple sono più basse.</span></li>
+    <li><b>Multiple</b><span>L’obiettivo è vincere le multiple. Per ogni partita il cervello tiene le 3 gambe più solide (probabilità prudente almeno ${pct(M.legMinP)}, quota almeno ${num(M.legMinOdds)}), poi cerca tra tutte le combinazioni di partite diverse quella con la probabilità congiunta prudente più alta per ciascuna fascia di quota: sicura (circa 2), equilibrata (circa 4), ambiziosa (6 e oltre). La quota è quella del mercato dove c’è, stimata (*) altrove. Probabilità e quote si moltiplicano, e con loro anche il margine del bookmaker: per questo il “valore” di una multipla si vede solo con le quote reali.</span></li>
   </ol>
   <p><b>Limiti.</b> Le soglie sono scelte ragionevoli ma non calibrate su uno storico lungo. I bookmaker conoscono molto più di questo modello e applicano un margine: senza la quota reale, un BET significa solo “alta probabilità”, non “scommessa di valore”.</p></div>`;
 }

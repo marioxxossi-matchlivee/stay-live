@@ -571,3 +571,20 @@ body.mode-custom #select-bets::after{content:"Seleziona le filtrate";font-size:1
 .cm.hi{background:var(--pitch-tint)}.cm.hi em{color:#0b5c38}
 .cm.lo{opacity:.75}.cm.none{background:var(--soft);color:var(--mute)}
 .custom-panel .pv-qstatus{margin:8px 0 0}
+
+/* Giocate salvate = stesse card del preview */
+.api-advice small{display:block;font-weight:500;color:var(--mute);margin-top:2px}
+.pv-card .meta .af-pill,.pv-multi-card>header .af-pill{margin-left:auto}
+.pv-multi-card>header{display:flex;align-items:center;gap:8px}
+.pv-multi-card>header .pill{margin-left:0}
+.pl-wrap{margin:0 0 12px}
+.pl-wrap.won .pv-card,.pl-wrap.won .pv-multi-card{box-shadow:inset 5px 0 0 var(--pitch)}
+.pl-wrap.lost .pv-card,.pl-wrap.lost .pv-multi-card{box-shadow:inset 5px 0 0 #d9534f}
+.pl-foot{margin:0;font-size:12.5px;color:var(--mute)}
+.pl-open-legs{display:flex;gap:10px;flex-wrap:wrap}
+.lg-st{margin-left:auto;font:700 12px var(--body);border-radius:8px;padding:2px 7px;background:var(--soft-2);color:var(--ink-2)}
+.lg-st.won{background:var(--pitch-tint);color:#0b5c38}.lg-st.lost{background:#fde8e8;color:#b3202a}
+.pv-multi-card .legs li{flex-wrap:wrap}
+.lg-odd{color:var(--mute);margin-left:6px}
+.legs-sec .leg-row{display:flex;justify-content:space-between;gap:10px;background:var(--soft);border-radius:14px;padding:10px 12px;margin:0 0 6px}
+.legs-sec .leg-row span{color:var(--mute);font-size:13px}

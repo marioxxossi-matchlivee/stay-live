@@ -100,8 +100,9 @@ export const removePlay = (plays, id) => plays.filter((p) => p.id !== id);
 export function playFromItem(item, quote = {}) {
   return { kind: "single", label: item.pick.label, odds: quote.odds ?? null, stake: quote.stake ?? null, oddsSource: quote.source ?? null, legs: [legFromItem(item)] };
 }
-export function legFromItem(item) {
+/** `sel` = la selezione della gamba (per le multiple: la gamba scelta dal calcolo, che può non essere il consiglio singolo della partita). */
+export function legFromItem(item, sel = item.pick) {
   return { matchId: item.id, league: item.league, home: item.home, away: item.away, homeLogo: item.homeLogo ?? null, awayLogo: item.awayLogo ?? null, kickoffAt: item.kickoffAt,
-    key: item.pick.key, label: item.pick.label, p: item.pick.p, pLow: item.pick.pLow, minOdds: item.pick.minOdds,
-    basis: item.pick.basis ?? null, pApi: item.pick.pApi ?? null };
+    key: sel.key, label: sel.label, p: sel.p, pLow: sel.pLow, minOdds: sel.minOdds ?? null,
+    basis: item.pick?.basis ?? item.basis ?? null, pApi: sel.pApi ?? null };
 }

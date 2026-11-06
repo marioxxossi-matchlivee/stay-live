@@ -4,6 +4,7 @@
  */
 import { dayKey, dayParts, esc, fmtTime, num } from "./format.js";
 import { crest as crestBase, initials } from "./ui.js";
+import { adviceIt, commentIt, countryIt, eventIt, injuryTypeIt, posShortIt, reasonIt, roundIt } from "../functions/api/_it.js";
 
 const dash = "—";
 const val = (v) => (v == null || v === "" ? dash : esc(v));
@@ -40,7 +41,6 @@ const crest = (name, logo) => crestBase(name, logo, "af-crest");
 const mini = (name, logo) => crestBase(name, logo, "crest sm");
 const teamCell = (t) => `<span class="tcell">${mini(t?.name, t?.logo)}<span>${val(t?.name)}</span></span>`;
 
-const roundIt = (r) => { const m = /^Regular Season - (\d+)$/i.exec(String(r ?? "")); return m ? `Giornata ${m[1]}` : r; };
 const STATUS_IT = { TBD: "Da definire", NS: "Da giocare", "1H": "Primo tempo", HT: "Intervallo", "2H": "Secondo tempo", ET: "Supplementari", BT: "Pausa", P: "Rigori", SUSP: "Sospesa", INT: "Interrotta", LIVE: "In corso", FT: "Finita", AET: "Dopo supplementari", PEN: "Dopo i rigori", PST: "Rinviata", CANC: "Annullata", ABD: "Abbandonata", AWD: "A tavolino", WO: "A tavolino" };
 const statusTone = (short) => (["1H", "HT", "2H", "ET", "BT", "P", "LIVE", "SUSP", "INT"].includes(short) ? "live" : ["FT", "AET", "PEN", "AWD", "WO"].includes(short) ? "ft" : ["PST", "CANC", "ABD"].includes(short) ? "off" : "ns");
 
@@ -106,7 +106,7 @@ function matchInfo(d) {
     ["Stato", `${val(STATUS_IT[st.short] ?? st.long)}${st.elapsed ? ` (${esc(st.elapsed)}')` : ""}`],
     ["Orario", when(fx.date)],
     ["Stadio", val([fx.venue?.name, fx.venue?.city].filter(Boolean).join(", "))],
-    ["Campionato", val([f.league?.name, f.league?.country].filter(Boolean).join(" · "))],
+    ["Campionato", val([f.league?.name, countryIt(f.league?.country)].filter(Boolean).join(" · "))],
     ["Turno", val(roundIt(f.league?.round))],
     ["Stagione", val(f.league?.season)],
     ["Risultato", score],
@@ -122,13 +122,14 @@ function predictions(p) {
   const pr = p.predictions ?? {};
   const pc = pr.percent ?? {};
   const out = [];
-  const winner = pr.winner?.name ? `${esc(pr.winner.name)}${pr.winner.comment ? ` <small>(${esc(pr.winner.comment)})</small>` : ""}` : null;
-  out.push(`<div class="af-advice"><small>Consiglio di API-Football</small><strong>${val(pr.advice)}</strong>${winner ? `<span>Vincente probabile: ${winner}</span>` : ""}</div>`);
+  const winner = pr.winner?.name ? `${esc(pr.winner.name)}${pr.winner.comment ? ` <small>(${esc(commentIt(pr.winner.comment))})</small>` : ""}` : null;
+  const adv = adviceIt(pr.advice, d_home(p), d_away(p));
+  out.push(`<div class="af-advice"><small>Consiglio di API-Football</small><strong>${adv ? esc(adv.label) : dash}</strong>${adv && adv.long !== adv.label ? `<span>${esc(adv.long)}</span>` : ""}${winner ? `<span>Vincente probabile: ${winner}</span>` : ""}</div>`);
   out.push(`<div class="af-tiles">
     <div><small>Doppia chance</small><b>${yesNo(pr.win_or_draw)}</b></div>
     <div><small>Gol totali</small><b>${uoText(pr.under_over)}</b></div>
-    <div><small>Gol casa</small><b>${val(pr.goals?.home)}</b></div>
-    <div><small>Gol trasferta</small><b>${val(pr.goals?.away)}</b></div>
+    <div><small>Gol casa</small><b>${uoText(pr.goals?.home)}</b></div>
+    <div><small>Gol trasferta</small><b>${uoText(pr.goals?.away)}</b></div>
   </div>`);
   const pct = (v) => { const x = parseFloat(v); return Number.isFinite(x) && x > 0 ? x : 0; };
   const [ph, pd, pa] = [pct(pc.home), pct(pc.draw), pct(pc.away)];
@@ -178,15 +179,15 @@ function injuries(d) {
   const by = new Map();
   for (const x of list) { const t = x.team?.name ?? "—"; (by.get(t) ?? by.set(t, []).get(t)).push(x); }
   const tone = (t) => (/missing|out|suspen/i.test(String(t ?? "")) ? "err" : /question|doubt/i.test(String(t ?? "")) ? "warn" : "off");
-  return [...by].map(([team, rows]) => `<h5 class="with-crest">${mini(team, rows[0]?.team?.logo)}${esc(team)} · ${rows.length}</h5><ul class="af-list">${rows.map((r) => `<li><span class="af-av">${initials(r.player?.name)}</span><div><b>${val(r.player?.name)}</b><small>${val(r.player?.reason)}</small></div><span class="af-pill ${tone(r.player?.type)}">${val(r.player?.type)}</span></li>`).join("")}</ul>`).join("");
+  return [...by].map(([team, rows]) => `<h5 class="with-crest">${mini(team, rows[0]?.team?.logo)}${esc(team)} · ${rows.length}</h5><ul class="af-list">${rows.map((r) => `<li><span class="af-av">${initials(r.player?.name)}</span><div><b>${val(r.player?.name)}</b><small>${val(reasonIt(r.player?.reason))}</small></div><span class="af-pill ${tone(r.player?.type)}">${val(injuryTypeIt(r.player?.type))}</span></li>`).join("")}</ul>`).join("");
 }
 
 function refereeCoaches(d) {
   const f = d.fixture;
   const ref = f?.fixture?.referee;
-  const coach = (c) => (c ? `${esc(c.name)}<small>${[c.nationality, c.age ? `${c.age} anni` : null, c.since ? `dal ${c.since}` : null].filter(Boolean).map(esc).join(" · ")}</small>` : dash);
+  const coach = (c) => (c ? `${esc(c.name)}<small>${[countryIt(c.nationality), c.age ? `${c.age} anni` : null, c.since ? `dal ${c.since}` : null].filter(Boolean).map(esc).join(" · ")}</small>` : dash);
   return kv([
-    ["Arbitro", ref ? esc(ref) : "Non ancora designato"],
+    ["Arbitro", ref ? esc(String(ref).replace(/,\s*([^,]+)$/, (_, c) => `, ${countryIt(c)}`)) : "Non ancora designato"],
     [`Allenatore ${d.game?.home ?? "casa"}`, coach(d.coaches?.home)],   // kv() fa già l'escape dell'etichetta
     [`Allenatore ${d.game?.away ?? "trasferta"}`, coach(d.coaches?.away)],
   ]);
@@ -196,19 +197,12 @@ function lineups(f) {
   const L = f?.lineups ?? [];
   if (!L.length) return empty("Formazioni non ancora pubblicate (di solito circa un'ora prima del calcio d'inizio).");
   return L.map((t) => `<h5 class="with-crest">${mini(t.team?.name, t.team?.logo)}${esc(t.team?.name)} · ${val(t.formation)} · all. ${val(t.coach?.name)}</h5>
-    ${table(["N.", "Titolare", "Ruolo"], (t.startXI ?? []).map((x) => [val(x.player?.number), val(x.player?.name), val(x.player?.pos)]))}
+    ${table(["N.", "Titolare", "Ruolo"], (t.startXI ?? []).map((x) => [val(x.player?.number), val(x.player?.name), val(posShortIt(x.player?.pos))]))}
     ${(t.substitutes ?? []).length ? `<p class="af-note">Panchina: ${(t.substitutes ?? []).map((x) => `${esc(x.player?.name)}${x.player?.number ? ` (${esc(x.player.number)})` : ""}`).join(", ")}</p>` : ""}`).join("");
 }
 
-const eventLabel = (e) => {
-  const d = e.detail ?? "";
-  if (e.type === "Goal") return d === "Own Goal" ? "Autogol" : d === "Penalty" ? "Gol su rigore" : d === "Missed Penalty" ? "Rigore sbagliato" : "Gol";
-  if (e.type === "Card") return /red/i.test(d) ? "Espulsione" : "Ammonizione";
-  if (e.type === "subst") return "Sostituzione";
-  if (e.type === "Var") return `VAR: ${d}`;
-  return `${e.type ?? ""} ${d}`.trim();
-};
-const eventKind = (e) => (e.type === "Goal" ? (e.detail === "Missed Penalty" ? "miss" : "goal") : e.type === "Card" ? (/red/i.test(e.detail ?? "") ? "red" : "yellow") : e.type === "subst" ? "sub" : "var");
+const eventLabel = (e) => eventIt(e.type, e.detail);
+const eventKind = (e) => (e.type === "Goal" ? (e.detail === "Missed Penalty" ? "miss" : "goal") : e.type === "Card" ? (/red|second yellow/i.test(e.detail ?? "") ? "red" : "yellow") : e.type === "subst" ? "sub" : "var");
 function events(f) {
   const E = f?.events ?? [];
   if (!E.length) return empty("Nessun evento (la partita non è ancora iniziata o non ci sono eventi registrati).");
@@ -246,7 +240,7 @@ function players(f) {
     const rows = (t.players ?? []).map((p) => ({ p, s: p.statistics?.[0] ?? {} })).filter(({ s }) => (s.games?.minutes ?? 0) > 0);
     rows.sort((x, y) => (Number(y.s.games?.rating) || 0) - (Number(x.s.games?.rating) || 0));
     return `<h5>${esc(t.team?.name)}</h5>${table(["Giocatore", "Ruolo", "Min.", "Voto", "Gol", "Assist", "Cart."], rows.map(({ p, s }) => [
-      val(p.player?.name), val(s.games?.position), val(s.games?.minutes), rating(s.games?.rating), val(s.goals?.total ?? 0), val(s.goals?.assists ?? 0),
+      val(p.player?.name), val(posShortIt(s.games?.position)), val(s.games?.minutes), rating(s.games?.rating), val(s.goals?.total ?? 0), val(s.goals?.assists ?? 0),
       `${s.cards?.yellow ? `${esc(s.cards.yellow)}G ` : ""}${s.cards?.red ? `${esc(s.cards.red)}R` : ""}` || dash,
     ]), { numCols: [2, 3, 4, 5, 6] })}`;
   }).join("");
@@ -296,7 +290,7 @@ function seasonStats(d) {
   return table(["", d.game?.home ?? "Casa", d.game?.away ?? "Trasferta"], rows, { rowCls: [] });
 }
 
-const FRESH_IT = { fixture: "Partita", injuries: "Infortuni", predictions: "Pronostico", oddsGoals: "Quote gol", oddsCorners: "Quote corner", standings: "Classifica", coverage: "Copertura", h2h: "Scontri diretti", teamHome: "Statistiche casa", teamAway: "Statistiche trasferta", coachHome: "Allenatore casa", coachAway: "Allenatore trasferta", bets: "Elenco mercati" };
+const FRESH_IT = { fixture: "Partita", injuries: "Infortuni", predictions: "Pronostico", oddsGoals: "Quote gol", odds1x2: "Quote 1X2", oddsCorners: "Quote corner", standings: "Classifica", coverage: "Copertura", h2h: "Scontri diretti", teamHome: "Statistiche casa", teamAway: "Statistiche trasferta", coachHome: "Allenatore casa", coachAway: "Allenatore trasferta", bets: "Elenco mercati" };
 function coverage(d) {
   const c = d.coverage;
   const out = [];
@@ -319,14 +313,20 @@ function coverage(d) {
 }
 
 const GOAL_KEY = /^(over|under)(15|25|35)$/;
+const X12_KEY = /^(home|draw|away)$/;
 const soonOf = (fr) => (keys, body) => (keys.some((k) => fr[k]?.deferred) && body.includes('class="af-empty"') ? `<p class="af-empty"><i class="af-spin" aria-hidden="true"></i> In arrivo: sto scaricando questi dati…</p>` : body);
 
 /** Solo le linee Over/Under che l'app consiglia, con la quota del mercato a confronto con la quota minima. */
 function recLines(d, rec) {
-  const goalRecs = (rec ?? []).filter((r) => GOAL_KEY.test(r.key));
-  if (!goalRecs.length) return empty("Nessuna linea Over/Under consigliata per questa partita.");
+  const goalRecs = (rec ?? []).filter((r) => GOAL_KEY.test(r.key) || X12_KEY.test(r.key));
+  if (!goalRecs.length) return empty("Nessuna linea Over/Under o esito 1X2 consigliato per questa partita.");
   const o = d.odds;
   return goalRecs.map((r) => {
+    if (X12_KEY.test(r.key)) {                                       // 1X2: quota diretta del mercato "Match Winner"
+      const x = o?.x12?.[r.key] ?? null, best = x?.best?.odd ?? null;
+      const state = best == null ? `<span class="af-pill off">quota non ancora pubblicata</span>` : r.minOdds != null && best >= r.minOdds ? `<span class="af-pill ok">quota di valore</span>` : `<span class="af-pill warn">sotto la minima</span>`;
+      return `<div class="af-rec"><div class="l"><b>${esc(r.label)}</b><small>quota minima ${num(r.minOdds)}</small></div><div class="q">${best != null ? `<strong>${num(best)}</strong><small>${esc(x.best.book)} · mediana ${num(x.median)}</small>` : "<strong>—</strong>"}</div>${state}</div>`;
+    }
     const [, side, n] = GOAL_KEY.exec(r.key);
     const line = Number(n) / 10;
     const agg = (o?.goalLines ?? []).find((l) => l.line === line)?.[side] ?? (line === 2.5 ? o?.ou25?.[side] : null) ?? null;
@@ -342,7 +342,8 @@ function leanPrediction(p) {
   const pr = p.predictions ?? {}, pc = pr.percent ?? {};
   const n = (v) => { const x = parseFloat(v); return Number.isFinite(x) && x > 0 ? x : 0; };
   const [ph, pd, pa] = [n(pc.home), n(pc.draw), n(pc.away)];
-  const advice = `<div class="af-advice"><small>Consiglio di API-Football</small><strong>${val(pr.advice)}</strong></div>`;
+  const adv = adviceIt(pr.advice, d_home(p), d_away(p));
+  const advice = `<div class="af-advice"><small>Consiglio di API-Football</small><strong>${adv ? esc(adv.label) : dash}</strong>${adv && adv.long !== adv.label ? `<span>${esc(adv.long)}</span>` : ""}</div>`;
   const bar = ph + pd + pa > 0 ? `<div class="af-prob"><div class="af-prob-bar"><i class="h" style="flex:${ph}"></i><i class="d" style="flex:${pd}"></i><i class="a" style="flex:${pa}"></i></div><div class="af-prob-leg"><div class="h"><b>${val(pc.home)}</b><span>${esc(d_home(p))}</span></div><div class="d"><b>${val(pc.draw)}</b><span>Pareggio</span></div><div class="a"><b>${val(pc.away)}</b><span>${esc(d_away(p))}</span></div></div></div>` : "";
   return advice + bar;
 }
@@ -365,7 +366,7 @@ function renderLean(d, { rec = [], extra = false } = {}) {
     : `<button class="ghost wide" type="button" data-af-extra>Carica anche classifica, scontri diretti, statistiche e allenatori</button><p class="af-note">Usa alcune richieste in più ad API-Football: premilo solo se ti serve.</p>`;
   return `${matchHero(d)}${wait}${warn}
     ${sec("Cosa dice API-Football", soon(["predictions"], leanPrediction(d.predictions)), { open: true, icon: "pred", tone: "green" })}
-    ${sec("Linee consigliate", `${soon(["oddsGoals"], recLines(d, rec))}<p class="af-note">Corner e le altre linee non sono consigliati: l'app non li stima.</p>`, { open: true, icon: "odds", tone: "blue" })}
+    ${sec("Linee consigliate", `${soon(["oddsGoals", "odds1x2"], recLines(d, rec))}<p class="af-note">Corner e le altre linee non sono consigliati: l'app non li stima.</p>`, { open: true, icon: "odds", tone: "blue" })}
     ${has(d.injuries) ? sec("Infortunati e squalificati", injuries(d), { open: true, note: String(d.injuries.length), icon: "injuries", tone: "red" }) : ""}
     ${has(f?.lineups) ? sec("Formazioni", lineups(f), { icon: "lineups", tone: "green" }) : ""}
     ${has(f?.events) ? sec("Eventi", events(f), { icon: "events", tone: "amber" }) : ""}

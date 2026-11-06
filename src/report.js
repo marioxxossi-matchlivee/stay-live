@@ -86,8 +86,8 @@ export function buildPreviewPdf(pv, leagueName, plan = null) {
       const teamX = M + (multiDay ? 96 : 54), pickRight = M + W - 96;
       for (const l of m.legs) {
         pdf.text(M + 14, yy, when(l.item.kickoffAt), { size: 8.5, color: C.mute });
-        pdf.text(pickRight, yy, l.item.pick.label, { size: 9.5, bold: true, color: "#0b5c38", align: "right" });
-        pdf.text(teamX, yy, fit(`${l.item.home} – ${l.item.away}`, 9.5, true, pickRight - textWidth(l.item.pick.label, 9.5, true) - teamX - 10), { size: 9.5, bold: true });
+        pdf.text(pickRight, yy, l.sel.label, { size: 9.5, bold: true, color: "#0b5c38", align: "right" });
+        pdf.text(teamX, yy, fit(`${l.item.home} – ${l.item.away}`, 9.5, true, pickRight - textWidth(l.sel.label, 9.5, true) - teamX - 10), { size: 9.5, bold: true });
         pdf.text(M + W - 12, yy, `${num(l.odds)} ${l.source}`, { size: 8.5, color: C.mute, align: "right" });
         yy += 15;
       }
