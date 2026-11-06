@@ -1,5 +1,4 @@
-import { LEAGUES, errorMessage, json, loadFinals, missingConfig, supabaseGet, supabaseUpsert } from "./_lib.js";
-import { MODEL, analyzeMatch, buildContext } from "./model.js";
+import { LEAGUES, errorMessage, json, missingConfig, supabaseGet, supabaseUpsert } from "./_lib.js";
 import { MAX_EVENTS_PER_CALL, MIN_CREDITS, ODDS_URL, QUOTE_SPEC, QUOTE_TTL, isoNoMs, matchEvent, pricesFor, summarizePrices } from "./_odds.js";
 
 const oddsKeyOf = Object.fromEntries(LEAGUES.map((l) => [l.id, l.oddsKey]));
@@ -17,16 +16,21 @@ async function oddsFetch(env, path, params) {
 }
 
 /**
- * GET /api/quotes?ids=a,b,c&n=8
- * Preleva da The Odds API la quota reale SOLO per il mercato consigliato (BET) di ogni partita scelta.
+ * GET /api/quotes?picks=ID:selezione,ID:selezione
+ * Preleva da The Odds API la quota reale SOLO per la selezione indicata di ogni partita (quella che l'anteprima sta consigliando:
+ * il browser la manda, così la quota è sempre per la giocata mostrata, anche con il pronostico di API-Football e le quote di mercato).
  * Risparmia i crediti del piano gratuito (500/mese): elenco eventi gratis, 1 credito per partita e mercato,
  * cache di 3 ore su Supabase, stop automatico sotto MIN_CREDITS crediti residui.
  */
 export async function onRequest({ request, env }) {
   const url = new URL(request.url);
-  const ids = [...new Set((url.searchParams.get("ids") ?? "").split(",").map((s) => s.trim()).filter(Boolean))];
-  const n = [5, 8, 10].includes(Number(url.searchParams.get("n"))) ? Number(url.searchParams.get("n")) : 8;
-  if (!ids.length || ids.length > 40 || !ids.every((id) => /^[\w-]{3,80}$/.test(id))) return json({ error: "Seleziona da 1 a 40 partite." }, 400);
+  const picks = new Map();
+  for (const part of (url.searchParams.get("picks") ?? "").split(",")) {
+    const [id, key] = part.split(":").map((s) => s?.trim());
+    if (id && /^[\w-]{3,80}$/.test(id) && QUOTE_SPEC[key]) picks.set(id, key);
+  }
+  const ids = [...picks.keys()];
+  if (!ids.length || ids.length > 40) return json({ error: "Seleziona da 1 a 40 partite con una giocata valida." }, 400);
   const missing = missingConfig(env);
   if (!env.ODDS_API_KEY) missing.push("ODDS_API_KEY");
   if (missing.length) return json({ error: `Variabili mancanti su Cloudflare: ${missing.join(", ")}` }, 503);
@@ -35,19 +39,15 @@ export async function onRequest({ request, env }) {
   const now = Date.now();
   try {
     const inList = `in.(${ids.map((i) => `"${i}"`).join(",")})`;
-    const [matches, finals, cached, [usage]] = await Promise.all([
-      supabaseGet(env, "matches", { select: "*", game_id: inList, order: "kickoff_at.asc", limit: 40 }),
-      loadFinals(env),
+    const [matches, cached, [usage]] = await Promise.all([
+      supabaseGet(env, "matches", { select: "game_id,league,status,kickoff_at,home_name,away_name", game_id: inList, order: "kickoff_at.asc", limit: 40 }),
       supabaseGet(env, "odds_quotes", { select: "*", game_id: inList, limit: 200 }),
       supabaseGet(env, "odds_usage", { select: "*", limit: 1 }),
     ]);
-    const ctx = buildContext(finals);
     const quotes = {};
     const need = [];
     for (const m of matches) {
-      const a = analyzeMatch(m, ctx, { n });
-      const pick = a.pick;
-      if (!pick || pick.verdict !== "BET" || a.sample < MODEL.betSample) continue;       // quota solo per i BET
+      const pick = { key: picks.get(m.game_id) };                                        // la giocata che l'anteprima sta mostrando
       if (m.status !== "scheduled" || Date.parse(m.kickoff_at) < now) continue;          // non per partite già iniziate
       if (!oddsKeyOf[m.league]) continue;                                                // campionato senza chiave The Odds API (quote da API-Football)
       const hit = cached.find((c) => c.game_id === m.game_id && c.selection === pick.key);

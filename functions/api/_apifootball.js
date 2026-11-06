@@ -58,12 +58,13 @@ export function ttlFor(kind, { kickoff = null, now = Date.now(), finished = fals
 /** Richieste da fare per una partita (una per sezione della schermata di dettaglio). */
 export function planFor({ fixtureId, leagueId, season, homeId, awayId, kickoff, finished = false, now = Date.now(), betIds = { goals: 5, corners: 45 }, extra = false }) {
   const c = { kickoff, now, finished };
-  // Essenziale (5 richieste): partita, infortuni, pronostico, quote gol, copertura. Il resto solo a richiesta (`extra`): meno chiamate.
+  // Essenziale (6 richieste): partita, infortuni, pronostico, quote gol e 1X2, copertura. Il resto solo a richiesta (`extra`): meno chiamate.
   const plan = [
     { section: "fixture", endpoint: "fixtures", params: { id: fixtureId }, ttl: ttlFor("fixture", c) },
     { section: "injuries", endpoint: "injuries", params: { fixture: fixtureId }, ttl: ttlFor("injuries", c) },
     { section: "predictions", endpoint: "predictions", params: { fixture: fixtureId }, ttl: ttlFor("predictions", c) },
     { section: "oddsGoals", endpoint: "odds", params: { fixture: fixtureId, bet: betIds.goals }, ttl: ttlFor("odds", c) },
+    { section: "odds1x2", endpoint: "odds", params: { fixture: fixtureId, bet: betIds.winner ?? 1 }, ttl: ttlFor("odds", c) },
     { section: "coverage", endpoint: "leagues", params: { id: leagueId, season }, ttl: ttlFor("coverage", c) },
   ];
   if (!extra) return plan;
@@ -102,7 +103,7 @@ export function pickFixture(match, fixtures) {
 /** Id dei mercati: letti dall'elenco ufficiale (odds/bets) per nome, con valori noti come ripiego. */
 export function betIdsFrom(resp) {
   const find = (re) => (resp ?? []).find((b) => re.test(String(b.name ?? "")))?.id;
-  return { goals: find(/^goals over\/under$/i) ?? 5, corners: find(/^corners over.?under$/i) ?? 45 };
+  return { goals: find(/^goals over\/under$/i) ?? 5, corners: find(/^corners over.?under$/i) ?? 45, winner: find(/^match winner$/i) ?? 1 };
 }
 
 const median = (a) => { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length ? (s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2) : null; };
@@ -139,6 +140,23 @@ export function summarizeOdds(goalsResp, cornersResp) {
     corners: { lines: cornerLines, mainLine: balanced[0]?.line ?? null },
     bookmakers: books.size,
   };
+}
+
+/**
+ * Quote 1X2 (mercato "Match Winner"): migliore e mediana tra i bookmaker per casa, pareggio, trasferta.
+ * Restituisce { home, draw, away } (ognuno come summarizeOdds: { best: { odd, book }, median, n }) o null.
+ */
+export function summarizeMatchWinner(resp) {
+  const out = { home: [], draw: [], away: [] };
+  for (const fx of resp ?? []) for (const bk of fx.bookmakers ?? []) for (const bet of bk.bets ?? []) {
+    if (!/^match winner$/i.test(String(bet.name ?? ""))) continue;
+    for (const v of bet.values ?? []) {
+      const k = { home: "home", draw: "draw", away: "away", "1": "home", x: "draw", "2": "away" }[String(v.value).trim().toLowerCase()];
+      const odd = Number(v.odd);
+      if (k && odd > 1) out[k].push({ odd, book: bk.name });
+    }
+  }
+  return out.home.length && out.draw.length && out.away.length ? { home: agg(out.home), draw: agg(out.draw), away: agg(out.away) } : null;
 }
 
 /* ---------- Rete ---------- */

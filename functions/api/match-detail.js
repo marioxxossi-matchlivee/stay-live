@@ -1,6 +1,6 @@
 import { errorMessage, json, supabaseGet } from "./_lib.js";
 import { crestUrl } from "./_crests.js";
-import { betIdsFrom, loadSections, pickCoach, planFor, resolveFixture, summarizeOdds, ttlFor } from "./_apifootball.js";
+import { betIdsFrom, loadSections, pickCoach, planFor, resolveFixture, summarizeMatchWinner, summarizeOdds, ttlFor } from "./_apifootball.js";
 
 const COLS = "game_id,league,season,kickoff_at,status,home_id,away_id,home_name,away_name";
 
@@ -45,7 +45,7 @@ export async function onRequest({ request, env }) {
       fixture,                                        // include events, lineups, statistics, players quando la partita e' iniziata/finita
       injuries: s.injuries?.data ?? [],
       predictions: s.predictions?.data?.[0] ?? null,
-      odds: { ...summarizeOdds(s.oddsGoals?.data, s.oddsCorners?.data), raw: { goals: s.oddsGoals?.data ?? [], corners: s.oddsCorners?.data ?? [] } },
+      odds: { ...summarizeOdds(s.oddsGoals?.data, s.oddsCorners?.data), x12: summarizeMatchWinner(s.odds1x2?.data) },
       h2h: s.h2h?.data ?? [],
       standings: s.standings?.data?.[0]?.league?.standings ?? [],
       teamStats: { home: s.teamHome?.data ?? null, away: s.teamAway?.data ?? null },

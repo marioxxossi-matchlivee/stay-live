@@ -27,8 +27,19 @@ export const MODEL = {
   maxAccStakePct: 0.02,   // massimo 2% sulla multipla
   maxTotalPct: 0.20,      // massimo 20% del budget esposto in totale
   stakeStep: 0.5,         // le puntate sono arrotondate a 0,50 €
-  // Pronostico di API-Football: input PRINCIPALE. Probabilità finale = afWeight x provider + (1 - afWeight) x ultime partite.
-  afWeight: 0.65,         // peso del pronostico API-Football (percentuali 1X2 e gol attesi dalle medie stagionali)
+  // CERVELLO UNICO: ogni probabilità è la fusione pesata di tre fonti, per ogni singola selezione (se una manca, i pesi si ridistribuiscono):
+  //   storico = Poisson sulle ultime partite · api = pronostico di API-Football (1X2 e gol attesi stagionali) · mercato = quote di API-Football senza margine.
+  weights: { storico: 0.25, api: 0.40, mercato: 0.35 },
+  marketMargin: 0.03,     // sulla probabilità del mercato si tolgono 3 punti per la probabilità prudente
+  spreadPenalty: 0.30,    // se le fonti sono in disaccordo, la probabilità prudente cala del 30% della distanza tra la più alta e la più bassa
+  injPenalty: 0.008,      // ogni assente confermato (max 8) toglie 0,8 punti alla probabilità prudente: più incertezza, non una previsione sul singolo giocatore
+  // Multiple: gambe scelte per probabilità prudente alta, una per partita (l'obiettivo dell'app è vincere le multiple, non le singole).
+  legMinP: 0.62, legMaxP: 0.93, legMinOdds: 1.15,
+  multiTiers: [
+    { key: "sicura", label: "Multipla sicura", lo: 1.8, hi: 2.8, maxLegs: 3, note: "Poche gambe molto probabili: quota totale intorno a 2." },
+    { key: "equilibrata", label: "Multipla equilibrata", lo: 3.0, hi: 5.5, maxLegs: 4, note: "Quota totale intorno a 4, con le gambe più solide." },
+    { key: "ambiziosa", label: "Multipla ambiziosa", lo: 6, hi: 14, maxLegs: 5, note: "Fino a 5 gambe: quota alta, probabilità più bassa." },
+  ],
   afDelta: 0.15,          // incertezza dei gol attesi del provider (stagione intera: più stabile delle sole ultime partite)
   afMargin: 0.05,         // sulle percentuali 1X2 del provider si toglie 5 punti per la probabilità prudente
   afAdviceShift: 0.06,    // se il provider consiglia Over/Under su una linea, quella probabilità sale di 6 punti
@@ -135,6 +146,41 @@ export function afProbabilities(af, base) {
   return { p, low };
 }
 
+/** Pesi effettivi delle fonti disponibili (sommano a 1). */
+export function fusionWeights(hasApi, hasMarket) {
+  const w = { storico: MODEL.weights.storico, api: hasApi ? MODEL.weights.api : 0, mercato: hasMarket ? MODEL.weights.mercato : 0 };
+  const t = w.storico + w.api + w.mercato;
+  return { storico: w.storico / t, api: w.api / t, mercato: w.mercato / t };
+}
+
+/** Quote di mercato (già senza margine) -> probabilità e probabilità prudente (meno marketMargin). */
+export function marketProbabilities(market) {
+  if (!market?.p) return null;
+  const p = { ...market.p };
+  const low = Object.fromEntries(Object.entries(p).map(([k, v]) => [k, Math.max(0, v - MODEL.marketMargin)]));
+  return { p, low };
+}
+
+/**
+ * Il cervello: fonde le fonti di UNA selezione. src = { storico, api, mercato } con { p, low } (null se la fonte non ha quella selezione).
+ * Restituisce p, pLow, distanza tra le fonti (spread) e il giudizio degli esterni (API-Football / mercato).
+ */
+export function fuse(src, weights, injPen = 0) {
+  let p = 0, low = 0, wsum = 0;
+  const ps = [];
+  for (const k of ["storico", "api", "mercato"]) {
+    if (!src[k] || !(weights[k] > 0)) continue;
+    p += weights[k] * src[k].p; low += weights[k] * src[k].low; wsum += weights[k]; ps.push(src[k].p);
+  }
+  p /= wsum; low /= wsum;
+  const spread = ps.length > 1 ? Math.max(...ps) - Math.min(...ps) : 0;
+  const pLow = clamp(Math.min(p, low) - MODEL.spreadPenalty * spread - injPen, 0, 1);
+  const ext = [["API-Football", src.api], ["il mercato", src.mercato]].filter(([, x]) => x);
+  const worst = ext.reduce((m, [n, x]) => (!m || x.p < m.p ? { n, p: x.p } : m), null);
+  const agree = !ext.length ? null : worst.p < MODEL.afContrast ? "contraddice" : ext.every(([, x]) => x.p >= MODEL.afAgree) ? "conferma" : "neutro";
+  return { p, pLow, spread, agree, agreeBy: worst?.n ?? null, pWorst: worst?.p ?? null };
+}
+
 export function confidenceLabel(sample) {
   if (sample < MODEL.minSample) return "insufficiente";
   if (sample < MODEL.betSample) return "bassa";
@@ -226,7 +272,7 @@ export function teamForm(teamId, before, ctx, n) {
 
 export function verdictFor(sel, sample, odds = null) {
   if (sample < MODEL.betSample) return { verdict: "EVITA", reason: `Campione troppo piccolo (${sample} partite, ne servono ${MODEL.betSample}).` };
-  if (sel.agree === "contraddice") return { verdict: "EVITA", reason: `API-Football non è d'accordo: stima ${(sel.pApi * 100).toFixed(0)}% per questo esito.` };
+  if (sel.agree === "contraddice") return { verdict: "EVITA", reason: `${sel.agreeBy ?? "API-Football"} non è d'accordo: stima ${((sel.pWorst ?? sel.pApi) * 100).toFixed(0)}% per questo esito.` };
   if (Number.isFinite(odds) && odds > 1) {
     const ev = sel.pLow * odds;
     if (sel.pLow < MODEL.longshotFloor) return { verdict: "EVITA", reason: "Probabilità prudente troppo bassa anche con quota alta." };
@@ -234,15 +280,16 @@ export function verdictFor(sel, sample, odds = null) {
       ? { verdict: "BET", reason: `Valore atteso prudente +${((ev - 1) * 100).toFixed(1).replace(".", ",")}%.` }
       : { verdict: "EVITA", reason: `Quota troppo bassa: serve almeno ${sel.minOdds.toFixed(2).replace(".", ",")}.` };
   }
-  const edgeText = sel.edge == null ? "" : ` (+${(sel.edge * 100).toFixed(0)} punti sulla media del campionato)`;
+  const edgePts = sel.edge == null ? null : `${sel.edge >= 0 ? "+" : "−"}${Math.abs(sel.edge * 100).toFixed(0)}`;
+  const edgeText = edgePts == null ? "" : ` (${edgePts} punti sulla media del campionato)`;
   if (sel.pLow < MODEL.betThreshold) return { verdict: "EVITA", reason: `Probabilità prudente ${(sel.pLow * 100).toFixed(0)}% sotto la soglia ${(MODEL.betThreshold * 100).toFixed(0)}%.` };
-  if (sel.edge == null || sel.edge < MODEL.minEdge) return { verdict: "EVITA", reason: `Esito probabile ma in linea con la media del campionato${edgeText}: niente di speciale in questa partita.` };
+  if (sel.edge == null || sel.edge < MODEL.minEdge) return { verdict: "EVITA", reason: `Esito probabile ma ${edgePts == null ? "in linea con la media del campionato" : `${edgePts} punti sulla media del campionato`}: niente di speciale in questa partita.` };
   return { verdict: "BET", reason: `Probabilità prudente ${(sel.pLow * 100).toFixed(0)}%${edgeText}. Gioca solo se la quota è almeno ${sel.minOdds.toFixed(2).replace(".", ",")}.` };
 }
 
 const afRank = (s) => (s.agree === "conferma" ? 0 : s.agree === "contraddice" ? 2 : 1);
 
-export function analyzeMatch(match, ctx, { n = 8, af = null } = {}) {
+export function analyzeMatch(match, ctx, { n = 8, af = null, market = null, inj = null } = {}) {
   const before = Date.parse(match.kickoff_at) || Date.now();
   const base = ctx.baseline(match.league);
   const home = teamForm(match.home_id, before, ctx, n);
@@ -256,25 +303,34 @@ export function analyzeMatch(match, ctx, { n = 8, af = null } = {}) {
   const p = marketsFromMatrix(m);
   const recent = Math.min(home.n, away.n);
   const afP = afProbabilities(af, base);
+  const mkP = marketProbabilities(market);
   // Con il pronostico del provider il campione è la stagione intera (fino a 8 partite contano come campione pieno).
   const sample = afP ? Math.max(recent, Math.min(af.played ?? 0, 8)) : recent;
   const delta = MODEL.uncertainty / Math.sqrt(Math.max(recent, 1));
   const low = stressedProbabilities(lh, la, delta);
   const base_ = ctx.baseRates(match.league);
+  const weights = fusionWeights(Boolean(afP), Boolean(mkP));
+  const absent = inj ? (inj.home ?? 0) + (inj.away ?? 0) : 0;
+  const injPen = Math.min(8, absent) * MODEL.injPenalty;
 
   const selections = SELECTIONS.map((s) => {
-    const pa = afP?.p[s.key] ?? null;                                  // stima del provider per questa selezione (null = non la fornisce)
-    const w = pa == null ? 0 : MODEL.afWeight;
-    const pFinal = w * (pa ?? 0) + (1 - w) * p[s.key];
-    const lowFinal = Math.min(pFinal, w * (afP?.low[s.key] ?? 0) + (1 - w) * Math.min(low[s.key], p[s.key]));
+    const src = {
+      storico: { p: p[s.key], low: Math.min(low[s.key], p[s.key]) },
+      api: afP?.p[s.key] != null ? { p: afP.p[s.key], low: afP.low[s.key] } : null,
+      mercato: mkP?.p[s.key] != null ? { p: mkP.p[s.key], low: mkP.low[s.key] } : null,
+    };
+    const f = fuse(src, weights, injPen);
     const sel = {
       ...s,
-      p: round(pFinal),
-      pLow: round(lowFinal),
+      p: round(f.p),
+      pLow: round(f.pLow),
       pModel: round(p[s.key]),
-      pApi: pa == null ? null : round(pa),
-      agree: pa == null ? null : pa >= MODEL.afAgree ? "conferma" : pa < MODEL.afContrast ? "contraddice" : "neutro",
-      fairOdds: round(1 / pFinal, 2),
+      pApi: src.api ? round(src.api.p) : null,
+      pMarket: src.mercato ? round(src.mercato.p) : null,
+      spread: round(f.spread),
+      agree: f.agree, agreeBy: f.agreeBy, pWorst: f.pWorst == null ? null : round(f.pWorst),
+      fairOdds: round(1 / f.p, 2),
+      odds: market?.odds?.[s.key] ?? null,                              // quota reale (mediana/migliore) se il mercato quota direttamente questa selezione
     };
     sel.minOdds = round(MODEL.edgeMargin / sel.pLow, 2);
     sel.base = base_ ? round(base_[s.key]) : null;
@@ -282,6 +338,19 @@ export function analyzeMatch(match, ctx, { n = 8, af = null } = {}) {
     Object.assign(sel, verdictFor(sel, sample));
     return sel;
   });
+
+  // Gambe per le multiple: le selezioni più solide della partita (nessun tetto di probabilità "utile": per una multipla la sicurezza conta),
+  // con la quota reale del mercato se c'è, altrimenti stimata.
+  const legs = sample < MODEL.betSample ? [] : selections
+    .filter((x) => x.agree !== "contraddice" && x.pLow >= MODEL.legMinP && x.p <= MODEL.legMaxP)
+    .map((x) => {
+      const real = x.odds;
+      const odds = real ? real.median : estimateOdds(x.p);
+      return { key: x.key, label: x.label, market: x.market, p: x.p, pLow: x.pLow, spread: x.spread, agree: x.agree, odds, oddsSource: real ? "mercato" : "stimata", bestOdds: real?.best ?? null, book: real?.book ?? null, edge: real ? round(x.p * real.median - 1, 3) : null };
+    })
+    .filter((x) => x.odds >= MODEL.legMinOdds)
+    .sort((x, y) => y.pLow - x.pLow)
+    .slice(0, 3);
 
   const ranked = selections.filter((s) => s.p <= MODEL.maxUsefulProb)
     .sort((x, y) => (y.verdict === "BET") - (x.verdict === "BET")
@@ -295,14 +364,15 @@ export function analyzeMatch(match, ctx, { n = 8, af = null } = {}) {
 
   return {
     sample, confidence: confidenceLabel(sample), n,
-    basis: afP ? "api" : "storico",
-    api: af ? { used: Boolean(afP), weight: MODEL.afWeight, percent: af.percent, underOver: af.underOver, advice: af.advice, winner: af.winner, lambda: afP?.p._lambda ?? null, played: af.played } : null,
+    basis: afP && mkP ? "api+mercato" : afP ? "api" : mkP ? "mercato" : "storico",
+    fusion: { weights, sources: { storico: true, api: Boolean(afP), mercato: Boolean(mkP) }, absent: inj ? { home: inj.home ?? 0, away: inj.away ?? 0 } : null, injPenalty: round(injPen), books: market?.books ?? null },
+    api: af ? { used: Boolean(afP), weight: weights.api, percent: af.percent, underOver: af.underOver, advice: af.advice, adviceIt: af.adviceIt ?? null, winner: af.winner, lambda: afP?.p._lambda ?? null, played: af.played } : null,
     inputs: {
       baseline: { home: round(base.home, 3), away: round(base.away, 3), perTeam: round(base.perTeam, 3), sample: base.n, scope: base.scope },
       neutral, home, away, delta: round(delta, 3),
     },
     lambda: { home: round(lh, 3), away: round(la, 3), total: round(lh + la, 3) },
-    selections, pick, alternatives: ranked.slice(1, 4), topScores: scores.slice(0, 3),
+    selections, legs, pick, alternatives: ranked.slice(1, 4), topScores: scores.slice(0, 3),
     recommended: ranked.filter((s) => s.verdict === "BET").slice(0, 3).map((s) => s.key),      // solo ciò che si consiglia di giocare (max 3), in ordine
   };
 }
@@ -313,7 +383,7 @@ export function compactPick(analysis) {
   if (!s) return null;
   return { key: s.key, label: s.label, market: s.market, preferred: isPreferred(s), p: s.p, pLow: s.pLow, minOdds: s.minOdds, estOdds: estimateOdds(s.p), verdict: s.verdict,
     reason: s.reason, confidence: analysis.confidence, sample: analysis.sample, expectedGoals: analysis.lambda.total,
-    basis: analysis.basis, pApi: s.pApi, pModel: s.pModel, agree: s.agree };
+    basis: analysis.basis, pApi: s.pApi, pModel: s.pModel, pMarket: s.pMarket, agree: s.agree };
 }
 
 /** Over/Under 2,5 in breve (per la modalità personalizzata): i due lati e il migliore. null se il campione è insufficiente. */
@@ -325,12 +395,47 @@ export function ou25Of(analysis) {
   return best ? { best, over, under, basis: analysis.basis, confidence: analysis.confidence } : null;
 }
 
-/** Multipla: fino a maxLegs BET con le probabilità prudenti più alte, una per partita. */
-export function buildAccumulator(items, maxLegs = 4) {
-  const legs = items.filter((i) => i.pick?.verdict === "BET").sort((a, b) => b.pick.pLow - a.pick.pLow).slice(0, maxLegs);
-  if (legs.length < 2) return null;
-  const pLow = legs.reduce((acc, l) => acc * l.pick.pLow, 1);
-  return { ids: legs.map((l) => l.id), pLow: round(pLow), minOdds: round(MODEL.edgeMargin / pLow, 2) };
+/**
+ * Multiple dal cervello unico. items = partite con `legs` (le gambe più solide di ogni partita, vedi analyzeMatch).
+ * Per ogni fascia (sicura / equilibrata / ambiziosa) cerca, tra tutte le combinazioni di gambe di partite DIVERSE, quella con la
+ * PROBABILITÀ PRUDENTE congiunta più alta la cui quota totale cade nella fascia. Le quote sono quelle del mercato dove ci sono, stimate altrove.
+ * Restituisce [{ key, label, note, legs: [{ item, leg }], p, pLow, odds, source, ev, evLow }].
+ */
+export function buildMultiples(items, tiers = MODEL.multiTiers) {
+  const cands = items.filter((i) => i.legs?.length).map((item) => ({ item, opts: item.legs.slice(0, 2) }))
+    .sort((a, b) => b.opts[0].pLow - a.opts[0].pLow).slice(0, 10);
+  const out = [], used = new Set();
+  for (const t of tiers) {
+    let best = null;
+    const walk = (i, chosen, pLow, odds) => {
+      if (chosen.length >= 2 && odds >= t.lo - 1e-9 && odds <= t.hi + 1e-9) {
+        const sig = chosen.map((c) => `${c.item.id}:${c.leg.key}`).sort().join("|");
+        const better = !best || pLow > best.pLow + 1e-9 || (Math.abs(pLow - best.pLow) <= 1e-9 && odds > best.odds);
+        if (better && !used.has(sig)) best = { chosen: [...chosen], pLow, odds, sig };
+      }
+      if (i >= cands.length || chosen.length >= t.maxLegs) return;
+      for (let k = i; k < cands.length; k += 1) {
+        for (const leg of cands[k].opts) {
+          const o = odds * leg.odds;
+          if (o > t.hi + 1e-9) continue;                                       // le quote si moltiplicano: oltre la fascia non si torna indietro
+          walk(k + 1, [...chosen, { item: cands[k].item, leg }], pLow * leg.pLow, o);
+        }
+      }
+    };
+    walk(0, [], 1, 1);
+    if (!best) continue;
+    used.add(best.sig);
+    const legs = best.chosen.sort((x, y) => Date.parse(x.item.kickoffAt) - Date.parse(y.item.kickoffAt));
+    const p = legs.reduce((a, l) => a * l.leg.p, 1);
+    const real = legs.filter((l) => l.leg.oddsSource === "mercato").length;
+    out.push({
+      key: t.key, label: t.label, note: t.note, legs,
+      p: round(p), pLow: round(best.pLow), odds: round(best.odds, 2),
+      source: real === legs.length ? "mercato" : real ? "mista" : "stimata",
+      ev: round(p * best.odds - 1, 3), evLow: round(best.pLow * best.odds - 1, 3),
+    });
+  }
+  return out;
 }
 
 /* ---------- Quote stimate e puntate ---------- */
@@ -379,7 +484,7 @@ export function accumulatorPlan(legs, bankroll) {
   if (legs.length < 2) return null;
   const prod = (f) => legs.reduce((a, l) => a * f(l), 1);
   const pLow = prod((l) => l.pLow), p = prod((l) => l.p);
-  const allReal = legs.every((l) => Number.isFinite(l.odds) && l.odds > 1);
+  const allReal = legs.every((l) => l.real ?? (Number.isFinite(l.odds) && l.odds > 1));   // `real` esplicito: una quota stimata non è "reale"
   const odds = round(prod((l) => (Number.isFinite(l.odds) && l.odds > 1 ? l.odds : estimateOdds(l.p))), 2);
   return planFor({ pLow, p }, odds, bankroll, { maxPct: MODEL.maxAccStakePct, source: allReal ? "reale" : "stimata" });
 }

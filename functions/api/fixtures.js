@@ -4,7 +4,7 @@ import {
 import { analyzeMatch, buildContext, compactPick, ou25Of } from "./model.js";
 import { loadCornerOdds } from "./_corners.js";
 import { loadLogoIndex, needsTeamList, withLogos } from "./_crests.js";
-import { loadAfPredictions } from "./_afpredict.js";
+import { loadBrainInputs } from "./_brain.js";
 
 const COLUMNS = "game_id,league,round,kickoff_at,status,home_id,home_name,away_id,away_name,home_score,away_score,neutral_site";
 
@@ -25,13 +25,13 @@ export async function onRequest({ env }) {
     ]);
     const ctx = buildContext(finals);
     // Pronostici di API-Football già in cache per le partite dei prossimi giorni (nessuna richiesta al provider da qui): il consiglio rapido ne tiene conto.
-    const soon = window.filter((m) => (m.status === "scheduled" || m.status === "in_progress") && Date.parse(m.kickoff_at) < now + 4 * 86400e3);
-    const af = env.API_FOOTBALL_KEY && soon.length ? await loadAfPredictions(env, soon, now, { live: false }).catch(() => null) : null;
-    const cr = env.API_FOOTBALL_KEY && soon.length ? await loadCornerOdds(env, soon, now, { live: false, maps: af?.maps }).catch(() => null) : null;   // corner già in cache (nessuna richiesta da qui)
+    const soon = window.filter((m) => (m.status === "scheduled" || m.status === "in_progress") && Date.parse(m.kickoff_at) < now + 3 * 86400e3);
+    const br = env.API_FOOTBALL_KEY && soon.length ? await loadBrainInputs(env, soon, now, { live: false }).catch(() => null) : null;
+    const cr = env.API_FOOTBALL_KEY && soon.length ? await loadCornerOdds(env, soon, now, { live: false, maps: br?.maps }).catch(() => null) : null;   // corner già in cache (nessuna richiesta da qui)
     const byLeague = Object.fromEntries(states.map((s) => [s.league, s]));
     const matches = window.map((m) => {
       const open = m.status === "scheduled" || m.status === "in_progress";
-      const analysis = open ? analyzeMatch(m, ctx, { n: 8, af: af?.byGame.get(m.game_id) ?? null }) : null;
+      const analysis = open ? analyzeMatch(m, ctx, { n: 8, ...(br?.byGame.get(m.game_id) ?? {}) }) : null;
       return {
         id: m.game_id, league: m.league, round: m.round, kickoffAt: m.kickoff_at, status: m.status,
         home: m.home_name, away: m.away_name, ...withLogos(m, logos), homeScore: m.home_score, awayScore: m.away_score,

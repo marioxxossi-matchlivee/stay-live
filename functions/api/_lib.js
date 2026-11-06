@@ -117,14 +117,27 @@ export async function supabaseUpsert(env, table, rows, conflict) {
   }
 }
 
-export function loadFinals(env) {
-  return supabaseGetAll(env, "matches", {
+/**
+ * Tutte le partite finite della stagione (base di ogni calcolo). Si rilegge al massimo ogni 60 secondi per istanza: anteprima e analisi
+ * (con i loro nuovi tentativi automatici) la chiamavano ogni volta, rileggendo migliaia di righe da Supabase per niente.
+ */
+const FINALS_TTL = 60e3;
+const finalsMemo = new Map();
+export function loadFinals(env, now = Date.now()) {
+  const key = env.SUPABASE_URL ?? "";
+  const hit = finalsMemo.get(key);
+  if (hit && now - hit.at < FINALS_TTL) return hit.promise;
+  const promise = supabaseGetAll(env, "matches", {
     select: "league,kickoff_at,home_id,away_id,home_name,away_name,home_score,away_score,neutral_site",
     status: "eq.final",
     season: `eq.${SEASON}`,
     order: "kickoff_at.desc,game_id.asc",
   });
+  finalsMemo.set(key, { at: now, promise });
+  promise.catch(() => { if (finalsMemo.get(key)?.promise === promise) finalsMemo.delete(key); });   // un errore non resta in memoria
+  return promise;
 }
+export const clearFinalsMemo = () => finalsMemo.clear();
 
 /* ---------- API Ninjas ---------- */
 export async function ninjasPage(env, league, offset) {
