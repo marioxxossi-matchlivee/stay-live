@@ -1,0 +1,55 @@
+name: Aggiorna campionati
+
+# Aggiorna i dati dei campionati senza aprire l'app, così all'apertura è già tutto pronto.
+#  - 00:30 (ora italiana, 23:30 UTC; 01:30 con l'ora legale): risultati della serata. Forza l'aggiornamento.
+#  - 07:00 (06:00 UTC; 08:00 con l'ora legale): calendario e orari del giorno. Aggiorna solo ciò che è scaduto.
+# Servono due "secrets" del repository (Settings → Secrets and variables → Actions):
+#   SITE_URL     indirizzo del sito, senza barra finale (es. https://stay-live.pages.dev)
+#   SYNC_SECRET  lo stesso valore della variabile SYNC_SECRET su Cloudflare Pages
+on:
+  schedule:
+    - cron: "30 23 * * *"
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Forza l'aggiornamento anche se i dati sono freschi"
+        type: boolean
+        default: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Aggiorna i campionati
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
+          FORCE: ${{ (github.event_name == 'schedule' && github.event.schedule == '30 23 * * *') || (github.event_name == 'workflow_dispatch' && inputs.force) }}
+        run: |
+          set -uo pipefail
+          if [ -z "${SITE_URL:-}" ] || [ -z "${SYNC_SECRET:-}" ]; then echo "Mancano i secrets SITE_URL e SYNC_SECRET"; exit 1; fi
+          leagues=$(curl -fsS --retry 3 "$SITE_URL/api/fixtures" | jq -r '.leagues[].id')
+          [ -n "$leagues" ] || { echo "Nessun campionato trovato"; exit 1; }
+          failed=0
+          for id in $leagues; do
+            ok=0
+            for attempt in 1 2 3 4; do
+              url="$SITE_URL/api/sync?league=$id"
+              [ "$FORCE" = "true" ] && url="$url&force=1"
+              body=$(curl -sS -m 90 -H "x-sync-secret: $SYNC_SECRET" "$url" || true)
+              if echo "$body" | jq -e '.ok == true' >/dev/null 2>&1; then
+                echo "✓ $id $(echo "$body" | jq -c '{skipped, matches}')"; ok=1; break
+              fi
+              echo "… $id tentativo $attempt: $(echo "$body" | head -c 160)"
+              # limite di richieste al minuto: si aspetta e si riprova
+              sleep $((15 * attempt))
+            done
+            [ "$ok" = 1 ] || { echo "✗ $id"; failed=$((failed + 1)); }
+            sleep 3
+          done
+          # riscalda l'elenco così la prima apertura dell'app non deve calcolare nulla
+          curl -fsS "$SITE_URL/api/fixtures" >/dev/null || true
+          echo "Campionati non aggiornati: $failed"
+          [ "$failed" -eq 0 ]
