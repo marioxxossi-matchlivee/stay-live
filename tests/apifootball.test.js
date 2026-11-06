@@ -59,9 +59,10 @@ test("abbinamento partita: orario e squadre; 'Milan' non diventa 'Inter'", () =>
 });
 
 test("id mercati letti dall'elenco ufficiale, con ripiego sui valori noti", () => {
-  assert.deepEqual(betIdsFrom([{ id: 1, name: "Match Winner" }, { id: 5, name: "Goals Over/Under" }, { id: 45, name: "Corners Over Under" }, { id: 77, name: "Goals Over/Under First Half" }]), { goals: 5, corners: 45, winner: 1 });
-  assert.deepEqual(betIdsFrom([{ id: 9, name: "Goals Over/Under" }, { id: 8, name: "Corners Over Under" }]), { goals: 9, corners: 8, winner: 1 });
-  assert.deepEqual(betIdsFrom(undefined), { goals: 5, corners: 45, winner: 1 });
+  const ids = betIdsFrom([{ id: 1, name: "Match Winner" }, { id: 5, name: "Goals Over/Under" }, { id: 45, name: "Corners Over Under" }, { id: 77, name: "Goals Over/Under First Half" }, { id: 56, name: "Corners 1x2" }]);
+  assert.deepEqual(ids, { goals: 5, corners: 45, winner: 1, cornerWinner: 56 });
+  assert.deepEqual(betIdsFrom([{ id: 9, name: "Goals Over/Under" }, { id: 8, name: "Corners Over Under" }]), { goals: 9, corners: 8, winner: 1, cornerWinner: 55 });
+  assert.deepEqual(betIdsFrom(undefined), { goals: 5, corners: 45, winner: 1, cornerWinner: 55 });
 });
 
 const book = (name, bets) => ({ name, bets });
@@ -134,7 +135,8 @@ test("configurazione campionati: 32 voci coerenti", () => {
   assert.equal(new Set(LEAGUES.map((l) => l.afId)).size, LEAGUES.length);                       // nessun id API-Football ripetuto
   for (const l of LEAGUES) {
     assert.ok(l.afId > 0 && l.name && l.short && l.continent && l.country && l.nation && Number.isInteger(l.tier), l.id);
-    assert.ok(l.provider === "apifootball" ? Boolean(l.afCountry) && !l.oddsKey : Boolean(l.oddsKey), l.id);   // API Ninjas: chiave quote; API-Football: controllo paese
+    assert.ok(!("oddsKey" in l), `${l.id}: The Odds API non è più usata`);
+    if (l.provider === "apifootball") assert.ok(l.afCountry, l.id);
   }
   assert.equal(LEAGUES.filter((l) => l.provider === "apifootball").length, 24);
   assert.equal(seasonFor("eliteserien", "2026-11-03T10:00:00Z"), 2026);

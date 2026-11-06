@@ -46,8 +46,8 @@ test("loadCornerOdds: solo cache non fa richieste; con limite si ferma e segnala
   globalThis.fetch = async (url) => {
     if (String(url).includes("sb.test")) return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
     calls += 1;
-    // 1ª chiamata = elenco mercati (odds/bets), 2ª = quote corner della prima partita, poi il provider limita le richieste
-    const body = calls <= 2 ? { errors: [], response: [calls === 1 ? { id: 45, name: "Corners Over Under" } : resp], results: 1 } : { errors: { rateLimit: "Too many requests." }, response: [] };
+    // 1ª chiamata = elenco mercati (odds/bets), 2ª = quote corner e 3ª = "Corners 1x2" della prima partita, poi il provider limita le richieste
+    const body = calls <= 3 ? { errors: [], response: calls === 1 ? [{ id: 45, name: "Corners Over Under" }] : calls === 2 ? [resp] : [], results: 1 } : { errors: { rateLimit: "Too many requests." }, response: [] };
     return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json", "x-ratelimit-requests-remaining": "5000" } });
   };
   const r = await loadCornerOdds(env, [m(1), m(2), m(3)], Date.now(), { maxLive: 6 });
@@ -55,4 +55,46 @@ test("loadCornerOdds: solo cache non fa richieste; con limite si ferma e segnala
   assert.equal(r.byGame.get("af-2001").best.side, "over");
   assert.equal(r.state.get("af-2002"), "waiting"); assert.equal(r.state.get("af-2003"), "waiting");
   assert.ok(r.retry.pending >= 1 && r.retry.afterMs >= 15000);
+});
+
+import { CORNER_WINNER_RE, cornerFavorite, cornersFromFixture, mainLineDetail } from "../functions/api/_corners.js";
+import { summarizeMatchWinner } from "../functions/api/_apifootball.js";
+
+const winResp = (h, d, a) => [{ bookmakers: [{ name: "Bet365", bets: [{ id: 55, name: "Corners 1x2", values: [{ value: "Home", odd: String(h) }, { value: "Draw", odd: String(d) }, { value: "Away", odd: String(a) }] }] },
+  { name: "Pinnacle", bets: [{ id: 55, name: "Corners 1x2", values: [{ value: "Home", odd: String(h) }, { value: "Draw", odd: String(d) }, { value: "Away", odd: String(a) }] }] }] }];
+
+test("favorita corner: probabilità senza margine dal mercato 1X2 corner, lato 'even' sotto 3 punti, mai verificata", () => {
+  const w = summarizeMatchWinner(winResp(1.8, 5.5, 2.4), CORNER_WINNER_RE);
+  const f = cornerFavorite(w);
+  const inv = [1 / 1.8, 1 / 5.5, 1 / 2.4], t = inv[0] + inv[1] + inv[2];
+  assert.equal(f.side, "home");
+  assert.ok(Math.abs(f.p.home - inv[0] / t) < 1e-4 && Math.abs(f.p.home + f.p.draw + f.p.away - 1) < 2e-4);
+  assert.ok(Math.abs(f.margin - (t - 1)) < 1e-4 && f.verified === false && f.books === 2);
+  assert.equal(cornerFavorite(summarizeMatchWinner(winResp(2.6, 5, 2.55), CORNER_WINNER_RE)).side, "even");
+  assert.equal(cornerFavorite(summarizeMatchWinner(winResp(3.0, 5, 1.7), CORNER_WINNER_RE)).side, "away");
+  assert.equal(cornerFavorite(null), null);
+  assert.equal(summarizeMatchWinner(winResp(1.8, 5.5, 2.4)), null, "il mercato 1X2 dei gol non si confonde con quello dei corner");
+});
+
+test("cornerPick: solo favorita (senza Over/Under) e dettaglio linea principale", () => {
+  const w = summarizeMatchWinner(winResp(1.8, 5.5, 2.4), CORNER_WINNER_RE);
+  const only = cornerPick(null, MIN_CORNER_ODD, w);
+  assert.equal(only.best, null); assert.equal(only.favorite.side, "home");
+  assert.equal(cornerPick(null, MIN_CORNER_ODD, null), null);
+  const corners = { mainLine: 9.5, lines: [{ line: 9.5, over: agg(1.9, 1.9), under: agg(1.9, 1.9) }, { line: 10.5, over: agg(2.4, 2.4), under: agg(1.55, 1.55) }] };
+  const d = mainLineDetail(corners);
+  assert.equal(d.line, 9.5); assert.ok(Math.abs(d.pOver - 0.5) < 1e-4);
+  const full = cornerPick(corners, MIN_CORNER_ODD, w);
+  assert.ok(full.best && full.favorite && full.mainDetail.line === 9.5);
+});
+
+test("corner reali dalla risposta fixtures: casa/trasferta riconosciute per id squadra, null se mancano", () => {
+  const fx = (stats) => [{ teams: { home: { id: 10 }, away: { id: 20 } }, statistics: stats }];
+  const t = (id, v) => ({ team: { id }, statistics: [{ type: "Shots on Goal", value: 3 }, { type: "Corner Kicks", value: v }] });
+  assert.deepEqual(cornersFromFixture(fx([t(20, 3), t(10, 8)])), { home: 8, away: 3, total: 11 }, "l'ordine delle squadre nella risposta non conta");
+  assert.deepEqual(cornersFromFixture(fx([t(10, null), t(20, 4)])), null);
+  assert.equal(cornersFromFixture(fx([])), null);
+  assert.equal(cornersFromFixture([{ teams: {} }]), null);
+  assert.equal(cornersFromFixture(null), null);
+  assert.deepEqual(cornersFromFixture(fx([t(10, 0), t(20, 0)])), { home: 0, away: 0, total: 0 }, "zero corner è un dato valido");
 });

@@ -93,3 +93,14 @@ test("niente inglese residuo nella scheda: consiglio, assenze, ruoli", () => {
   const html = renderAfDetail(FULL);
   for (const eng of ["Double chance", "Knee Injury", "Missing Fixture", "Questionable", "Win or draw", "England"]) assert.ok(!html.includes(eng), `ancora in inglese: ${eng}`);
 });
+
+test("scheda unica: niente testata né linee consigliate duplicate; pronostico nascosto solo se già mostrato dal modello", () => {
+  const solo = renderAfDetail(FULL, { lean: true, rec: [{ key: "over25", label: "Over 2,5", minOdds: 1.7 }] });
+  const uni = renderAfDetail(FULL, { lean: true, unified: true, hidePrediction: true, rec: [{ key: "over25", label: "Over 2,5", minOdds: 1.7 }] });
+  assert.match(solo, /Linee consigliate/); assert.match(solo, /Cosa dice API-Football/);
+  assert.doesNotMatch(uni, /Linee consigliate/); assert.doesNotMatch(uni, /Cosa dice API-Football/);
+  assert.match(uni, /Dati della partita/); assert.match(uni, /Infortunati e squalificati/);
+  assert.ok(uni.length < solo.length, "la versione unica non ripete ciò che il modello mostra già");
+  assert.match(renderAfDetail(FULL, { lean: true, unified: true, hidePrediction: false }), /Cosa dice API-Football/, "se il modello non ha il pronostico, resta quello del provider");
+  assert.ok(uni.indexOf("Dati della partita") < uni.indexOf("Infortunati"), "titolo della sezione prima dei dati");
+});
