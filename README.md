@@ -69,3 +69,18 @@ npm test          # modello e politica di sync
 npm run build
 ```
 Per provare anche le Functions in locale usa `npx wrangler pages dev dist` con le variabili in `.dev.vars`.
+
+## Aggiornamento automatico dei campionati (notte e mattino)
+
+Perché l'app si apra subito, i dati dei campionati si aggiornano da soli con un'automazione di GitHub (`.github/workflows/sync-leagues.yml`):
+
+- **00:30 ora italiana** (23:30 UTC): risultati della serata, aggiornamento forzato;
+- **07:00 ora italiana** (06:00 UTC): calendario e orari del giorno, solo ciò che è scaduto.
+
+Con l'ora legale gli orari italiani slittano di un'ora (GitHub usa solo l'ora UTC): è ininfluente per lo scopo.
+
+Per attivarla: su Cloudflare Pages imposta la variabile `SYNC_SECRET` (una parola d'ordine lunga a caso); su GitHub → *Settings → Secrets and variables → Actions* crea i secret `SITE_URL` (indirizzo del sito, senza barra finale) e `SYNC_SECRET` (lo stesso valore). Per provarla subito: *Actions → Aggiorna campionati → Run workflow*.
+
+Se le chiamate ad API-Football sono limitate (piano gratuito), il workflow aspetta e riprova da solo; un campionato che non si aggiorna fa risultare il lavoro "fallito" e GitHub ti manda una email.
+
+**Apertura istantanea**: l'app conserva nel dispositivo l'ultimo elenco ricevuto e lo mostra subito; poi si aggiorna in secondo piano. Se un aggiornamento fallisce, restano visibili gli ultimi dati.

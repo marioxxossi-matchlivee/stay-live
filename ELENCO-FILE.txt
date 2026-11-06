@@ -1,0 +1,45 @@
+FILE DA COPIARE NEL PROGETTO (mantieni le stesse cartelle)
+
+NUOVI (19):
+  .github/workflows/sync-leagues.yml
+  functions/api/_afpredict.js
+  functions/api/_brain.js
+  functions/api/_corners.js
+  functions/api/_crests.js
+  functions/api/_it.js
+  functions/api/_market.js
+  functions/api/corners.js
+  functions/api/crests.js
+  functions/api/results.js
+  src/plays.js
+  src/ui.js
+  tests/afpredict.test.js
+  tests/brain.test.js
+  tests/corners.test.js
+  tests/crests.test.js
+  tests/it.test.js
+  tests/loadsections.test.js
+  tests/plays.test.js
+
+DA SOSTITUIRE (18):
+  README.md
+  functions/api/_apifootball.js
+  functions/api/_lib.js
+  functions/api/analysis.js
+  functions/api/fixtures.js
+  functions/api/match-detail.js
+  functions/api/model.js
+  functions/api/preview.js
+  functions/api/quotes.js
+  index.html
+  src/afdetail.js
+  src/main.js
+  src/plan.js
+  src/report.js
+  src/style.css
+  tests/afdetail.test.js
+  tests/apifootball.test.js
+  tests/model.test.js
+
+Nessun file da eliminare.
+La cartella .github è nascosta su Mac/Linux: nel Finder premi Cmd+Maiusc+. per vederla.

@@ -2,8 +2,8 @@
 <html lang="it">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0e1a2b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f2f4f6" />
     <meta name="description" content="Stay Live: probabilità, BET o EVITA e preview di giornata per i principali campionati, Champions ed Europa League." />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
@@ -17,66 +17,102 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Stay Live" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <title>Stay Live — Analisi partite</title>
   </head>
   <body>
+    <div class="ptr" id="ptr" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></svg></div>
     <header class="top">
       <a class="brand" href="/">Stay<span>Live</span></a>
-      <div class="top-actions">
-        <button class="ghost" id="open-plays" type="button">Giocate</button>
-        <button class="ghost" id="open-method" type="button">Come calcoliamo</button>
-        <button class="ghost" id="refresh" type="button" aria-label="Aggiorna dati">Aggiorna</button>
-      </div>
+      <button class="icon-btn" id="refresh" type="button" aria-label="Aggiorna dati"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></svg></button>
     </header>
     <main>
-      <section class="intro">
-        <h1 id="day-title">Partite</h1>
-        <p id="summary" class="summary" aria-live="polite">Caricamento…</p>
-      </section>
-      <div id="banner" class="banner" role="status" hidden></div>
-      <div class="leaguebar">
-        <button class="ghost lg-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="league-nav"></button>
-      </div>
-      <nav class="league-nav" id="league-nav" aria-label="Campionati per nazione" hidden></nav>
-      <div class="days" id="day-strip" aria-label="Giornata"></div>
-      <div class="modebar">
-        <button class="ghost mode-btn" id="mode-custom" type="button" aria-pressed="false" aria-controls="custom-panel">Modalità O/U 2,5 + corner</button>
-      </div>
-      <div class="custom-panel" id="custom-panel" hidden>
-        <div class="cp-row">
-          <label class="hist">Soglia minima
-            <select id="thr"><option value="0.55">55%</option><option value="0.6">60%</option><option value="0.65">65%</option><option value="0.7">70%</option><option value="0.75">75%</option></select></label>
-          <button class="ghost" id="find-corners" type="button">Cerca i corner</button>
+      <!-- PARTITE -->
+      <section class="view" id="view-matches">
+        <section class="intro">
+          <h1 id="day-title">Partite</h1>
+          <p id="summary" class="summary" aria-live="polite">Caricamento…</p>
+        </section>
+        <div id="banner" class="banner" role="status" hidden></div>
+        <div class="seg" id="mode-seg" role="group" aria-label="Filtro partite" style="--i:0">
+          <button type="button" data-seg="all" aria-pressed="true">Tutte</button>
+          <button type="button" data-seg="bet" aria-pressed="false">Solo BET</button>
+          <button type="button" data-seg="custom" aria-pressed="false">O/U + corner</button>
         </div>
-        <p class="pv-qstatus" id="corner-status" aria-live="polite"></p>
-        <p class="api-note">Vedi solo le partite con Over o Under 2,5 sopra la soglia, oppure con un corner sopra la soglia. Over/Under 2,5: probabilità del modello (API-Football + ultime partite). Corner: nessun modello, solo la probabilità implicita nelle quote di API-Football; le quote si scaricano solo quando premi “Cerca i corner”.</p>
-      </div>
-      <div class="toolbar">
-        <label class="switch"><input type="checkbox" id="only-bet" /><span>Solo BET</span></label>
-        <button class="ghost" id="select-day" type="button">Seleziona tutte</button>
-        <button class="ghost" id="select-bets" type="button">Seleziona i BET</button>
-        <label class="hist">Storico
-          <select id="history-count"><option value="5">5 gare</option><option value="8" selected>8 gare</option><option value="10">10 gare</option></select>
-        </label>
-      </div>
-      <div id="list" class="list"></div>
-      <p class="foot">Stime statistiche sperimentali basate solo sui gol. Non sono garanzie né consigli finanziari.</p>
+        <div class="leaguebar">
+          <button class="ghost lg-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="league-nav"></button>
+        </div>
+        <nav class="league-nav" id="league-nav" aria-label="Campionati per nazione" hidden></nav>
+        <div class="days" id="day-strip" aria-label="Giornata"></div>
+        <div class="custom-panel" id="custom-panel" hidden>
+          <div class="cp-row">
+            <label class="hist">Soglia minima
+              <select id="thr"><option value="0.55">55%</option><option value="0.6">60%</option><option value="0.65">65%</option><option value="0.7">70%</option><option value="0.75">75%</option></select></label>
+            <button class="ghost" id="find-corners" type="button">Cerca i corner</button>
+          </div>
+          <p class="pv-qstatus" id="corner-status" aria-live="polite"></p>
+          <p class="api-note">Vedi solo le partite con Over o Under 2,5 sopra la soglia, oppure con un corner sopra la soglia. Over/Under 2,5: probabilità del modello (API-Football + ultime partite). Corner: nessun modello, solo la probabilità implicita nelle quote di API-Football; le quote si scaricano solo quando premi “Cerca i corner”.</p>
+        </div>
+        <div class="listbar">
+          <span id="list-count" class="list-count"></span>
+          <div class="menu-wrap">
+            <button class="chip-btn" id="sel-more" type="button" aria-haspopup="menu" aria-expanded="false">Seleziona</button>
+            <div class="menu" id="sel-menu" role="menu" hidden>
+              <button type="button" role="menuitem" id="select-day">Tutte le partite</button>
+              <button type="button" role="menuitem" id="select-bets">I BET</button>
+              <button type="button" role="menuitem" id="sel-none">Nessuna</button>
+            </div>
+          </div>
+        </div>
+        <div id="list" class="list"></div>
+        <p class="foot">Stime statistiche sperimentali. Non sono garanzie né consigli finanziari.</p>
+      </section>
+
+      <!-- GIOCATE -->
+      <section class="view" id="view-plays" hidden>
+        <div id="plays-body"></div>
+      </section>
+
+      <!-- IMPOSTAZIONI -->
+      <section class="view" id="view-settings" hidden>
+        <h1 class="vtitle">Impostazioni</h1>
+        <div class="set-group">
+          <h2>Analisi</h2>
+          <label class="set-row"><span><b>Storico delle squadre</b><small>Quante ultime partite usa il calcolo</small></span>
+            <select id="history-count"><option value="5">5 gare</option><option value="8" selected>8 gare</option><option value="10">10 gare</option></select></label>
+        </div>
+        <div class="set-group">
+          <h2>Dati</h2>
+          <div class="set-row"><span><b>Ultimo aggiornamento</b><small id="set-updated">—</small></span></div>
+          <button class="set-btn" id="set-refresh" type="button">Aggiorna ora</button>
+          <p class="set-hint">Per aggiornare i campionati da soli ogni notte (e al mattino) attiva il workflow “Aggiorna campionati” di GitHub: le istruzioni sono nel README. All’apertura l’app mostra subito gli ultimi dati salvati e si aggiorna in secondo piano.</p>
+        </div>
+        <div class="set-group">
+          <h2>Giocate salvate</h2>
+          <button class="set-btn danger" id="clear-plays" type="button">Elimina tutte le giocate salvate</button>
+          <p class="set-hint">Le giocate stanno solo in questo dispositivo.</p>
+        </div>
+        <p class="foot">Stay Live · stime statistiche sperimentali basate su ultime partite, pronostico e quote di API-Football. Non sono garanzie né consigli finanziari.</p>
+      </section>
     </main>
 
     <div class="selbar" id="selbar" hidden>
       <span id="sel-count">0 partite</span>
-      <button class="ghost" id="sel-clear" type="button">Svuota</button>
-      <button class="primary" id="make-preview" type="button">Genera preview</button>
+      <button class="icon-btn small" id="sel-clear" type="button" aria-label="Svuota la selezione"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      <button class="primary" id="make-preview" type="button">Anteprima</button>
     </div>
+
+    <nav class="tabbar" aria-label="Navigazione">
+      <button class="tab-item" type="button" data-view="matches" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg><span>Partite</span></button>
+      <button class="tab-item" type="button" data-view="plays"><i class="badge" id="plays-badge" hidden>0</i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a1 1 0 0 1 1 1v15l-3-2-2.5 2L12 18l-2.5 2L7 18l-3 2V5a1 1 0 0 1 1-1z"/><path d="M8 9h8M8 13h5"/></svg><span>Giocate</span></button>
+      <button class="tab-item" type="button" data-view="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.2M12 18.8V21M4.6 7.5l1.9 1.1M17.5 15.4l1.9 1.1M4.6 16.5l1.9-1.1M17.5 8.6l1.9-1.1"/></svg><span>Impostazioni</span></button>
+    </nav>
 
     <dialog id="detail" aria-label="Dettaglio partita"><button class="close" data-close aria-label="Chiudi">×</button><div id="detail-body"></div></dialog>
     <dialog id="preview" aria-label="Preview giornata"><button class="close" data-close aria-label="Chiudi">×</button><div id="preview-body"></div></dialog>
-    <dialog id="plays" aria-label="Le mie giocate"><button class="close" data-close aria-label="Chiudi">×</button><div id="plays-body"></div></dialog>
-    <dialog id="method" aria-label="Come calcoliamo"><button class="close" data-close aria-label="Chiudi">×</button><div id="method-body"></div></dialog>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
