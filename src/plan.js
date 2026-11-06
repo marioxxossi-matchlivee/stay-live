@@ -13,17 +13,17 @@ const eff = (x) => {
 
 /**
  * Piano di puntate per un'anteprima. oddsMap: quote inserite a mano per la giocata singola; marketMap: quote di mercato (The Odds API) della giocata singola.
- * Priorità quota delle singole: inserita > mercato > stimata. Le multiple usano le gambe del cervello unico (una per partita, scelte per
- * probabilità prudente), con la quota di mercato di API-Football dove c'è e stimata altrove.
+ * Priorità quota delle singole: inserita > mercato > stimata. Le multiple usano solo gambe con quota reale di API-Football e valore atteso prudente positivo (una per partita); senza, nessuna multipla.
  * Restituisce singole e multiple separate.
  */
 export function computePlan(pv, bankroll, oddsMap = new Map(), marketMap = new Map()) {
   // Una quota di mercato vale solo per la selezione per cui è stata prelevata.
   const mk = (i) => { const q = marketMap.get(i.id); return q && (q.selection == null || q.selection === i.pick?.key) ? q : null; };
-  const quoteOf = (i) => oddsMap.get(i.id) ?? mk(i)?.median ?? null;
-  const sourceOf = (i) => (oddsMap.has(i.id) ? "inserita" : mk(i) ? "mercato" : "stimata");
+  const afOdds = (i) => (i.pick?.odds?.median > 1 ? i.pick.odds.median : null);       // quota reale di API-Football (mediana) per la selezione consigliata
+  const quoteOf = (i) => oddsMap.get(i.id) ?? mk(i)?.median ?? afOdds(i);
+  const sourceOf = (i) => (oddsMap.has(i.id) ? "inserita" : mk(i) || afOdds(i) ? "mercato" : "stimata");
   const bets = pv.items.filter(isBetItem);
-  const singles = bets.map((i) => planFor(i.pick, quoteOf(i), bankroll, { source: oddsMap.has(i.id) || mk(i) ? sourceOf(i) : null }));
+  const singles = bets.map((i) => planFor(i.pick, quoteOf(i), bankroll, { source: oddsMap.has(i.id) || mk(i) || afOdds(i) ? sourceOf(i) : null }));
   const multis = buildMultiples(pv.items).map((m) => ({ m, plan: accumulatorPlan(m.legs.map((l) => ({ pLow: l.leg.pLow, p: l.leg.p, odds: l.leg.odds, real: l.leg.oddsSource === "mercato" })), bankroll) }));
   const raw = [...singles, ...multis.map((x) => x.plan)];
   const capped = applyCap(raw.map(eff), bankroll);
