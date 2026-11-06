@@ -103,7 +103,7 @@ export function pickFixture(match, fixtures) {
 /** Id dei mercati: letti dall'elenco ufficiale (odds/bets) per nome, con valori noti come ripiego. */
 export function betIdsFrom(resp) {
   const find = (re) => (resp ?? []).find((b) => re.test(String(b.name ?? "")))?.id;
-  return { goals: find(/^goals over\/under$/i) ?? 5, corners: find(/^corners over.?under$/i) ?? 45, winner: find(/^match winner$/i) ?? 1 };
+  return { goals: find(/^goals over\/under$/i) ?? 5, corners: find(/^corners over.?under$/i) ?? 45, winner: find(/^match winner$/i) ?? 1, cornerWinner: find(/^corners?\s*1x2$|^corner match bet$/i) ?? 55 };
 }
 
 const median = (a) => { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length ? (s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2) : null; };
@@ -146,10 +146,10 @@ export function summarizeOdds(goalsResp, cornersResp) {
  * Quote 1X2 (mercato "Match Winner"): migliore e mediana tra i bookmaker per casa, pareggio, trasferta.
  * Restituisce { home, draw, away } (ognuno come summarizeOdds: { best: { odd, book }, median, n }) o null.
  */
-export function summarizeMatchWinner(resp) {
+export function summarizeMatchWinner(resp, nameRe = /^match winner$/i) {
   const out = { home: [], draw: [], away: [] };
   for (const fx of resp ?? []) for (const bk of fx.bookmakers ?? []) for (const bet of bk.bets ?? []) {
-    if (!/^match winner$/i.test(String(bet.name ?? ""))) continue;
+    if (!nameRe.test(String(bet.name ?? ""))) continue;
     for (const v of bet.values ?? []) {
       const k = { home: "home", draw: "draw", away: "away", "1": "home", x: "draw", "2": "away" }[String(v.value).trim().toLowerCase()];
       const odd = Number(v.odd);

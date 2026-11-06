@@ -17,14 +17,14 @@ export const CONTINENTS = [
 ];
 
 export const LEAGUES = [
-  { id: "seriea", oddsKey: "soccer_italy_serie_a", afId: 135, name: "Serie A", short: "Serie A", continent: "europa", country: "IT", nation: "Italia", tier: 1 },
-  { id: "epl", oddsKey: "soccer_epl", afId: 39, name: "Premier League", short: "Premier", continent: "europa", country: "GB", nation: "Inghilterra", tier: 1 },
-  { id: "laliga", oddsKey: "soccer_spain_la_liga", afId: 140, name: "LaLiga", short: "LaLiga", continent: "europa", country: "ES", nation: "Spagna", tier: 1 },
-  { id: "bundesliga", oddsKey: "soccer_germany_bundesliga", afId: 78, name: "Bundesliga", short: "Bundesliga", continent: "europa", country: "DE", nation: "Germania", tier: 1 },
-  { id: "ligue1", oddsKey: "soccer_france_ligue_one", afId: 61, name: "Ligue 1", short: "Ligue 1", continent: "europa", country: "FR", nation: "Francia", tier: 1 },
-  { id: "ucl", oddsKey: "soccer_uefa_champs_league", afId: 2, name: "Champions League", short: "Champions", continent: "europa", country: "UEFA-C", nation: "Coppe europee", international: true, tier: 0 },
-  { id: "uel", oddsKey: "soccer_uefa_europa_league", afId: 3, name: "Europa League", short: "Europa League", continent: "europa", country: "UEFA-C", nation: "Coppe europee", international: true, tier: 0 },
-  { id: "mls", oddsKey: "soccer_usa_mls", afId: 253, calendarYear: true, name: "MLS", short: "MLS", continent: "nord-america", country: "US", nation: "Stati Uniti", tier: 1 },
+  { id: "seriea", afId: 135, name: "Serie A", short: "Serie A", continent: "europa", country: "IT", nation: "Italia", tier: 1 },
+  { id: "epl", afId: 39, name: "Premier League", short: "Premier", continent: "europa", country: "GB", nation: "Inghilterra", tier: 1 },
+  { id: "laliga", afId: 140, name: "LaLiga", short: "LaLiga", continent: "europa", country: "ES", nation: "Spagna", tier: 1 },
+  { id: "bundesliga", afId: 78, name: "Bundesliga", short: "Bundesliga", continent: "europa", country: "DE", nation: "Germania", tier: 1 },
+  { id: "ligue1", afId: 61, name: "Ligue 1", short: "Ligue 1", continent: "europa", country: "FR", nation: "Francia", tier: 1 },
+  { id: "ucl", afId: 2, name: "Champions League", short: "Champions", continent: "europa", country: "UEFA-C", nation: "Coppe europee", international: true, tier: 0 },
+  { id: "uel", afId: 3, name: "Europa League", short: "Europa League", continent: "europa", country: "UEFA-C", nation: "Coppe europee", international: true, tier: 0 },
+  { id: "mls", afId: 253, calendarYear: true, name: "MLS", short: "MLS", continent: "nord-america", country: "US", nation: "Stati Uniti", tier: 1 },
   { id: "serieb", name: "Serie B", short: "Serie B", continent: "europa", country: "IT", nation: "Italia", tier: 2, provider: "apifootball", afId: 136, afCountry: "Italy", afName: "Serie B" },
   { id: "championship", name: "Championship", short: "Championship", continent: "europa", country: "GB", nation: "Inghilterra", tier: 2, provider: "apifootball", afId: 40, afCountry: "England", afName: "Championship" },
   { id: "league1", name: "League One", short: "League One", continent: "europa", country: "GB", nation: "Inghilterra", tier: 3, provider: "apifootball", afId: 41, afCountry: "England", afName: "League One" },

@@ -4,7 +4,7 @@
  * Principio: ogni errore finisce in scrape_state con backoff e NON arriva mai al calcolo: senza dati l'app usa il
  * modello statistico standard.
  */
-import { nameSimilarity, nameTokens } from "./_odds.js";
+import { nameSimilarity, nameTokens } from "./_names.js";
 import { discoverLineupUrl } from "./_sources.js";
 
 const TM = (slug, code) => ({ url: `https://www.transfermarkt.com/${slug}/verletztespieler/wettbewerb/${code}` });
