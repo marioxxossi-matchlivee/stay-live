@@ -1,15 +1,17 @@
 # CHANGELOG-DEBUG — audit e revisione del motore Stay Live
 
 Estrai lo ZIP direttamente sopra il progetto (stessa struttura di cartelle). Nessun file va eliminato (vedi «Codice morto»).
-Verifica eseguita: `node --test` → 98 test, 98 superati. **`npm run build` NON è stato eseguito** (Vite non installato nell'ambiente di lavoro, nessuna rete): esegui `npm install && npm run check` prima del deploy.
+Verifica eseguita: `node --test` → 104 test, 104 superati. **`npm run build` NON è stato eseguito** (Vite non installato nell'ambiente di lavoro, nessuna rete): esegui `npm install && npm run check` prima del deploy.
 
 ## File nuovi
+- `functions/api/_names.js` — abbinamento nomi squadra (spostato da `_odds.js`).
+- `src/corners.js`, `tests/cornerui.test.js` — blocco «calci d'angolo» (stessa funzione per preview, giocate salvate e multiple) e verdetti a partita finita.
 - `scripts/backtest.js`, `scripts/metrics.js` — backtest cronologico (60/20/20, nessun dato futuro), metriche, taratura su validazione, Platt scaling.
 - `tests/quant.test.js`, `tests/backtest.test.js` — test dei casi matematici noti, EV, Dixon-Coles, probabilità prudente, congiunta, Kelly, assenza di look-ahead, metriche, Platt.
 - `CHANGELOG-DEBUG.md`.
 
 ## File modificati
-`functions/api/model.js`, `functions/api/_corners.js`, `src/plan.js`, `src/main.js`, `tests/model.test.js`, `tests/brain.test.js`, `package.json` (script `backtest`), `README.md`.
+`functions/api/model.js`, `functions/api/_corners.js`, `functions/api/_apifootball.js`, `functions/api/corners.js`, `functions/api/quotes.js`, `functions/api/_odds.js`, `functions/api/_scrape.js`, `functions/api/_lib.js`, `src/plan.js`, `src/main.js`, `src/afdetail.js`, `src/plays.js`, `src/report.js`, `src/style.css`, `tests/model.test.js`, `tests/brain.test.js`, `tests/corners.test.js`, `tests/apifootball.test.js`, `tests/afdetail.test.js`, `package.json` (script `backtest`), `README.md`.
 
 ## Bug corretti (trovati nell'audit)
 1. **Totale puntato oltre il budget** (screenshot: 20 € su budget 5 €, «400%»): `stakePlan` alzava ogni puntata al minimo di 0,50 € e `applyCap` rifaceva lo stesso dopo il ridimensionamento, quindi il tetto del 20% non valeva. Ora sotto il minimo non si gioca e le giocate in eccesso vengono tolte: totale sempre ≤ 20% del budget. Puntate mai sopra Kelly frazionato.
@@ -48,3 +50,19 @@ Non referenziati da frontend, modello o workflow: `functions/api/odds.js` (legge
 
 ## Migrazioni Supabase / variabili Cloudflare
 Nessuna migrazione. Nessuna nuova variabile.
+
+## Corner: favorita, dettagli e confronto a fine partita (aggiornamento)
+- **Preview**: per ogni partita si vede chi è favorita a fare più corner (mercato «Corners 1x2» di API-Football: probabilità senza margine, quote mediane, n° bookmaker, margine, barra casa/pari/trasferta; «nessuna favorita» sotto 3 punti di differenza), la linea principale del totale (Over/Under con probabilità e quote) e il lato più probabile. I dati arrivano in background dopo il preview e la card si aggiorna da sola.
+- **Partita finita**: corner reali dalle statistiche di squadra («Corner Kicks» di `fixtures?id=`) e verdetti ✓/✗: favorita rispettata (più corner della favorita), lato Over/Under centrato, linea principale. Pari nei corner = favorita non rispettata; totale esattamente sulla linea = rimborso.
+- **Giocate salvate e multiple**: la card è la stessa del preview (lo snapshot ora include corner e stato). «Aggiorna risultati» scarica anche i corner reali e li copia nella giocata (`cres`), così restano dopo la scadenza della cache. Le gambe delle multiple mostrano una riga di sintesi. Testo copiato e PDF includono la riga corner.
+- Endpoint `/api/corners?ids=…[&actual=1]`: con `actual=1` restituisce anche `actual` e `actualState`.
+- **Non verificato dal vivo (nessuna rete qui)**: il nome del mercato «Corners 1x2» (id di ripiego 55, letto per nome da `odds/bets`) e il campo «Corner Kicks». I test usano risposte simulate nel formato documentato. Se i corner non compaiono, controlla in `odds/bets` il nome esatto del mercato.
+- **Costo API**: +1 richiesta per partita per le quote «Corners 1x2» e +1 per i corner reali delle partite finite (stessa cache della scheda dati). API-Football può non conservare le quote dopo il fischio d'inizio: per questo la previsione si salva nella giocata.
+- La favorita è l'opinione dei bookmaker, non un modello nostro (`verified: false`): non entra in singole né multiple.
+
+## Niente più The Odds API; scheda partita unica (aggiornamento)
+- **The Odds API rimossa**: eliminati pulsante «Preleva quote reali», chiamata `/api/quotes`, `pvMarket`, le chiavi `oddsKey` dei campionati e i relativi test. Le quote reali vengono solo da API-Football (preview: `pick.odds`; il piano usa «inserita > mercato API-Football > stimata»). `quotes.js` risponde ora 410 e `_odds.js` è un file vuoto (nessuno lo importa): **puoi eliminarli entrambi**. Le funzioni di abbinamento nomi sono in `_names.js`.
+- **Da fare a mano (facoltativo)**: togliere `ODDS_API_KEY` / `ODDS_REGIONS` da Cloudflare; la tabella `odds_quotes` (migrazione `202610300001_odds_quotes.sql`) non serve più: `drop table if exists public.odds_quotes;` solo se vuoi rimuoverla (distruttivo, non incluso).
+- **Scheda partita unica**: via le due schede («Analisi» / «Dati API-Football»). Un solo scorrimento: intestazione, Cosa giocare, calci d'angolo (previsione del mercato e, a partita finita, corner reali con verdetti), gambe per le multiple, pronostico API-Football con il suo peso, dati della partita (infortuni, formazioni, eventi, statistiche, giocatori, a richiesta classifica/H2H/allenatori), poi «Tutti i mercati e come è calcolato». Niente testata né sezioni ripetute (pronostico e linee consigliate compaiono una volta sola).
+- **Costo API**: i dati API-Football della scheda si scaricano all'apertura (prima solo alla scheda «Dati»): ~6 richieste per partita aperta, più 2 per i corner. Restano in cache.
+- Non verificato dal vivo: il rendering nel browser (non c'è un browser qui); solo sintassi, import e test su funzioni pure e HTML generato.

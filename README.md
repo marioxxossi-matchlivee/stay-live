@@ -23,11 +23,13 @@ Il resoconto è diviso in tre blocchi: **Multiple consigliate**, **Singole consi
 
 Attenzione: una quota stimata dal modello non può creare un vantaggio (il margine del bookmaker lo toglie per costruzione). Il piano è affidabile solo con quote reali; nessuna stima garantisce un guadagno.
 
-## Quote reali (The Odds API, piano gratuito)
+## Quote reali (solo API-Football)
 
-Nel resoconto il pulsante **Preleva quote reali** chiede a The Odds API la quota del solo mercato consigliato (BET) di ogni partita scelta. Per non sprecare i 500 crediti mensili: l'elenco eventi è gratuito, si spende 1 credito per partita e mercato (`totals`+`alternate_totals` contano 1 se ne risponde uno solo), le quote restano in cache 3 ore su Supabase (`odds_quotes`), al massimo 12 partite per richiesta e stop sotto 40 crediti residui (`odds_usage`). Il piano usa la **mediana** dei bookmaker (mostra anche la migliore); priorità: quota inserita a mano > mercato > stima.
+L'app non usa più The Odds API: le quote reali arrivano solo da **API-Football** (mercato «Match Winner» e «Goals Over/Under», mediana tra i bookmaker) e le probabilità solo da API-Football e dal modello. Nel resoconto, la quota reale della giocata consigliata (se il mercato la quota) viene usata al posto della stima; se non c'è, la card lo dice e puoi inserire a mano la quota del tuo bookmaker. `ODDS_API_KEY` e `ODDS_REGIONS` non servono più e si possono togliere da Cloudflare.
 
-Setup: crea la chiave su the-odds-api.com, aggiungi `ODDS_API_KEY` (e opzionale `ODDS_REGIONS`, default `eu`) alle variabili di Cloudflare, applica `supabase/migrations/202610300001_odds_quotes.sql` (già applicata sul tuo progetto). I bookmaker della regione `eu` non sono necessariamente quelli italiani ADM: controlla sempre la quota sul tuo.
+## Scheda partita
+
+È una scheda unica (niente più due schede): intestazione, «Cosa giocare», calci d'angolo, gambe per le multiple, pronostico di API-Football, dati della partita (infortuni, formazioni, eventi, statistiche, giocatori; classifica, scontri diretti e allenatori a richiesta) e, in fondo, tutti i mercati con il calcolo passo per passo. I dati di API-Football si scaricano appena apri la scheda.
 
 ## Come arrivano i dati
 
@@ -51,6 +53,8 @@ Fonte unica del codice: `functions/api/model.js` (tutte le costanti sono lì e c
 Una gamba per partita, solo con **quota reale** (mediana tra bookmaker di API-Football), probabilità prudente ≥ 62%, quota ≥ 1,15 e pLow × quota ≥ 1. Ricerca esaustiva sulle 12 partite migliori (2 gambe ciascuna, fino a 5 gambe, al massimo 2 gambe per campionato). Una combinazione è ammessa solo se **probabilità congiunta prudente × quota totale ≥ 1,03**. La probabilità congiunta assume partite indipendenti (ipotesi non verificata; la concentrazione sullo stesso campionato è limitata) e l'incertezza delle gambe si somma in quadratura. Fasce: *prudente* (quota 1,8–3, massimizza la probabilità congiunta prudente), *equilibrata* (3–6) e *ad alto rendimento* (6–14), entrambe massimizzano la crescita attesa del capitale (Kelly). Quote stimate non vengono mai usate: se nessuna combinazione ha valore, nessuna multipla.
 
 ## Corner
+
+In preview, nelle giocate salvate e (con i corner reali) a partita finita, la card mostra chi è favorita a fare più corner (mercato «Corners 1x2»), la linea principale del totale e, a fine partita, se la previsione è stata rispettata.
 
 Il modulo corner usa solo le quote di API-Football (`verified: false`): una probabilità ricavata dalla quota non dimostra alcun vantaggio, quindi non entra in singole né multiple. Un modello statistico dei corner richiede i corner storici per partita (`fixtures/statistics`), che l'app non scarica.
 
