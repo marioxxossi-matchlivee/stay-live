@@ -35,14 +35,14 @@ test("TTL: piu' frequente vicino al match, stabile a partita finita", () => {
   assert.equal(ttlFor("odds-bets", {}), 30 * 86400e3);
 });
 
-test("piano richieste: essenziale 5 sezioni, 12 con i dati extra (7 senza squadre note)", () => {
+test("piano richieste: essenziale 6 sezioni, 13 con i dati extra (7 senza squadre note)", () => {
   const base = { fixtureId: 99, leagueId: 135, season: 2026, kickoff: Date.parse("2026-10-31T19:45:00Z"), now: Date.parse("2026-10-30T12:00:00Z") };
-  assert.deepEqual(planFor({ ...base, homeId: 489, awayId: 505 }).map((r) => r.section), ["fixture", "injuries", "predictions", "oddsGoals", "coverage"]);
+  assert.deepEqual(planFor({ ...base, homeId: 489, awayId: 505 }).map((r) => r.section), ["fixture", "injuries", "predictions", "oddsGoals", "odds1x2", "coverage"]);
   const full = planFor({ ...base, homeId: 489, awayId: 505, extra: true });
-  assert.deepEqual(full.map((r) => r.section).sort(), ["coachAway", "coachHome", "coverage", "fixture", "h2h", "injuries", "oddsCorners", "oddsGoals", "predictions", "standings", "teamAway", "teamHome"]);
+  assert.deepEqual(full.map((r) => r.section).sort(), ["coachAway", "coachHome", "coverage", "fixture", "h2h", "injuries", "odds1x2", "oddsCorners", "oddsGoals", "predictions", "standings", "teamAway", "teamHome"]);
   assert.deepEqual(full.find((r) => r.section === "h2h").params, { h2h: "489-505", last: 10 });
   assert.deepEqual(full.find((r) => r.section === "oddsCorners").params, { fixture: 99, bet: 45 });
-  assert.equal(planFor({ ...base, extra: true }).length, 7);
+  assert.equal(planFor({ ...base, extra: true }).length, 8);   // senza squadre note: niente h2h, statistiche e allenatori
 });
 
 test("abbinamento partita: orario e squadre; 'Milan' non diventa 'Inter'", () => {
@@ -59,9 +59,9 @@ test("abbinamento partita: orario e squadre; 'Milan' non diventa 'Inter'", () =>
 });
 
 test("id mercati letti dall'elenco ufficiale, con ripiego sui valori noti", () => {
-  assert.deepEqual(betIdsFrom([{ id: 1, name: "Match Winner" }, { id: 5, name: "Goals Over/Under" }, { id: 45, name: "Corners Over Under" }, { id: 77, name: "Goals Over/Under First Half" }]), { goals: 5, corners: 45 });
-  assert.deepEqual(betIdsFrom([{ id: 9, name: "Goals Over/Under" }, { id: 8, name: "Corners Over Under" }]), { goals: 9, corners: 8 });
-  assert.deepEqual(betIdsFrom(undefined), { goals: 5, corners: 45 });
+  assert.deepEqual(betIdsFrom([{ id: 1, name: "Match Winner" }, { id: 5, name: "Goals Over/Under" }, { id: 45, name: "Corners Over Under" }, { id: 77, name: "Goals Over/Under First Half" }]), { goals: 5, corners: 45, winner: 1 });
+  assert.deepEqual(betIdsFrom([{ id: 9, name: "Goals Over/Under" }, { id: 8, name: "Corners Over Under" }]), { goals: 9, corners: 8, winner: 1 });
+  assert.deepEqual(betIdsFrom(undefined), { goals: 5, corners: 45, winner: 1 });
 });
 
 const book = (name, bets) => ({ name, bets });

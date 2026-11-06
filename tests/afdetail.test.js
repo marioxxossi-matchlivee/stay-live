@@ -42,9 +42,9 @@ test("Under/Over del provider in italiano", () => {
 test("schermata completa: pronostico, infortuni, arbitro, allenatori, quote, corner", () => {
   const html = renderAfDetail(FULL);
   for (const piece of [
-    "Double chance : Leeds United or draw", "Under 3,5", "45%",                           // pronostico
-    "Hamer", "Knee Injury", "Piroe", "Questionable",                                       // infortunati
-    "Michael Oliver, England", "Frank Lampard", "dal 2025-11-01",                          // arbitro e allenatori
+    "X2", "Doppia chance X2 (pareggio o trasferta)", "vince o pareggia", "Under 3,5", "Under 2,5", "45%",                           // pronostico
+    "Hamer", "Infortunio: ginocchio", "Piroe", "Dubbio", "Assente",                                       // infortunati
+    "Michael Oliver, Inghilterra", "Frank Lampard", "Inghilterra", "dal 2025-11-01",                          // arbitro e allenatori
     "Pinnacle", "mediana 1,90", "linea principale 9,5",                                    // quote e corner
     "Over 2,5 in <b>1</b> su 2", "Calci d&#39;angolo", "Possesso palla",     // h2h, statistiche
     "Espulsione", "Latibeaudiere", "Sheaf", "3-4-2-1 (9)",         // eventi, formazioni, giocatori, moduli
@@ -83,8 +83,13 @@ test("vista essenziale: solo le linee consigliate, corner nascosti, extra a rich
   assert.ok(!html.includes("Classifica"), "classifica solo a richiesta");
   const low = renderAfDetail(d, { lean: true, rec: [{ key: "over25", label: "Over 2,5", minOdds: 2.2 }] });
   assert.ok(low.includes("sotto la minima"));
-  assert.ok(renderAfDetail(d, { lean: true, rec: [] }).includes("Nessuna linea Over/Under consigliata"));
+  assert.ok(renderAfDetail(d, { lean: true, rec: [] }).includes("Nessuna linea Over/Under"));
   const withExtra = renderAfDetail({ ...d, extra: true, standings: [], h2h: [], teamStats: {}, coaches: {} }, { lean: true, rec: [], extra: true });
   assert.ok(withExtra.includes("Classifica") && withExtra.includes("Scontri diretti") && !withExtra.includes("data-af-extra"));
   assert.ok(renderAfDetail(d, { lean: true, rec: [] }).includes("Nessun assente") === false, "senza infortuni la sezione non compare");
+});
+
+test("niente inglese residuo nella scheda: consiglio, assenze, ruoli", () => {
+  const html = renderAfDetail(FULL);
+  for (const eng of ["Double chance", "Knee Injury", "Missing Fixture", "Questionable", "Win or draw", "England"]) assert.ok(!html.includes(eng), `ancora in inglese: ${eng}`);
 });

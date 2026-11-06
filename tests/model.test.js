@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  MODEL, analyzeMatch, buildAccumulator, applyCap, accumulatorPlan, buildContext, estimateOdds, isPreferred, planFor, stakePlan, totalsOf, poissonPmf, probabilities, scoreMatrix, stressedProbabilities, verdictFor,
+  MODEL, analyzeMatch, buildMultiples, applyCap, accumulatorPlan, buildContext, estimateOdds, isPreferred, planFor, stakePlan, totalsOf, poissonPmf, probabilities, scoreMatrix, stressedProbabilities, verdictFor,
 } from "../functions/api/model.js";
 import { matchEvent, nameSimilarity, pricesFor, summarizePrices } from "../functions/api/_odds.js";
-import { computePlan, multipleSets } from "../src/plan.js";
+import { computePlan } from "../src/plan.js";
 import { CONTINENTS, LEAGUES, syncDue, TTL } from "../functions/api/_lib.js";
 
 const day = 86400e3;
@@ -69,12 +69,30 @@ test("con quota inserita decide il valore atteso prudente", () => {
   assert.equal(verdictFor({ pLow: 0.55, minOdds: 1.9, edge: 0.2 }, 8).verdict, "EVITA");
 });
 
-test("la multipla usa solo BET e moltiplica le probabilità prudenti", () => {
-  const mk = (id, v, pLow) => ({ id, pick: { verdict: v, pLow } });
-  const acc = buildAccumulator([mk("1", "BET", 0.7), mk("2", "BET", 0.8), mk("3", "EVITA", 0.9)]);
-  assert.deepEqual(acc.ids, ["2", "1"]);
-  assert.ok(Math.abs(acc.pLow - 0.56) < 1e-3);
-  assert.equal(buildAccumulator([mk("1", "BET", 0.7)]), null);
+const leg = (key, p, pLow, odds, src = "mercato") => ({ key, label: key, p, pLow, odds, oddsSource: src, spread: 0, agree: "conferma" });
+const mItem = (i, legs) => ({ id: `g${i}`, kickoffAt: `2026-11-05T1${i}:00:00Z`, home: "A", away: "B", legs });
+
+test("multiple: una gamba per partita, quota nella fascia, probabilità prudente congiunta massima", () => {
+  const items = [mItem(1, [leg("over15", 0.8, 0.7, 1.5)]), mItem(2, [leg("home", 0.8, 0.7, 1.5), leg("dc1x", 0.9, 0.8, 1.2)]), mItem(3, [leg("over15", 0.8, 0.7, 1.5)]), mItem(4, [leg("away", 0.6, 0.5, 2.0)]), mItem(5, [leg("over25", 0.6, 0.5, 2.0)])];
+  const ms = buildMultiples(items);
+  assert.ok(ms.length >= 2);
+  const sigs = new Set();
+  for (const m of ms) {
+    const tier = MODEL.multiTiers.find((t) => t.key === m.key);
+    assert.ok(m.odds >= tier.lo - 0.01 && m.odds <= tier.hi + 0.01, `${m.key}: quota ${m.odds} fuori fascia`);
+    assert.ok(m.legs.length >= 2 && m.legs.length <= tier.maxLegs);
+    assert.equal(new Set(m.legs.map((l) => l.item.id)).size, m.legs.length, "una sola gamba per partita");
+    assert.ok(Math.abs(m.odds - m.legs.reduce((a, l) => a * l.leg.odds, 1)) < 0.01);
+    assert.ok(Math.abs(m.pLow - m.legs.reduce((a, l) => a * l.leg.pLow, 1)) < 1e-3);
+    const times = m.legs.map((l) => Date.parse(l.item.kickoffAt)); assert.deepEqual(times, [...times].sort((x, y) => x - y));
+    const sig = m.legs.map((l) => `${l.item.id}:${l.leg.key}`).sort().join("|"); assert.ok(!sigs.has(sig), "multiple diverse"); sigs.add(sig);
+  }
+  const sicura = ms.find((m) => m.key === "sicura");
+  assert.ok(sicura.pLow >= 0.5, "la sicura sceglie le gambe più solide (0,7 x 0,7 = 0,49 o meglio)");
+  assert.deepEqual(buildMultiples([mItem(1, [leg("over15", 0.8, 0.7, 1.5)])]), [], "una sola partita: nessuna multipla");
+  assert.deepEqual(buildMultiples([mItem(1, []), mItem(2, [])]), []);
+  assert.equal(buildMultiples([mItem(1, [leg("a", 0.8, 0.7, 1.5)]), mItem(2, [leg("b", 0.8, 0.7, 1.5)])])[0].source, "mercato");
+  assert.equal(buildMultiples([mItem(1, [leg("a", 0.8, 0.7, 1.5, "stimata")]), mItem(2, [leg("b", 0.8, 0.7, 1.5)])])[0].source, "mista");
 });
 
 test("politica di sync: fresco = niente chiamate", () => {
@@ -179,17 +197,29 @@ test("la quota di mercato ha priorità sulla stima, quella inserita su entrambe"
   assert.equal(user.rows.get("g1").plan.odds, 1.9);
 });
 
-test("multiple: tre proposte distinte, singole separate", () => {
-  const mk = (i, pLow) => ({ id: `g${i}`, kickoffAt: `2026-10-31T1${i}:00:00Z`, home: "A", away: "B", confidence: "buona", pick: { verdict: "BET", label: "Over 2,5", pLow, p: pLow + 0.05, minOdds: 1.6, estOdds: 1.5 } });
-  const sizes = (n) => multipleSets(Array.from({ length: n }, (_, i) => mk(i, 0.7 - i * 0.02))).map((x) => x.items.length);
-  assert.deepEqual([sizes(1), sizes(2), sizes(3), sizes(4), sizes(7)], [[], [2], [2, 3], [2, 3, 4], [2, 3, 5]]);
-  const items = Array.from({ length: 4 }, (_, i) => mk(i, 0.7 - i * 0.02));
+test("piano: multiple dal cervello unico, singole separate, tetto di esposizione", () => {
+  const mk = (i, pLow) => ({ id: `g${i}`, kickoffAt: `2026-10-31T1${i}:00:00Z`, home: "A", away: "B", confidence: "buona",
+    pick: { verdict: "BET", key: "over25", label: "Over 2,5", pLow, p: pLow + 0.05, minOdds: 1.6, estOdds: 1.5 },
+    legs: [leg("over15", pLow + 0.1, pLow, 1.45), leg("home", pLow + 0.05, pLow - 0.05, 1.75)] });
+  const items = Array.from({ length: 5 }, (_, i) => mk(i, 0.72 - i * 0.02));
   const plan = computePlan({ items, summary: {} }, 100, new Map(items.map((i) => [i.id, 1.9])));
-  assert.equal(plan.multiples.length, 3);
-  assert.equal(plan.rows.size, 4);
-  const sicura = plan.multiples[0];
-  assert.ok(Math.abs(sicura.plan.odds - 1.9 * 1.9) < 0.01);       // quota combinata = prodotto
-  assert.ok(sicura.items.every((i) => i.pick.pLow >= 0.66));      // le più probabili
-  assert.ok(plan.totals.stake <= 100 * 0.2 + 0.5 * 7);            // tetto di esposizione
+  assert.ok(plan.multiples.length >= 1);
+  assert.equal(plan.rows.size, 5);
+  const m0 = plan.multiples[0];
+  assert.ok(Math.abs(m0.plan.odds - m0.legs.reduce((a, l) => a * l.odds, 1)) < 0.02);   // quota combinata = prodotto delle gambe
+  assert.ok(m0.legs.every((l) => l.sel && l.sel.label));
+  assert.equal(m0.plan.source, "reale", "tutte le gambe hanno quota di mercato");
+  assert.ok(plan.totals.stake <= 100 * 0.2 + 0.5 * 7);                                    // tetto di esposizione
   assert.ok(plan.totalsMultiples.count + plan.totalsSingles.count === plan.totals.count);
+  const est = computePlan({ items: items.map((i) => ({ ...i, legs: i.legs.map((l) => ({ ...l, oddsSource: "stimata" })) })), summary: {} }, 100);
+  assert.equal(est.multiples[0].plan.source, "stimata", "una quota stimata non è mai etichettata reale");
+});
+
+test("la quota di mercato vale solo per la selezione per cui è stata prelevata", () => {
+  const pick = { verdict: "BET", key: "over25", label: "Over 2,5", pLow: 0.62, p: 0.66, minOdds: 1.66, estOdds: 1.43 };
+  const pv = { items: [{ id: "g1", pick, confidence: "buona", home: "A", away: "B", legs: [] }], summary: {} };
+  const wrong = computePlan(pv, 100, new Map(), new Map([["g1", { selection: "home", median: 3.1 }]]));
+  assert.equal(wrong.rows.get("g1").plan.source, "stimata");
+  const right = computePlan(pv, 100, new Map(), new Map([["g1", { selection: "over25", median: 2.1 }]]));
+  assert.equal(right.rows.get("g1").plan.odds, 2.1);
 });

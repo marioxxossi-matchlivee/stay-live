@@ -42,3 +42,20 @@ test("tutto in cache o scaricato: nessuna attesa", async () => {
   const { retry } = await loadSections(env, reqs, Date.now(), { reserve: 0 });
   assert.deepEqual(retry, { pending: 0, afterMs: 0 });
 });
+
+import { clearFinalsMemo, loadFinals } from "../functions/api/_lib.js";
+test("loadFinals: riletto al massimo ogni 60 secondi, un errore non resta in memoria", async () => {
+  clearFinalsMemo();
+  let reads = 0, fail = false;
+  globalThis.fetch = async () => { reads += 1; return fail ? new Response("boom", { status: 500 }) : new Response("[]", { status: 200, headers: { "content-type": "application/json" } }); };
+  const e = { SUPABASE_URL: "http://sb.test", SUPABASE_SERVICE_ROLE_KEY: "k" };
+  await loadFinals(e, 1000); await loadFinals(e, 30000);
+  assert.equal(reads, 1, "seconda lettura servita dalla memoria");
+  await loadFinals(e, 62000);
+  assert.equal(reads, 2, "dopo 60 s si rilegge");
+  clearFinalsMemo(); fail = true;
+  await assert.rejects(() => loadFinals(e, 100000));
+  fail = false;
+  await loadFinals(e, 100100);
+  assert.equal(reads, 4, "dopo un errore si riprova subito");
+});

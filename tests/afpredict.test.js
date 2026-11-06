@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MODEL, afProbabilities, analyzeMatch, buildContext, compactPick, probabilities } from "../functions/api/model.js";
-import { afStatusOf, loadAfPredictions, parseAfPrediction } from "../functions/api/_afpredict.js";
+import { MODEL, afProbabilities, analyzeMatch, buildContext, compactPick, fusionWeights, probabilities } from "../functions/api/model.js";
+import { parseAfPrediction } from "../functions/api/_afpredict.js";
 
 const item = (over = {}) => ({
   predictions: { winner: { id: 1, name: "Inter" }, win_or_draw: true, under_over: "-2.5", advice: "Double chance : Inter or draw and -2.5 goals", percent: { home: "70%", draw: "20%", away: "10%" }, ...over.predictions },
@@ -34,13 +34,15 @@ test("senza pronostico del provider il modello resta quello di prima", () => {
   assert.equal(compactPick(a).basis, "storico");
 });
 
-test("con API-Football la probabilita' finale e' 65% provider + 35% ultime partite", () => {
+test("con API-Football la probabilita' finale e' la media pesata di provider e ultime partite (pesi rinormalizzati senza mercato)", () => {
   const af = parseAfPrediction(item());
   const plain = analyzeMatch(match, ctx, { n: 8 });
   const a = analyzeMatch(match, ctx, { n: 8, af });
   assert.equal(a.basis, "api");
   const home = a.selections.find((s) => s.key === "home"), homePlain = plain.selections.find((s) => s.key === "home");
-  assert.ok(Math.abs(home.p - (0.65 * 0.7 + 0.35 * homePlain.p)) < 0.001);
+  const w = fusionWeights(true, false);
+  assert.ok(Math.abs(w.storico + w.api + w.mercato - 1) < 1e-9 && w.mercato === 0);
+  assert.ok(Math.abs(home.p - (w.api * 0.7 + w.storico * homePlain.p)) < 0.001);
   assert.equal(home.pApi, 0.7); assert.equal(home.agree, "conferma");
   assert.ok(home.pLow < home.p);
   assert.ok(a.api.lambda.home > 0 && a.api.underOver.side === "under");
@@ -56,31 +58,4 @@ test("se il provider contraddice un esito, non diventa un BET", () => {
   const home = a.selections.find((s) => s.key === "home");
   assert.equal(home.agree, "contraddice"); assert.equal(home.verdict, "EVITA"); assert.match(home.reason, /API-Football non è d'accordo/);
   assert.notEqual(a.pick?.key, "home");
-});
-
-/* ---- lettura dal provider ---- */
-const env = { SUPABASE_URL: "http://sb.test", SUPABASE_SERVICE_ROLE_KEY: "k", API_FOOTBALL_KEY: "x", API_FOOTBALL_MIN_GAP_MS: "0" };
-const m = (n) => ({ game_id: `af-${1000 + n}`, league: "serieb", season: 2026, kickoff_at: "2026-11-05T19:45:00Z", home_id: `af-${n}`, away_id: `af-${n + 50}`, home_name: "A", away_name: "B", status: "scheduled" });
-
-test("loadAfPredictions: scarica a passi, si ferma al limite e dice cosa manca", async () => {
-  let calls = 0;
-  globalThis.fetch = async (url) => {
-    if (String(url).includes("sb.test")) return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
-    calls += 1;
-    const ok = calls <= 2;
-    return new Response(JSON.stringify(ok ? { errors: [], response: [item()], results: 1 } : { errors: { rateLimit: "Too many requests." }, response: [] }), { status: 200, headers: { "content-type": "application/json", "x-ratelimit-requests-remaining": "5000" } });
-  };
-  const ms = [m(1), m(2), m(3), m(4)];
-  const r = await loadAfPredictions(env, ms, Date.now());
-  assert.deepEqual(ms.map((x) => r.state.get(x.game_id)), ["used", "used", "waiting", "waiting"]);
-  assert.equal(r.byGame.get("af-1001").percent.home, 0.7);
-  assert.equal(r.retry.pending, 2); assert.ok(r.retry.afterMs >= 15000);
-  assert.deepEqual(afStatusOf(r.state, r.retry, ms.map((x) => x.game_id)), { used: 2, waiting: 2, missing: 0, retry: r.retry });
-});
-
-test("solo cache: nessuna richiesta ad API-Football", async () => {
-  let af = 0;
-  globalThis.fetch = async (url) => { if (!String(url).includes("sb.test")) af += 1; return new Response("[]", { status: 200, headers: { "content-type": "application/json" } }); };
-  const r = await loadAfPredictions(env, [m(1), m(2)], Date.now(), { live: false });
-  assert.equal(af, 0); assert.equal(r.retry.pending, 0);
 });
