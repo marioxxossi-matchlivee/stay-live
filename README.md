@@ -2,7 +2,7 @@
 
 Analisi pre-partita per **Serie A, Premier League, LaLiga, Bundesliga, Ligue 1, MLS, Champions League ed Europa League**: probabilità per 1X2, doppia chance, Over/Under 1,5·2,5·3,5 ed entrambe segnano, verdetto **BET / EVITA** con la quota minima da cercare, e **preview di giornata** sulle partite che scegli.
 
-Stack: Vite (JS vanilla) · Cloudflare Pages Functions · Supabase · API Ninjas (piano gratuito).
+Stack: Vite (JS vanilla) · Cloudflare Pages Functions · Supabase · API Ninjas (calendario) · API-Football (pronostici, quote, infortuni).
 
 > Le stime sono sperimentali e usano solo i gol: non sono garanzie né consigli finanziari.
 
@@ -19,7 +19,7 @@ Il menu in alto è organizzato per **continente > nazione (accordion) > campiona
 
 ## Budget, puntate e vincita potenziale
 
-Il resoconto è diviso in tre blocchi: **Multiple consigliate** (sicura = le 2 giocate più probabili, equilibrata = 3, ambiziosa = fino a 5), **Singole consigliate** e **Da evitare**; ogni multipla ha la sua puntata e vincita, calcolate sul prodotto di probabilità e quote (anche il margine del bookmaker si moltiplica, quindi le puntate sono più basse). Nel resoconto (preview) inserisci il **budget**; per ogni BET puoi scrivere la **quota reale** del bookmaker. Senza quota l'app usa una **quota stimata** = quota equa / 1,06 (margine medio del 6%). La puntata si calcola con **Kelly a un quarto** sulla probabilità prudente, con tetti: 5% del budget su una singola, 2% sulla multipla, 20% di esposizione totale (tutto in `MODEL`, `functions/api/model.js`). Se a quella quota il valore atteso prudente è sotto 1,03 non si punta: l'app indica invece la quota minima da trovare e quanto puntare *se* il bookmaker la paga. Il PDF riporta lo stesso piano.
+Il resoconto è diviso in tre blocchi: **Multiple consigliate**, **Singole consigliate** e **Da evitare**. Le multiple (prudente, equilibrata, ad alto rendimento; nessuna è «sicura») compaiono **solo** se esiste una combinazione di partite diverse con quote reali di API-Football e valore atteso prudente positivo (vedi «Multiple»); altrimenti il resoconto dice che è meglio non giocare. Nel resoconto (preview) inserisci il **budget**; per ogni BET puoi scrivere la **quota reale** del bookmaker. Senza quota l'app usa una **quota stimata** = quota equa / 1,06 (margine medio del 6%). La puntata si calcola con **Kelly a un quarto** sulla probabilità prudente, con tetti: 5% del budget su una singola, 2% sulla multipla, 20% di esposizione totale (tutto in `MODEL`, `functions/api/model.js`). Se a quella quota il valore atteso prudente è sotto 1,03 non si punta: l'app indica invece la quota minima da trovare e quanto puntare *se* il bookmaker la paga. La puntata non viene mai arrotondata per eccesso al minimo di 0,50 €: se Kelly dà meno, non si gioca; e il totale non supera mai il 20% del budget (le giocate in eccesso vengono tolte). Il PDF riporta lo stesso piano.
 
 Attenzione: una quota stimata dal modello non può creare un vantaggio (il margine del bookmaker lo toglie per costruzione). Il piano è affidabile solo con quote reali; nessuna stima garantisce un guadagno.
 
@@ -40,12 +40,25 @@ Fonte unica del codice: `functions/api/model.js` (tutte le costanti sono lì e c
 1. **Media gol di riferimento** del campionato (casa e trasferta), mescolata con 1,5 / 1,2 come se fossero 30 partite. Sotto 20 partite giocate si usa la media di tutti i campionati.
 2. **Attacco e difesa** di ogni squadra sulle ultime 5/8/10 partite (tutte le competizioni). Gol fatti e subiti divisi per la media del campionato in cui sono stati segnati; peso `0,92^k` (più vecchia = meno peso); poi 4 partite "medie" aggiunte per evitare valori estremi.
 3. **Gol attesi**: `λ casa = media casa × attacco casa × difesa trasferta`, `λ trasf. = media trasf. × attacco trasf. × difesa casa` (limitati a 0,2–4; campo neutro: stessa media per entrambe).
-4. **Probabilità**: Poisson indipendente per le due squadre, punteggi 0–0 … 10–10. Ogni mercato è una somma di caselle, quindi tutti i mercati sono coerenti.
-5. **Probabilità prudente**: attese gol incerte di `±0,30/√partite`; si ricalcolano 5 scenari e si tiene il peggiore. È la percentuale mostrata in grande.
+4. **Probabilità**: Poisson per le due squadre, punteggi 0–0 … 10–10 (opzionale correzione Dixon-Coles dei punteggi bassi con `MODEL.rho`, oggi 0 perché va stimato con il backtest). Ogni mercato è una somma di caselle, quindi tutti i mercati sono coerenti.
+5. **Probabilità prudente**: i gol attesi sono incerti; la varianza deriva dal numero effettivo di partite osservate (dati poissoniani + dispersione tra squadre `teamSd`). Si calcola la probabilità su una griglia 7×7 di scenari e si prende il **quantile 20%** (`pLowQuantile`). Prima era «la peggiore di 5 scenari» con uno scarto scelto a mano (`0,30/√partite`, molto più piccolo dell'incertezza reale). È la percentuale mostrata in grande.
 6. **BET** se: campione ≥ 5 partite per squadra, probabilità prudente ≥ 60%, e almeno 8 punti sopra la frequenza storica di quell'esito nel campionato (evita mercati "sempre probabili" come Over 1,5). **Quota minima** = `1,03 / probabilità prudente`. Se inserisci la tua quota: BET se `prob. prudente × quota ≥ 1,03`. Esiti con quota equa < 1,25 non sono proposti.
-7. **Multipla**: fino a 4 BET di partite diverse; probabilità = prodotto delle prudenti.
+7. **Valore atteso**: solo con quota reale. EV = p × quota − 1, EV prudente = pLow × quota − 1. Senza quota reale l'app mostra «valore non verificato» e non lo conta come vantaggio. Il mercato da consigliare per ogni partita non è fisso: tra i BET verificati vince l'EV prudente più alto.
+8. **Multiple**: vedi sotto.
 
-Limiti: soglie non calibrate su uno storico lungo; nessuna quota reale, infortuni o formazioni; API Ninjas non fornisce corner né quote, quindi i mercati corner non sono calcolabili; copre solo 8 competizioni (5 campionati top europei, Champions, Europa League, MLS), nessuna serie minore. Senza la quota del bookmaker "BET" significa solo "alta probabilità rispetto alla norma", non "scommessa di valore".
+## Multiple
+
+Una gamba per partita, solo con **quota reale** (mediana tra bookmaker di API-Football), probabilità prudente ≥ 62%, quota ≥ 1,15 e pLow × quota ≥ 1. Ricerca esaustiva sulle 12 partite migliori (2 gambe ciascuna, fino a 5 gambe, al massimo 2 gambe per campionato). Una combinazione è ammessa solo se **probabilità congiunta prudente × quota totale ≥ 1,03**. La probabilità congiunta assume partite indipendenti (ipotesi non verificata; la concentrazione sullo stesso campionato è limitata) e l'incertezza delle gambe si somma in quadratura. Fasce: *prudente* (quota 1,8–3, massimizza la probabilità congiunta prudente), *equilibrata* (3–6) e *ad alto rendimento* (6–14), entrambe massimizzano la crescita attesa del capitale (Kelly). Quote stimate non vengono mai usate: se nessuna combinazione ha valore, nessuna multipla.
+
+## Corner
+
+Il modulo corner usa solo le quote di API-Football (`verified: false`): una probabilità ricavata dalla quota non dimostra alcun vantaggio, quindi non entra in singole né multiple. Un modello statistico dei corner richiede i corner storici per partita (`fixtures/statistics`), che l'app non scarica.
+
+## Backtest
+
+`npm run backtest -- --file finals.csv [--compare] [--tune]` (vedi l'intestazione di `scripts/backtest.js` per formato ed export da Supabase). Divisione cronologica 60/20/20, nessun dato futuro, metriche (accuracy, precisione, richiamo, Brier, log loss, ECE, ROI, drawdown, rendimento per campionato e mercato, multiple) e Platt scaling fittato sulla validazione. Con meno di 300 giocate nessun vantaggio viene dichiarato dimostrato. Finché non lo esegui su uno storico reale, nessun miglioramento del modello è provato.
+
+Limiti: soglie e pesi delle fonti (`weights`) non calibrati su uno storico lungo; il modello storico non corregge per la forza degli avversari né separa casa/trasferta; infortuni solo come penalità; il blocco di scraping (`availability`) non alimenta il modello. Senza la quota del bookmaker "BET" significa solo "alta probabilità rispetto alla norma", non "scommessa di valore".
 
 ## Infortuni, squalifiche e probabili formazioni (scraping)
 
@@ -65,7 +78,8 @@ I 8 campionati principali (Serie A, Premier, LaLiga, Bundesliga, Ligue 1, Champi
 
 ```bash
 npm install
-npm test          # modello e politica di sync
+npm test          # modello, multiple, puntate, backtest e politica di sync
+npm run backtest -- --file finals.csv --compare
 npm run build
 ```
 Per provare anche le Functions in locale usa `npx wrangler pages dev dist` con le variabili in `.dev.vars`.
