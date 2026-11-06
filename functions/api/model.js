@@ -10,7 +10,12 @@ export const MODEL = {
   shrinkK: 4,             // "partite fittizie" di valore medio mescolate alla forma della squadra
   lambdaMin: 0.2, lambdaMax: 4,
   maxGoals: 10,
-  uncertainty: 0.30,      // delta = uncertainty / sqrt(partite campione)
+  uncertainty: 0.30,      // SOLO metodo "legacy" (confronto nei backtest): delta = uncertainty / sqrt(partite campione)
+  // Probabilità prudente (metodo "posterior"): l'incertezza sui gol attesi viene dal numero effettivo di partite osservate
+  // (varianza bayesiana: dati poissoniani + dispersione tra squadre `teamSd`), si propaga con una griglia 7x7 di scenari e si
+  // prende il quantile `pLowQuantile` della probabilità. Non è più "la peggiore di 5 scenari" con un delta scelto a mano.
+  pLowMethod: "posterior", pLowQuantile: 0.20, teamSd: 0.25, sdMax: 0.6,
+  rho: 0,                 // Dixon-Coles: correzione dei punteggi bassi. 0 = Poisson indipendente. Va stimato con `npm run backtest -- --tune`; non attivato senza dati.
   minSample: 3, betSample: 5,
   betThreshold: 0.60,     // probabilità prudente minima per un BET senza quota
   minEdge: 0.08,          // la prob. prudente deve superare di 8 punti la frequenza storica dell'esito nel campionato
@@ -19,7 +24,7 @@ export const MODEL = {
   longshotFloor: 0.40,    // con quota inserita non si consiglia sotto questa prob. prudente
   // Mercati preferiti: tra i BET della stessa partita passano davanti a 1X2, doppia chance, gol/no gol.
   // Per aggiungere i corner basta inserire qui il nome del mercato (es. "Corner totali") quando ci saranno i dati.
-  preferredMarkets: ["Gol totali"],
+  preferredMarkets: [],   // nessun mercato preferito a priori: il mercato lo decide il valore atteso, non l'etichetta
   // Gestione del budget (puntate). Le quote reali non sono note: se non le inserisci si usa una stima.
   bookMargin: 0.06,       // margine medio del bookmaker: quota stimata = quota equa / (1 + margine)
   kellyFraction: 0.25,    // si punta un quarto della frazione di Kelly (molto più prudente del Kelly pieno)
@@ -33,16 +38,19 @@ export const MODEL = {
   marketMargin: 0.03,     // sulla probabilità del mercato si tolgono 3 punti per la probabilità prudente
   spreadPenalty: 0.30,    // se le fonti sono in disaccordo, la probabilità prudente cala del 30% della distanza tra la più alta e la più bassa
   injPenalty: 0.008,      // ogni assente confermato (max 8) toglie 0,8 punti alla probabilità prudente: più incertezza, non una previsione sul singolo giocatore
-  // Multiple: gambe scelte per probabilità prudente alta, una per partita (l'obiettivo dell'app è vincere le multiple, non le singole).
-  legMinP: 0.62, legMaxP: 0.93, legMinOdds: 1.15,
+  // Multiple: una gamba per partita, SOLO con quote reali di mercato e valore atteso prudente non negativo (pLow x quota >= legMinEv).
+  // La multipla è proposta solo se anche la probabilità congiunta prudente x quota totale >= edgeMargin. Nessuna quota stimata: mai.
+  legMinP: 0.62, legMinOdds: 1.15, legMinEv: 1.0,
+  maxLegsPerLeague: 2,    // vincolo di rischio: al massimo 2 gambe dello stesso campionato nella stessa multipla
+  maxCandidates: 12,      // partite considerate dalla ricerca esaustiva (ognuna con le sue 2 gambe migliori)
   multiTiers: [
-    { key: "sicura", label: "Multipla sicura", lo: 1.8, hi: 2.8, maxLegs: 3, note: "Poche gambe molto probabili: quota totale intorno a 2." },
-    { key: "equilibrata", label: "Multipla equilibrata", lo: 3.0, hi: 5.5, maxLegs: 4, note: "Quota totale intorno a 4, con le gambe più solide." },
-    { key: "ambiziosa", label: "Multipla ambiziosa", lo: 6, hi: 14, maxLegs: 5, note: "Fino a 5 gambe: quota alta, probabilità più bassa." },
+    { key: "prudente", label: "Multipla prudente", lo: 1.8, hi: 3.0, maxLegs: 3, objective: "prob", note: "Poche selezioni, priorità alla probabilità congiunta prudente. Rischio comunque alto: nessuna multipla è sicura." },
+    { key: "equilibrata", label: "Multipla equilibrata", lo: 3.0, hi: 6, maxLegs: 4, objective: "growth", note: "Massimizza la crescita attesa del capitale (Kelly) sulla probabilità congiunta prudente." },
+    { key: "alto-rendimento", label: "Multipla ad alto rendimento", lo: 6, hi: 14, maxLegs: 5, objective: "growth", note: "Quota alta e probabilità congiunta bassa: si perde molto più spesso di quanto si vince." },
   ],
   afDelta: 0.15,          // incertezza dei gol attesi del provider (stagione intera: più stabile delle sole ultime partite)
   afMargin: 0.05,         // sulle percentuali 1X2 del provider si toglie 5 punti per la probabilità prudente
-  afAdviceShift: 0.06,    // se il provider consiglia Over/Under su una linea, quella probabilità sale di 6 punti
+  afAdviceShift: 0,       // era +6 punti: il consiglio del provider deriva dagli stessi dati delle sue percentuali (doppio conteggio) e non era validato
   afAgree: 0.50,          // stima del provider >= 50% = conferma; < 35% = contraddice (il BET non passa)
   afContrast: 0.35,
 };
@@ -76,11 +84,17 @@ export function poissonPmf(lambda, max = MODEL.maxGoals) {
 }
 
 /** Matrice P(casa=i, trasferta=j), normalizzata a 1 (la coda oltre 10 gol è trascurabile). */
-export function scoreMatrix(lh, la) {
+export function scoreMatrix(lh, la, rho = MODEL.rho) {
   const ph = poissonPmf(lh);
   const pa = poissonPmf(la);
-  let total = 0;
-  const m = ph.map((a) => pa.map((b) => { total += a * b; return a * b; }));
+  const m = ph.map((a) => pa.map((b) => a * b));
+  if (rho) {                                    // Dixon-Coles (1997): corregge solo 0-0, 0-1, 1-0, 1-1
+    m[0][0] *= Math.max(0, 1 - lh * la * rho);
+    m[0][1] *= Math.max(0, 1 + lh * rho);
+    m[1][0] *= Math.max(0, 1 + la * rho);
+    m[1][1] *= Math.max(0, 1 - rho);
+  }
+  const total = m.reduce((t, row) => t + row.reduce((u, v) => u + v, 0), 0);
   return m.map((row) => row.map((v) => v / total));
 }
 
@@ -113,6 +127,31 @@ export function stressedProbabilities(lh, la, delta) {
     for (const key of Object.keys(p)) low[key] = key in low ? Math.min(low[key], p[key]) : p[key];
   }
   return low;
+}
+
+/** Varianza relativa di un tasso di squadra: dati poissoniani (neff partite, g gol medi) combinati con la dispersione `teamSd` tra squadre. */
+export const relVar = (neff, g) => 1 / (1 / MODEL.teamSd ** 2 + Math.max(0, neff) * Math.max(g, 0.1));
+
+const GRID = [-3, -2, -1, 0, 1, 2, 3];
+const GRID_W = (() => { const w = GRID.map((z) => Math.exp(-z * z / 2)), t = w.reduce((a, b) => a + b, 0); return w.map((x) => x / t); })();
+
+/**
+ * Probabilità prudente "posterior": i gol attesi sono incerti (lognormali, media preservata, sd relativa sdH/sdA); si calcola la probabilità
+ * su una griglia 7x7 e, per ogni mercato, si prende il quantile q (default 20%) della distribuzione risultante.
+ */
+export function posteriorLowProbabilities(lh, la, sdH, sdA, q = MODEL.pLowQuantile) {
+  const samples = [];
+  GRID.forEach((zh, i) => GRID.forEach((za, j) => {
+    const h = clamp(lh * Math.exp(sdH * zh - sdH * sdH / 2), 0.05, 6), a = clamp(la * Math.exp(sdA * za - sdA * sdA / 2), 0.05, 6);
+    samples.push({ w: GRID_W[i] * GRID_W[j], p: probabilities(h, a) });
+  }));
+  const out = {};
+  for (const key of Object.keys(samples[0].p)) {
+    const sorted = samples.map((x) => ({ w: x.w, v: x.p[key] })).sort((x, y) => x.v - y.v);
+    let c = 0; out[key] = sorted[sorted.length - 1].v;
+    for (const x of sorted) { c += x.w; if (c >= q - 1e-12) { out[key] = x.v; break; } }
+  }
+  return out;
 }
 
 /**
@@ -250,15 +289,16 @@ export function teamForm(teamId, before, ctx, n) {
     if (r.t < before) rows.push(r);
     if (rows.length >= n) break;
   }
-  let w = 0, att = 0, def = 0, gf = 0, ga = 0;
+  let w = 0, w2 = 0, att = 0, def = 0, gf = 0, ga = 0;
   rows.forEach((r, k) => {
     const wk = MODEL.decay ** k;
-    w += wk; att += wk * r.att; def += wk * r.def; gf += wk * r.gf; ga += wk * r.ga;
+    w += wk; w2 += wk * wk; att += wk * r.att; def += wk * r.def; gf += wk * r.gf; ga += wk * r.ga;
   });
   const attRaw = w ? att / w : 1;
   const defRaw = w ? def / w : 1;
   return {
     n: rows.length,
+    neff: w2 ? round((w * w) / w2, 3) : 0,        // numero effettivo di partite (Kish) dopo il decadimento temporale
     weightSum: round(w, 3),
     gfAvg: w ? round(gf / w, 2) : null,
     gaAvg: w ? round(ga / w, 2) : null,
@@ -273,6 +313,8 @@ export function teamForm(teamId, before, ctx, n) {
 export function verdictFor(sel, sample, odds = null) {
   if (sample < MODEL.betSample) return { verdict: "EVITA", reason: `Campione troppo piccolo (${sample} partite, ne servono ${MODEL.betSample}).` };
   if (sel.agree === "contraddice") return { verdict: "EVITA", reason: `${sel.agreeBy ?? "API-Football"} non è d'accordo: stima ${((sel.pWorst ?? sel.pApi) * 100).toFixed(0)}% per questo esito.` };
+  const real = sel.odds?.median > 1 ? sel.odds.median : null;     // quota reale di mercato per questa selezione (se il mercato la quota)
+  if (!(Number.isFinite(odds) && odds > 1) && real) odds = real;
   if (Number.isFinite(odds) && odds > 1) {
     const ev = sel.pLow * odds;
     if (sel.pLow < MODEL.longshotFloor) return { verdict: "EVITA", reason: "Probabilità prudente troppo bassa anche con quota alta." };
@@ -284,7 +326,7 @@ export function verdictFor(sel, sample, odds = null) {
   const edgeText = edgePts == null ? "" : ` (${edgePts} punti sulla media del campionato)`;
   if (sel.pLow < MODEL.betThreshold) return { verdict: "EVITA", reason: `Probabilità prudente ${(sel.pLow * 100).toFixed(0)}% sotto la soglia ${(MODEL.betThreshold * 100).toFixed(0)}%.` };
   if (sel.edge == null || sel.edge < MODEL.minEdge) return { verdict: "EVITA", reason: `Esito probabile ma ${edgePts == null ? "in linea con la media del campionato" : `${edgePts} punti sulla media del campionato`}: niente di speciale in questa partita.` };
-  return { verdict: "BET", reason: `Probabilità prudente ${(sel.pLow * 100).toFixed(0)}%${edgeText}. Gioca solo se la quota è almeno ${sel.minOdds.toFixed(2).replace(".", ",")}.` };
+  return { verdict: "BET", reason: `Probabilità prudente ${(sel.pLow * 100).toFixed(0)}%${edgeText}. Senza quota reale il valore NON è verificato: gioca solo se la quota è almeno ${sel.minOdds.toFixed(2).replace(".", ",")}.` };
 }
 
 const afRank = (s) => (s.agree === "conferma" ? 0 : s.agree === "contraddice" ? 2 : 1);
@@ -306,8 +348,12 @@ export function analyzeMatch(match, ctx, { n = 8, af = null, market = null, inj 
   const mkP = marketProbabilities(market);
   // Con il pronostico del provider il campione è la stagione intera (fino a 8 partite contano come campione pieno).
   const sample = afP ? Math.max(recent, Math.min(af.played ?? 0, 8)) : recent;
-  const delta = MODEL.uncertainty / Math.sqrt(Math.max(recent, 1));
-  const low = stressedProbabilities(lh, la, delta);
+  const g = base.perTeam;
+  const sdH = Math.min(MODEL.sdMax, Math.sqrt(relVar(home.neff, g) + relVar(away.neff, g)));   // attacco casa + difesa trasferta
+  const sdA = Math.min(MODEL.sdMax, Math.sqrt(relVar(away.neff, g) + relVar(home.neff, g)));
+  const legacy = MODEL.pLowMethod === "legacy";
+  const delta = legacy ? MODEL.uncertainty / Math.sqrt(Math.max(recent, 1)) : (sdH + sdA) / 2;
+  const low = legacy ? stressedProbabilities(lh, la, delta) : posteriorLowProbabilities(lh, la, sdH, sdA);
   const base_ = ctx.baseRates(match.league);
   const weights = fusionWeights(Boolean(afP), Boolean(mkP));
   const absent = inj ? (inj.home ?? 0) + (inj.away ?? 0) : 0;
@@ -333,27 +379,30 @@ export function analyzeMatch(match, ctx, { n = 8, af = null, market = null, inj 
       odds: market?.odds?.[s.key] ?? null,                              // quota reale (mediana/migliore) se il mercato quota direttamente questa selezione
     };
     sel.minOdds = round(MODEL.edgeMargin / sel.pLow, 2);
+    // Valore atteso solo su quote REALI: ev = p x quota - 1 (centrale), evLow = pLow x quota - 1 (prudente). Senza quota reale: null, mai una stima.
+    sel.ev = sel.odds ? round(sel.p * sel.odds.median - 1, 3) : null;
+    sel.evLow = sel.odds ? round(sel.pLow * sel.odds.median - 1, 3) : null;
     sel.base = base_ ? round(base_[s.key]) : null;
     sel.edge = base_ ? round(sel.pLow - base_[s.key]) : null;
     Object.assign(sel, verdictFor(sel, sample));
+    sel.verified = Boolean(sel.odds) && sel.verdict === "BET" && sel.pLow * sel.odds.median >= MODEL.edgeMargin;   // vantaggio dimostrato su quota reale
     return sel;
   });
 
-  // Gambe per le multiple: le selezioni più solide della partita (nessun tetto di probabilità "utile": per una multipla la sicurezza conta),
-  // con la quota reale del mercato se c'è, altrimenti stimata.
+  // Gambe per le multiple: solo selezioni con quota REALE di mercato e valore atteso prudente non negativo (pLow x quota >= legMinEv).
+  // Nessuna quota stimata: una stima non può dimostrare un vantaggio. Ordinate per valore atteso prudente.
   const legs = sample < MODEL.betSample ? [] : selections
-    .filter((x) => x.agree !== "contraddice" && x.pLow >= MODEL.legMinP && x.p <= MODEL.legMaxP)
-    .map((x) => {
-      const real = x.odds;
-      const odds = real ? real.median : estimateOdds(x.p);
-      return { key: x.key, label: x.label, market: x.market, p: x.p, pLow: x.pLow, spread: x.spread, agree: x.agree, odds, oddsSource: real ? "mercato" : "stimata", bestOdds: real?.best ?? null, book: real?.book ?? null, edge: real ? round(x.p * real.median - 1, 3) : null };
-    })
-    .filter((x) => x.odds >= MODEL.legMinOdds)
-    .sort((x, y) => y.pLow - x.pLow)
+    .filter((x) => x.odds && x.agree !== "contraddice" && x.pLow >= MODEL.legMinP && x.odds.median >= MODEL.legMinOdds && x.pLow * x.odds.median >= MODEL.legMinEv)
+    .map((x) => ({ key: x.key, label: x.label, market: x.market, p: x.p, pLow: x.pLow, spread: x.spread, agree: x.agree, odds: x.odds.median, oddsSource: "mercato", bestOdds: x.odds.best ?? null, book: x.odds.book ?? null,
+      edge: round(x.p * x.odds.median - 1, 3), evLow: round(x.pLow * x.odds.median - 1, 3) }))
+    .sort((x, y) => y.evLow - x.evLow)
     .slice(0, 3);
 
-  const ranked = selections.filter((s) => s.p <= MODEL.maxUsefulProb)
+  // Con quota reale decide il valore atteso (nessun filtro sulla probabilità); senza quota resta il filtro "quota equa >= 1,25".
+  const ranked = selections.filter((s) => s.odds || s.p <= MODEL.maxUsefulProb)
     .sort((x, y) => (y.verdict === "BET") - (x.verdict === "BET")
+      || (y.verified) - (x.verified)                                   // prima il vantaggio dimostrato su quota reale...
+      || (x.verified && y.verified ? y.evLow - x.evLow : 0)            // ...ordinato per valore atteso prudente
       || (y.verdict === "BET" && isPreferred(y)) - (x.verdict === "BET" && isPreferred(x))
       || afRank(x) - afRank(y)                                         // a parità, prima ciò che API-Football conferma
       || (y.edge ?? -1) - (x.edge ?? -1) || y.pLow - x.pLow);
@@ -369,7 +418,7 @@ export function analyzeMatch(match, ctx, { n = 8, af = null, market = null, inj 
     api: af ? { used: Boolean(afP), weight: weights.api, percent: af.percent, underOver: af.underOver, advice: af.advice, adviceIt: af.adviceIt ?? null, winner: af.winner, lambda: afP?.p._lambda ?? null, played: af.played } : null,
     inputs: {
       baseline: { home: round(base.home, 3), away: round(base.away, 3), perTeam: round(base.perTeam, 3), sample: base.n, scope: base.scope },
-      neutral, home, away, delta: round(delta, 3),
+      neutral, home, away, delta: round(delta, 3), sd: { home: round(sdH, 3), away: round(sdA, 3) }, pLowMethod: MODEL.pLowMethod, rho: MODEL.rho,
     },
     lambda: { home: round(lh, 3), away: round(la, 3), total: round(lh + la, 3) },
     selections, legs, pick, alternatives: ranked.slice(1, 4), topScores: scores.slice(0, 3),
@@ -383,7 +432,8 @@ export function compactPick(analysis) {
   if (!s) return null;
   return { key: s.key, label: s.label, market: s.market, preferred: isPreferred(s), p: s.p, pLow: s.pLow, minOdds: s.minOdds, estOdds: estimateOdds(s.p), verdict: s.verdict,
     reason: s.reason, confidence: analysis.confidence, sample: analysis.sample, expectedGoals: analysis.lambda.total,
-    basis: analysis.basis, pApi: s.pApi, pModel: s.pModel, pMarket: s.pMarket, agree: s.agree };
+    basis: analysis.basis, pApi: s.pApi, pModel: s.pModel, pMarket: s.pMarket, agree: s.agree,
+    odds: s.odds ? { median: s.odds.median, best: s.odds.best ?? null, book: s.odds.book ?? null } : null, ev: s.ev, evLow: s.evLow, verified: s.verified };
 }
 
 /** Over/Under 2,5 in breve (per la modalità personalizzata): i due lati e il migliore. null se il campione è insufficiente. */
@@ -396,43 +446,67 @@ export function ou25Of(analysis) {
 }
 
 /**
- * Multiple dal cervello unico. items = partite con `legs` (le gambe più solide di ogni partita, vedi analyzeMatch).
- * Per ogni fascia (sicura / equilibrata / ambiziosa) cerca, tra tutte le combinazioni di gambe di partite DIVERSE, quella con la
- * PROBABILITÀ PRUDENTE congiunta più alta la cui quota totale cade nella fascia. Le quote sono quelle del mercato dove ci sono, stimate altrove.
- * Restituisce [{ key, label, note, legs: [{ item, leg }], p, pLow, odds, source, ev, evLow }].
+ * Probabilità congiunta di gambe su partite DIVERSE (eventi indipendenti: l'ipotesi è dichiarata, non verificata sul campo).
+ * p = prodotto delle probabilità; l'incertezza di ogni gamba (ln(p/pLow)) è indipendente dalle altre e si somma in quadratura,
+ * non linearmente: pLow congiunta = p x exp(-sqrt(somma dei quadrati)). Il prodotto delle singole pLow sarebbe troppo severo.
+ */
+export function jointProbability(legs) {
+  const p = legs.reduce((a, l) => a * l.p, 1);
+  const d = Math.sqrt(legs.reduce((a, l) => a + Math.log(Math.max(l.p, 1e-9) / Math.max(Math.min(l.pLow, l.p), 1e-9)) ** 2, 0));
+  return { p, pLow: p * Math.exp(-d) };
+}
+
+/** Crescita logaritmica attesa del capitale puntando la frazione di Kelly con probabilità q e quota o (0 se non c'è vantaggio). */
+export function kellyGrowth(q, o) {
+  if (!(o > 1) || !(q > 0)) return 0;
+  const f = (q * o - 1) / (o - 1);
+  return f > 0 ? q * Math.log(1 + f * (o - 1)) + (1 - q) * Math.log(1 - f) : 0;
+}
+
+/**
+ * Multiple dal cervello unico. items = partite con `legs` (solo gambe con quota reale e valore atteso prudente >= legMinEv, vedi analyzeMatch).
+ * Ricerca esaustiva (<= maxCandidates partite, 2 gambe ciascuna, 5 gambe al massimo, potatura sulla quota) di combinazioni di partite DIVERSE
+ * con al massimo maxLegsPerLeague gambe per campionato. Una combinazione è ammessa solo se la probabilità congiunta prudente x quota totale >= edgeMargin.
+ * Obiettivo per fascia: "prob" = probabilità congiunta prudente più alta; "growth" = crescita logaritmica attesa (Kelly) più alta.
+ * Se nessuna combinazione ha valore, restituisce [] (meglio non giocare).
+ * Restituisce [{ key, label, note, legs: [{ item, leg }], p, pLow, odds, source, ev, evLow, growth }].
  */
 export function buildMultiples(items, tiers = MODEL.multiTiers) {
-  const cands = items.filter((i) => i.legs?.length).map((item) => ({ item, opts: item.legs.slice(0, 2) }))
-    .sort((a, b) => b.opts[0].pLow - a.opts[0].pLow).slice(0, 10);
+  const cands = items.map((item) => ({ item, opts: (item.legs ?? []).filter((l) => l.oddsSource === "mercato" && l.odds > 1).slice(0, 2) })).filter((c) => c.opts.length)
+    .sort((a, b) => b.opts[0].evLow - a.opts[0].evLow).slice(0, MODEL.maxCandidates);
   const out = [], used = new Set();
   for (const t of tiers) {
     let best = null;
-    const walk = (i, chosen, pLow, odds) => {
+    const score = (jp, odds) => (t.objective === "prob" ? jp.pLow : kellyGrowth(jp.pLow, odds));
+    const walk = (i, chosen, odds, perLeague) => {
       if (chosen.length >= 2 && odds >= t.lo - 1e-9 && odds <= t.hi + 1e-9) {
-        const sig = chosen.map((c) => `${c.item.id}:${c.leg.key}`).sort().join("|");
-        const better = !best || pLow > best.pLow + 1e-9 || (Math.abs(pLow - best.pLow) <= 1e-9 && odds > best.odds);
-        if (better && !used.has(sig)) best = { chosen: [...chosen], pLow, odds, sig };
+        const jp = jointProbability(chosen.map((c) => c.leg));
+        if (jp.pLow * odds >= MODEL.edgeMargin) {
+          const sig = chosen.map((c) => `${c.item.id}:${c.leg.key}`).sort().join("|");
+          const sc = score(jp, odds);
+          if (!used.has(sig) && (!best || sc > best.sc + 1e-12 || (Math.abs(sc - best.sc) <= 1e-12 && odds > best.odds))) best = { chosen: [...chosen], odds, jp, sc, sig };
+        }
       }
       if (i >= cands.length || chosen.length >= t.maxLegs) return;
       for (let k = i; k < cands.length; k += 1) {
+        const lg = cands[k].item.league;
+        if (lg != null && (perLeague.get(lg) ?? 0) >= MODEL.maxLegsPerLeague) continue;
         for (const leg of cands[k].opts) {
           const o = odds * leg.odds;
           if (o > t.hi + 1e-9) continue;                                       // le quote si moltiplicano: oltre la fascia non si torna indietro
-          walk(k + 1, [...chosen, { item: cands[k].item, leg }], pLow * leg.pLow, o);
+          const pl = new Map(perLeague); if (lg != null) pl.set(lg, (pl.get(lg) ?? 0) + 1);
+          walk(k + 1, [...chosen, { item: cands[k].item, leg }], o, pl);
         }
       }
     };
-    walk(0, [], 1, 1);
+    walk(0, [], 1, new Map());
     if (!best) continue;
     used.add(best.sig);
     const legs = best.chosen.sort((x, y) => Date.parse(x.item.kickoffAt) - Date.parse(y.item.kickoffAt));
-    const p = legs.reduce((a, l) => a * l.leg.p, 1);
-    const real = legs.filter((l) => l.leg.oddsSource === "mercato").length;
     out.push({
       key: t.key, label: t.label, note: t.note, legs,
-      p: round(p), pLow: round(best.pLow), odds: round(best.odds, 2),
-      source: real === legs.length ? "mercato" : real ? "mista" : "stimata",
-      ev: round(p * best.odds - 1, 3), evLow: round(best.pLow * best.odds - 1, 3),
+      p: round(best.jp.p), pLow: round(best.jp.pLow), odds: round(best.odds, 2), source: "mercato",
+      ev: round(best.jp.p * best.odds - 1, 3), evLow: round(best.jp.pLow * best.odds - 1, 3), growth: round(kellyGrowth(best.jp.pLow, best.odds), 4),
     });
   }
   return out;
@@ -458,7 +532,9 @@ export function stakePlan({ pLow, odds, bankroll, maxPct = MODEL.maxStakePct }) 
   if (ev < MODEL.edgeMargin) return { ...none, ev: round(ev, 3) };
   const kelly = (pLow * odds - 1) / (odds - 1);
   const raw = bankroll * Math.min(maxPct, MODEL.kellyFraction * kelly);
-  const stake = Math.min(bankroll, Math.max(MODEL.stakeStep, floorStep(raw)));
+  const stake = Math.min(bankroll, floorStep(raw));
+  // Sotto la puntata minima non si arrotonda per eccesso (sarebbe più di Kelly e oltre i tetti): non si gioca.
+  if (stake < MODEL.stakeStep) return { ...none, ev: round(ev, 3), belowMin: true };
   return { stake, win: round(stake * (odds - 1), 2), ret: round(stake * odds, 2), ev: round(ev, 3), play: true };
 }
 
@@ -483,13 +559,16 @@ export function planFor({ pLow, p }, odds, bankroll, { maxPct = MODEL.maxStakePc
 export function accumulatorPlan(legs, bankroll) {
   if (legs.length < 2) return null;
   const prod = (f) => legs.reduce((a, l) => a * f(l), 1);
-  const pLow = prod((l) => l.pLow), p = prod((l) => l.p);
+  const { p, pLow } = jointProbability(legs);
   const allReal = legs.every((l) => l.real ?? (Number.isFinite(l.odds) && l.odds > 1));   // `real` esplicito: una quota stimata non è "reale"
   const odds = round(prod((l) => (Number.isFinite(l.odds) && l.odds > 1 ? l.odds : estimateOdds(l.p))), 2);
   return planFor({ pLow, p }, odds, bankroll, { maxPct: MODEL.maxAccStakePct, source: allReal ? "reale" : "stimata" });
 }
 
-/** Se la somma delle puntate supera maxTotalPct del budget, le riduce tutte nella stessa proporzione. */
+/**
+ * Se la somma delle puntate supera maxTotalPct del budget, le riduce nella stessa proporzione (arrotondando per difetto).
+ * Una puntata che scende sotto il minimo non viene alzata: la giocata viene tolta. Così il totale non supera mai il tetto.
+ */
 export function applyCap(plans, bankroll) {
   const total = plans.reduce((s, x) => s + (x?.play ? x.stake : 0), 0);
   const cap = bankroll * MODEL.maxTotalPct;
@@ -497,7 +576,8 @@ export function applyCap(plans, bankroll) {
   const k = cap / total;
   return plans.map((x) => {
     if (!x?.play) return x;
-    const stake = Math.max(MODEL.stakeStep, floorStep(x.stake * k));
+    const stake = floorStep(x.stake * k);
+    if (stake < MODEL.stakeStep) return { ...x, stake: 0, win: 0, ret: 0, play: false, capped: true, belowMin: true };
     return { ...x, stake, win: round(stake * (x.odds - 1), 2), ret: round(stake * x.odds, 2), capped: true };
   });
 }

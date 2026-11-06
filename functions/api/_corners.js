@@ -3,6 +3,11 @@
  * La percentuale è quella implicita nelle quote: 1/quota di ogni lato, normalizzata per togliere il margine dei bookmaker.
  * Si sceglie la linea e il lato con la percentuale più alta, ma solo tra quelli che pagano almeno MIN_CORNER_ODD
  * (altrimenti vincerebbero sempre linee banali, tipo "Under 14,5" a 1,05).
+ *
+ * ATTENZIONE: questa NON è una stima indipendente. Una probabilità ricavata dalla quota ha per costruzione valore atteso pari al
+ * margine del bookmaker cambiato di segno: `verified: false`, `ev: null`. Non va mai presentata come opportunità di valore né usata nelle multiple.
+ * Un vero modello (Poisson / binomiale negativa) richiede i corner storici per partita (API-Football `fixtures/statistics`, 1 richiesta a partita),
+ * non scaricati dall'app: finché mancano, il mercato corner resta solo informativo.
  */
 import { AF_LEAGUES, betIdsFrom, loadSections, summarizeOdds, ttlFor } from "./_apifootball.js";
 import { resolveMaps } from "./_afpredict.js";
@@ -19,7 +24,7 @@ export function cornerPick(corners, minOdd = MIN_CORNER_ODD) {
     if (!(mo > 1) || !(mu > 1)) continue;
     const io = 1 / mo, iu = 1 / mu, tot = io + iu;
     for (const [side, agg, inv] of [["over", l.over, io], ["under", l.under, iu]]) {
-      if (agg.best.odd >= minOdd) cands.push({ line: l.line, side, p: r4(inv / tot), odd: agg.best.odd, book: agg.best.book, books: agg.n });
+      if (agg.best.odd >= minOdd) cands.push({ line: l.line, side, p: r4(inv / tot), odd: agg.best.odd, book: agg.best.book, books: agg.n, verified: false, ev: null });
     }
   }
   cands.sort((a, b) => b.p - a.p || b.odd - a.odd);
