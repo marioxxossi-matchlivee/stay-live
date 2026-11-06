@@ -39,13 +39,25 @@ async function getJson(url) {
   return data;
 }
 
+/* Apertura istantanea: l'ultimo elenco ricevuto resta nel dispositivo e si mostra subito; poi l'app si aggiorna in secondo piano. */
+const CACHE_KEY = "stayLive.fixtures";
+const readCache = () => { try { const c = JSON.parse(localStorage.getItem(CACHE_KEY) ?? "null"); return c?.data?.matches && Date.now() - c.at < 36 * 3600e3 ? c : null; } catch { return null; } };
+const writeCache = (data) => { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), data })); } catch { /* spazio esaurito: si salta */ } };
+function applyData(data) {
+  Object.assign(state, { matches: data.matches, leagues: data.leagues, continents: data.continents ?? [], updatedAt: data.updatedAt });
+  writeCache(data);
+  if (data.needsCrests?.length) fillCrests(data.needsCrests);
+}
+
 async function load({ sync = true } = {}) {
-  if (state.loading) return;
+  if (state.loading || state.syncing) return;
   state.loading = true; state.error = null; render();
   try {
     let data = await getJson("/api/fixtures");
+    applyData(data); state.banner = null;
     if (sync && !state.syncTried && data.needsSync.length) {
       state.syncTried = true;
+      state.loading = false; state.syncing = true; render();            // l'elenco è già utilizzabile: l'aggiornamento prosegue in secondo piano
       const failures = [];
       const queue = [...data.needsSync];
       const total = queue.length;
@@ -70,14 +82,14 @@ async function load({ sync = true } = {}) {
       state.banner = `Aggiorno i campionati… 0/${total}`; render();
       await Promise.all(Array.from({ length: Math.min(2, total) }, worker));
       data = await getJson("/api/fixtures");
+      applyData(data);
       state.banner = failures.length ? `Aggiornamento incompleto. ${failures[0]}` : null;
-    } else state.banner = null;
-    Object.assign(state, { matches: data.matches, leagues: data.leagues, continents: data.continents ?? [], updatedAt: data.updatedAt });
-    if (data.needsCrests?.length) fillCrests(data.needsCrests);
+    }
   } catch (e) {
-    state.error = e.message;
+    if (state.matches.length) state.banner = "Non riesco ad aggiornare: ti mostro gli ultimi dati salvati.";   // con dati già a schermo l'errore non blocca nulla
+    else state.error = e.message;
   } finally {
-    state.loading = false; render();
+    state.loading = false; state.syncing = false; render();
   }
 }
 
@@ -130,11 +142,19 @@ function visibleMatches() {
   });
 }
 const sideHtml = (name, logo, goals) => `<span class="side">${crest(name, logo)}<b>${esc(name)}</b>${goals != null ? `<span class="score">${goals}</span>` : ""}</span>`;
-function rowHtml(m) {
+let animateNext = true, animTimer = null;
+/** Filtro a tre voci: Tutte / Solo BET / O/U + corner (sostituisce interruttore e pulsanti separati). */
+const segValue = () => (isCustom() ? "custom" : state.onlyBet ? "bet" : "all");
+function setSeg(v) {
+  state.onlyBet = v === "bet"; state.mode = v === "custom" ? "custom" : "standard";
+  try { localStorage.setItem(MODE_KEY, isCustom() ? "1" : "0"); } catch { /* preferenza non salvata */ }
+  animateNext = true; render();
+}
+function rowHtml(m, k = 0) {
   const time = fmtTime.format(new Date(m.kickoffAt));
   const live = m.status === "in_progress" ? `<span class="live-tag">In corso</span>` : "";
   const check = isOpen(m) ? `<input type="checkbox" data-sel="${esc(m.id)}" ${state.selected.has(m.id) ? "checked" : ""} aria-label="Seleziona ${esc(m.home)} – ${esc(m.away)}" />` : `<span></span>`;
-  return `<div class="row ${state.selected.has(m.id) ? "sel" : ""}">${check}
+  return `<div class="row ${state.selected.has(m.id) ? "sel" : ""}" style="--i:${Math.min(k, 9)}">${check}
     <button class="row-main" type="button" data-open="${esc(m.id)}">
       <span class="meta"><b>${time}</b><span>${esc(leagueName(m.league, true))}</span>${live}</span>
       <span class="fx">${sideHtml(m.home, m.homeLogo, m.homeScore)}${sideHtml(m.away, m.awayLogo, m.awayScore)}</span>
@@ -191,7 +211,11 @@ function render() {
   const list = visibleMatches();
   const bets = list.filter((m) => m.pick?.verdict === "BET").length;
   document.body.classList.toggle("mode-custom", isCustom());
-  $("#mode-custom").setAttribute("aria-pressed", String(isCustom()));
+  const seg = segValue();
+  const segEl = $("#mode-seg");
+  segEl.style.setProperty("--i", String(["all", "bet", "custom"].indexOf(seg)));
+  for (const b of segEl.querySelectorAll("[data-seg]")) b.setAttribute("aria-pressed", String(b.dataset.seg === seg));
+  $("#select-bets").textContent = isCustom() ? "Le filtrate" : "I BET";
   $("#custom-panel").hidden = !isCustom();
   $("#thr").value = String(state.thr);
   const long = state.day && state.day !== "results" ? dayParts(state.day).long : "";
@@ -204,11 +228,19 @@ function render() {
   banner.hidden = !(state.error || state.banner);
   banner.className = `banner${state.error ? " error" : ""}`;
   banner.textContent = state.error ?? state.banner ?? "";
-  $("#list").innerHTML = list.length ? list.map(rowHtml).join("")
+  const listEl = $("#list");
+  if (animateNext) { listEl.classList.add("anim"); animateNext = false; clearTimeout(animTimer); animTimer = setTimeout(() => listEl.classList.remove("anim"), 900); }
+  $("#list-count").textContent = state.loading && !state.matches.length ? "" : `${list.length} ${list.length === 1 ? "partita" : "partite"}`;
+  listEl.innerHTML = state.loading && !state.matches.length ? Array.from({ length: 4 }, () => `<div class="row skel" aria-hidden="true"><i></i><i></i><i></i></div>`).join("")
+    : list.length ? list.map((m, k) => rowHtml(m, k)).join("")
     : `<div class="empty">${state.loading ? "Carico i dati…" : state.error ? "" : isCustom() ? "Nessuna partita sopra la soglia. Abbassa la soglia oppure premi “Cerca i corner”." : state.onlyBet ? "Nessun BET in questa giornata con i filtri scelti." : "Nessuna partita per questa selezione."}</div>`;
   $("#refresh").disabled = state.loading;
+  $("#refresh").classList.toggle("spin", state.loading || Boolean(state.syncing));
+  const stamps = state.leagues.map((l) => l.syncedAt).filter(Boolean).sort();
+  const when = (iso) => `${dayParts(dayKey(iso)).dm} ${fmtTime.format(new Date(iso))}`;
+  $("#set-updated").textContent = stamps.length ? `Più recente ${when(stamps.at(-1))} · più vecchio ${when(stamps[0])}` : "Nessun dato ancora";
   const count = state.selected.size;
-  $("#selbar").hidden = !count;
+  $("#selbar").hidden = !count || document.body.dataset.view !== "matches";
   $("#sel-count").textContent = `${count} ${count === 1 ? "partita" : "partite"}`;
 }
 
@@ -529,7 +561,7 @@ function renderPreview() {
       <label>Budget <input id="bankroll" inputmode="decimal" value="${esc(String(bankroll).replace(".", ","))}" aria-label="Budget in euro" /> €</label>
       <div id="pv-totals" class="pv-totals" aria-live="polite"></div>
     </div>
-    <div class="pv-actions"><button class="primary" id="share-pdf" type="button">Condividi PDF</button><button class="ghost" id="load-quotes" type="button">Preleva quote reali</button><button class="ghost" id="copy-preview" type="button">Copia testo</button><button class="ghost" id="save-bets" type="button">Salva le singole BET</button></div>
+    <div class="pv-actions"><button class="primary" id="share-pdf" type="button">Condividi PDF</button><button class="ghost" id="load-quotes" type="button">Preleva quote reali</button><details class="more-actions"><summary>Altre azioni</summary><div><button class="ghost" id="copy-preview" type="button">Copia testo</button><button class="ghost" id="save-bets" type="button">Salva le singole BET</button></div></details></div>
     <p class="pv-qstatus" id="quotes-status" aria-live="polite"></p>
     ${afPreviewNote(pv)}
     <section class="pv-section pv-multi-sec"><h3><span>Multiple consigliate</span></h3><div id="pv-multiples"></div></section>
@@ -626,7 +658,7 @@ function commitPlay(cand) {
   updatePlaysBadge();
   return r.added;
 }
-function updatePlaysBadge() { $("#open-plays").textContent = plays.length ? `Giocate (${plays.length})` : "Giocate"; }
+function updatePlaysBadge() { const b = $("#plays-badge"); b.hidden = !plays.length; b.textContent = String(plays.length); }
 
 const PLAY_IT = { won: "Vinta", lost: "Persa", pending: "In attesa", void: "Annullata" };
 const PLAY_PILL = { won: "ok", lost: "err", pending: "warn", void: "" };
@@ -695,7 +727,7 @@ async function refreshPlays() {
     renderPlays(ids.length ? `Risultati aggiornati alle ${fmtTime.format(new Date())}.` : "");
   } catch (e) { renderPlays(`Risultati non disponibili: ${e.message}`); } finally { playsBusy = false; }
 }
-function openPlays() { renderPlays(); $("#plays").showModal(); refreshPlays(); }
+function openPlays() { showView("plays"); }
 
 /* ---------- PDF del riepilogo ---------- */
 async function sharePdf(btn) {
@@ -727,25 +759,6 @@ async function sharePdf(btn) {
 }
 
 /* ---------- Metodo ---------- */
-function renderMethod() {
-  const M = MODEL;
-  $("#method-body").innerHTML = `<div class="method"><h2 class="d-title">Come calcoliamo le percentuali</h2>
-  <p class="d-sub">Un solo cervello fonde tre fonti, esito per esito: ultime partite (${Math.round(M.weights.storico * 100)}%), pronostico di API-Football (${Math.round(M.weights.api * 100)}%) e quote di mercato di API-Football senza margine (${Math.round(M.weights.mercato * 100)}%). Se una fonte manca, i pesi si ridistribuiscono sulle altre e l’etichetta (API, Q) lo dice.</p>
-  <ol class="steps"><li><b>Pronostico di API-Football</b><span>Percentuali 1X2 del provider, gol attesi ricavati dalle medie stagionali delle due squadre (gol fatti nel proprio campo e subiti dall’avversaria) e consiglio Over/Under. Se il provider o il mercato stimano un esito sotto il ${pct(M.afContrast)} non può diventare BET; a parità, passano davanti gli esiti che confermano (da ${pct(M.afAgree)}). Se le fonti sono in disaccordo, la probabilità prudente cala; gli assenti confermati aggiungono incertezza.</span></li></ol>
-  <p class="d-sub">La parte sulle ultime partite funziona così:</p>
-  <ol class="steps">
-    <li><b>Media gol di riferimento</b><span>Gol medi in casa e in trasferta del campionato (o di tutti i campionati se ci sono meno di ${M.minLeagueMatches} partite), mescolati con ${num(M.priorHome, 1)} / ${num(M.priorAway, 1)} come se fossero ${M.priorWeight} partite.</span></li>
-    <li><b>Attacco e difesa</b><span>Per ogni squadra, ultime ${"5, 8 o 10"} partite (scegli tu). Gol fatti e subiti sono divisi per la media del campionato in cui sono stati segnati. Le partite più vecchie pesano meno (×${num(M.decay)} a ogni passo). Poi si aggiungono ${M.shrinkK} partite “medie” per evitare estremi.</span></li>
-    <li><b>Gol attesi</b><span><code>λ casa = media casa × attacco casa × difesa trasferta</code> e <code>λ trasferta = media trasferta × attacco trasferta × difesa casa</code>, limitati tra ${M.lambdaMin} e ${M.lambdaMax}.</span></li>
-    <li><b>Probabilità</b><span>Distribuzione di Poisson indipendente per le due squadre, punteggi da 0–0 a 10–10. 1X2, doppia chance, Over/Under 1,5 · 2,5 · 3,5 ed entrambe segnano sono somme di queste caselle, quindi sempre coerenti tra loro.</span></li>
-    <li><b>Probabilità prudente</b><span>Il campione è piccolo, quindi le attese gol sono incerte di circa ±${num(M.uncertainty)} ÷ √partite. Si ricalcola in 5 scenari e si tiene il peggiore.</span></li>
-    <li><b>BET o EVITA</b><span>BET se il campione è di almeno ${M.betSample} partite, la probabilità prudente è almeno ${pct(M.betThreshold)} e supera di ${M.minEdge * 100} punti la frequenza storica di quell’esito nel campionato. La <b>quota minima</b> è ${num(M.edgeMargin)} ÷ probabilità prudente. Con la tua quota: BET se probabilità prudente × quota ≥ ${num(M.edgeMargin)}.</span></li>
-    <li><b>Mercati preferiti</b><span>Tra i BET della stessa partita, Over/Under sui gol passano davanti a 1X2, doppia chance ed entrambe segnano (a parità di BET, non cambia la soglia). I corner non sono calcolabili con i dati disponibili.</span></li>
-    <li><b>Multiple</b><span>L’obiettivo è vincere le multiple. Per ogni partita il cervello tiene le 3 gambe più solide (probabilità prudente almeno ${pct(M.legMinP)}, quota almeno ${num(M.legMinOdds)}), poi cerca tra tutte le combinazioni di partite diverse quella con la probabilità congiunta prudente più alta per ciascuna fascia di quota: sicura (circa 2), equilibrata (circa 4), ambiziosa (6 e oltre). La quota è quella del mercato dove c’è, stimata (*) altrove. Probabilità e quote si moltiplicano, e con loro anche il margine del bookmaker: per questo il “valore” di una multipla si vede solo con le quote reali.</span></li>
-  </ol>
-  <p><b>Limiti.</b> Le soglie sono scelte ragionevoli ma non calibrate su uno storico lungo. I bookmaker conoscono molto più di questo modello e applicano un margine: senza la quota reale, un BET significa solo “alta probabilità”, non “scommessa di valore”.</p></div>`;
-}
-
 /* ---------- Eventi ---------- */
 document.addEventListener("click", (e) => {
   const t = e.target;
@@ -762,10 +775,11 @@ document.addEventListener("click", (e) => {
     const code = state.league.startsWith("n:") ? state.league.slice(2) : state.leagues.find((l) => l.id === state.league)?.country;
     const l = state.leagues.find((x) => x.country === code);
     if (l) state.openKeys.add(`${l.continent}:${l.country}`);
-    state.navOpen = false; render();
+    state.navOpen = false; animateNext = true; render();
   }
   if (t.closest("#nav-toggle")) { state.navOpen = !state.navOpen; render(); }
-  const day = t.closest("[data-day]"); if (day) { state.day = day.dataset.day; render(); }
+  if (!t.closest(".menu-wrap")) closeSelMenu();
+  const day = t.closest("[data-day]"); if (day) { state.day = day.dataset.day; animateNext = true; render(); }
   const open = t.closest("[data-open]"); if (open) openDetail(open.dataset.open);
   if (t.closest("#copy-preview")) navigator.clipboard?.writeText(previewText(lastPreview)).then(() => { t.textContent = "Copiato"; });
   if (t.closest("#share-pdf")) sharePdf(t.closest("#share-pdf"));
@@ -779,7 +793,6 @@ document.addEventListener("click", (e) => {
     t.closest("#save-bets").textContent = n ? `✓ ${n} salvate` : "Già salvate";
     for (const b of document.querySelectorAll("[data-save]")) if (bets.some((i) => i.id === b.dataset.save)) { b.textContent = "✓ Salvata"; b.classList.add("done"); b.disabled = true; }
   }
-  if (t.closest("#open-plays")) openPlays();
   if (t.closest("#refresh-plays")) refreshPlays();
   const del = t.closest("[data-del-play]");
   if (del) { plays = removePlay(plays, del.dataset.delPlay); savePlays(plays); updatePlaysBadge(); renderPlays(); }
@@ -794,7 +807,6 @@ document.addEventListener("toggle", (e) => {
 document.addEventListener("change", (e) => {
   const t = e.target;
   if (t.matches("[data-sel]")) { t.checked ? state.selected.add(t.dataset.sel) : state.selected.delete(t.dataset.sel); render(); }
-  if (t.id === "only-bet") { state.onlyBet = t.checked; render(); }
   if (t.id === "history-count") { state.n = Number(t.value); load({ sync: false }); }
   if (t.id === "detail-n") { state.n = Number(t.value); $("#history-count").value = String(state.n); openDetailKeep(); }
 });
@@ -814,12 +826,61 @@ async function openDetailKeep() {
 $("#detail").addEventListener("close", () => { clearTimeout(afTimer); clearTimeout(anTimer); });
 $("#preview").addEventListener("close", () => clearTimeout(pvTimer));
 updatePlaysBadge();
+/* ---------- Navigazione ---------- */
+const VIEWS = ["matches", "plays", "settings"];
+function showView(name) {
+  closeSelMenu();
+  for (const v of VIEWS) {
+    const el = $(`#view-${v}`), on = v === name;
+    if (on && el.hidden) { el.hidden = false; el.classList.remove("enter"); void el.offsetWidth; el.classList.add("enter"); }
+    else if (!on) el.hidden = true;
+  }
+  for (const b of document.querySelectorAll(".tab-item")) { if (b.dataset.view === name) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); }
+  document.body.dataset.view = name;
+  $("#selbar").hidden = name !== "matches" || !state.selected.size;
+  window.scrollTo({ top: 0 });
+  if (name === "plays") { renderPlays(); refreshPlays(); }
+  if (name === "matches") { animateNext = true; render(); }
+}
+document.querySelector(".tabbar").addEventListener("click", (e) => {
+  const b = e.target.closest(".tab-item"); if (!b) return;
+  if (document.body.dataset.view === b.dataset.view) window.scrollTo({ top: 0, behavior: "smooth" });
+  else showView(b.dataset.view);
+});
+$("#mode-seg").addEventListener("click", (e) => { const b = e.target.closest("[data-seg]"); if (b) setSeg(b.dataset.seg); });
+
+/* Menu "Seleziona": tutte, i BET (o le filtrate), nessuna */
+function closeSelMenu() { $("#sel-menu").hidden = true; $("#sel-more").setAttribute("aria-expanded", "false"); }
+$("#sel-more").addEventListener("click", () => { const m = $("#sel-menu"); m.hidden = !m.hidden; $("#sel-more").setAttribute("aria-expanded", String(!m.hidden)); });
 $("#select-day").addEventListener("click", () => {
   const open = visibleMatches().filter(isOpen);
-  const all = open.every((m) => state.selected.has(m.id));
-  open.forEach((m) => (all ? state.selected.delete(m.id) : state.selected.add(m.id)));
-  render();
+  open.forEach((m) => state.selected.add(m.id));
+  closeSelMenu(); render();
 });
+$("#sel-none").addEventListener("click", () => { state.selected.clear(); closeSelMenu(); render(); });
+
+/* Impostazioni */
+$("#set-refresh").addEventListener("click", () => { state.syncTried = false; load(); showView("matches"); });
+$("#clear-plays").addEventListener("click", () => {
+  if (!plays.length) return;
+  if (confirm(`Eliminare le ${plays.length} giocate salvate? Non si può annullare.`)) { plays = []; savePlays(plays); updatePlaysBadge(); renderPlays(); }
+});
+
+/* Tira per aggiornare (solo nella lista partite, in cima alla pagina) */
+{
+  const ptr = $("#ptr"); let y0 = 0, dy = 0, on = false;
+  const reset = () => { ptr.style.setProperty("--pull", "0"); ptr.classList.remove("ready"); on = false; dy = 0; };
+  document.addEventListener("touchstart", (e) => { on = document.body.dataset.view === "matches" && window.scrollY <= 0 && !document.querySelector("dialog[open]") && !state.loading; y0 = e.touches[0].clientY; dy = 0; }, { passive: true });
+  document.addEventListener("touchmove", (e) => {
+    if (!on) return;
+    dy = e.touches[0].clientY - y0;
+    if (dy <= 0 || window.scrollY > 0) { reset(); return; }
+    ptr.style.setProperty("--pull", String(Math.min(dy, 140) / 140));
+    ptr.classList.toggle("ready", dy > 100);
+  }, { passive: true });
+  document.addEventListener("touchend", () => { const go = on && dy > 100; reset(); if (go) { state.syncTried = false; load(); } });
+}
+
 /** Cerca le quote corner delle partite del giorno (a piccoli passi, riprova da solo se API-Football limita le richieste). */
 let cornerBusy = false;
 async function findCorners() {
@@ -846,18 +907,22 @@ async function findCorners() {
     status.textContent = `Corner con quote per ${found} ${found === 1 ? "partita" : "partite"} su ${all.length}${pending.length ? `; ${pending.length} ancora da scaricare: riprova tra poco` : ""}.`;
   } catch (e) { status.textContent = `Corner non disponibili: ${e.message}`; } finally { cornerBusy = false; btn.disabled = false; }
 }
-$("#mode-custom").addEventListener("click", () => { state.mode = isCustom() ? "standard" : "custom"; try { localStorage.setItem(MODE_KEY, isCustom() ? "1" : "0"); } catch { /* preferenza non salvata */ } render(); });
 $("#thr").addEventListener("change", (e) => { state.thr = Number(e.target.value); try { localStorage.setItem(THR_KEY, String(state.thr)); } catch { /* preferenza non salvata */ } render(); });
 $("#find-corners").addEventListener("click", findCorners);
 $("#select-bets").addEventListener("click", () => {
   visibleMatches().filter((m) => isOpen(m) && (isCustom() || m.pick?.verdict === "BET")).forEach((m) => state.selected.add(m.id));
-  render();
+  closeSelMenu(); render();
 });
 $("#sel-clear").addEventListener("click", () => { state.selected.clear(); render(); });
 $("#make-preview").addEventListener("click", makePreview);
-$("#open-method").addEventListener("click", () => { renderMethod(); $("#method").showModal(); });
 $("#refresh").addEventListener("click", () => { state.syncTried = false; load(); });
 setInterval(() => { if (document.visibilityState === "visible" && !state.error) { state.syncTried = false; load(); } }, 5 * 60e3);
 
+// Apertura: prima l'ultimo elenco salvato (istantaneo), poi l'aggiornamento in secondo piano.
+{
+  const cached = readCache();
+  if (cached) { Object.assign(state, { matches: cached.data.matches, leagues: cached.data.leagues, continents: cached.data.continents ?? [], updatedAt: cached.data.updatedAt }); }
+}
+document.body.dataset.view = "matches";
 render();
 load();
