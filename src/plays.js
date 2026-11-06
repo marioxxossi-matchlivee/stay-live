@@ -72,6 +72,18 @@ export function absorbResults(plays, results) {
   return changed;
 }
 
+/** Copia nelle gambe i corner reali (a partita finita), come per i risultati. byId = { id: { home, away, total } }. true se qualcosa è cambiato. */
+export function absorbCorners(plays, byId) {
+  let changed = false;
+  for (const p of plays) for (const l of p.legs) {
+    const c = byId[l.matchId];
+    if (!l.cres && l.res && c && Number.isFinite(c.home) && Number.isFinite(c.away)) { l.cres = { home: c.home, away: c.away, total: c.home + c.away }; changed = true; }
+  }
+  return changed;
+}
+/** Partite finite di cui mancano i corner reali. */
+export const pendingCornerIds = (plays) => [...new Set(plays.flatMap((p) => p.legs.filter((l) => l.res && !l.cres).map((l) => l.matchId)))];
+
 /** Partite da chiedere al server: gambe senza risultato definitivo. */
 export const pendingMatchIds = (plays) => [...new Set(plays.flatMap((p) => p.legs.filter((l) => !l.res).map((l) => l.matchId)))];
 

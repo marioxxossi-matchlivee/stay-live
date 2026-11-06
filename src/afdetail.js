@@ -349,7 +349,7 @@ function leanPrediction(p) {
 }
 
 /** Versione essenziale: cosa dice API-Football, le sole linee consigliate, assenti e (se ci sono) formazioni/eventi. Il resto è a richiesta. */
-function renderLean(d, { rec = [], extra = false } = {}) {
+function renderLean(d, { rec = [], extra = false, unified = false, hidePrediction = false } = {}) {
   const f = d.fixture;
   const fr = d.freshness ?? {};
   const soon = soonOf(fr);
@@ -364,9 +364,10 @@ function renderLean(d, { rec = [], extra = false } = {}) {
       sec("Statistiche stagionali delle squadre", seasonStats(d), { icon: "season", tone: "green" }), sec("Classifica", standings(d), { icon: "table", tone: "blue" }),
       sec("Scontri diretti", h2h(d.h2h), { icon: "h2h", tone: "amber" }), sec("Arbitro e allenatori", refereeCoaches(d), { icon: "people", tone: "slate" })].join("")
     : `<button class="ghost wide" type="button" data-af-extra>Carica anche classifica, scontri diretti, statistiche e allenatori</button><p class="af-note">Usa alcune richieste in più ad API-Football: premilo solo se ti serve.</p>`;
-  return `${matchHero(d)}${wait}${warn}
-    ${sec("Cosa dice API-Football", soon(["predictions"], leanPrediction(d.predictions)), { open: true, icon: "pred", tone: "green" })}
-    ${sec("Linee consigliate", `${soon(["oddsGoals", "odds1x2"], recLines(d, rec))}<p class="af-note">Corner e le altre linee non sono consigliati: l'app non li stima.</p>`, { open: true, icon: "odds", tone: "blue" })}
+  // `unified` = parte di un'unica scheda partita (modello + API-Football): niente testata né pronostico/linee già mostrati dalla parte del modello.
+  return `${unified ? `<h4 class="u-h">Dati della partita <small>da API-Football</small></h4>` : matchHero(d)}${wait}${warn}
+    ${unified && hidePrediction ? "" : sec("Cosa dice API-Football", soon(["predictions"], leanPrediction(d.predictions)), { open: true, icon: "pred", tone: "green" })}
+    ${unified ? "" : sec("Linee consigliate", `${soon(["oddsGoals", "odds1x2"], recLines(d, rec))}<p class="af-note">Corner e le altre linee non sono consigliati: l'app non li stima.</p>`, { open: true, icon: "odds", tone: "blue" })}
     ${has(d.injuries) ? sec("Infortunati e squalificati", injuries(d), { open: true, note: String(d.injuries.length), icon: "injuries", tone: "red" }) : ""}
     ${has(f?.lineups) ? sec("Formazioni", lineups(f), { icon: "lineups", tone: "green" }) : ""}
     ${has(f?.events) ? sec("Eventi", events(f), { icon: "events", tone: "amber" }) : ""}

@@ -181,9 +181,6 @@ h4{font:700 14px var(--body);color:var(--mute);margin:20px 0 8px}
 .pv-multi-card .mstats{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--ink-2)}
 
 /* ---------- Dettaglio: schede e dati API-Football ---------- */
-.tabs{display:flex;gap:4px;margin:0 46px 16px 0;padding:4px;background:#e5e9ef;border-radius:13px}
-.tab{flex:1;border:0;background:transparent;border-radius:10px;padding:9px 10px;font-weight:700;font-size:14px;color:var(--ink-2);transition:background .15s,color .15s,box-shadow .15s}
-.tab[aria-pressed=true]{background:#fff;color:var(--ink);box-shadow:0 1px 3px #0e1a2b26}
 
 #pane-data{--af-home:var(--pitch);--af-away:var(--blue);--af-draw:#b7c0cc;--af-shadow:0 1px 2px #0e1a2b0f,0 4px 14px -6px #0e1a2b1f}
 #pane-data .af-empty,#pane-data .empty{background:var(--card);border:1px dashed var(--line);border-radius:14px;padding:18px 16px;text-align:center}
@@ -419,8 +416,6 @@ h4{font:700 14px var(--body);color:var(--mute);margin:20px 0 8px}
 
 /* Dettaglio, preview, metodo: stessa pelle */
 dialog{background:#fff;border-radius:22px}
-.tabs{background:var(--soft)}
-.tab[aria-pressed=true]{box-shadow:var(--shadow)}
 .verdict,.kv div,.mk,.form,.pv-card,.pv-bank{background:var(--soft);border:0;box-shadow:none}
 .verdict{border-radius:18px;border-left:0;box-shadow:inset 5px 0 0 var(--skip)}
 .verdict.bet{box-shadow:inset 5px 0 0 var(--pitch)}
@@ -708,3 +703,20 @@ dialog::backdrop{background:rgba(14,26,43,.42);-webkit-backdrop-filter:blur(4px)
 .pv-multi-card .legs li>b{grid-column:3;grid-row:1;text-align:right}
 .pv-multi-card .legs .lg-odd{grid-column:2;grid-row:2;margin:0}
 .pv-multi-card .legs .lg-st{grid-column:3;grid-row:2;margin:0;justify-self:end}
+
+/* Calci d'angolo: stessa scheda in preview, giocate salvate e multiple */
+.pv-corner{background:#fff;border-radius:12px;padding:9px 12px;display:grid;gap:5px;font-size:13px;line-height:1.4}
+.pv-corner p{margin:0}
+.pc-h{font-size:13px}.pc-h small{font-weight:400;color:var(--mute);margin-left:6px}
+.pc-fav{font-size:14px}.pc-fav.even{color:var(--mute)}
+.pc-bar{display:flex;height:8px;border-radius:99px;overflow:hidden;background:var(--line)}
+.pc-bar i{display:block;height:100%}.pc-bar .home{background:var(--pitch)}.pc-bar .draw{background:#c9d1e0}.pc-bar .away{background:#2f5bea}
+.pc-sub{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;color:var(--mute);font-size:12px}
+.pc-line{color:var(--ink)}
+.pc-act{margin-top:3px;padding-top:6px;border-top:1px solid var(--line)}
+.pc-v{font-weight:600}.pc-v.ok{color:#0b7a46}.pc-v.no{color:#b42318}
+.lg-corner{display:block;flex-basis:100%;color:var(--mute);font-size:12px;margin-top:2px}
+
+/* Scheda partita unica: dati API-Football sotto l'analisi del modello */
+.u-data{margin-top:14px;display:grid;gap:8px}
+.u-h{margin:0 0 2px;font-size:15px}.u-h small{font-weight:400;color:var(--mute);margin-left:6px}

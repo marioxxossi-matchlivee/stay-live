@@ -1,5 +1,6 @@
 import { PAGE, Pdf, textWidth, wrap } from "./pdf.js";
 import { TZ, dayKey, dayParts, eur, fmtTime, num, pct } from "./format.js";
+import { cornerShort } from "./corners.js";
 
 const C = { ink: "#0e1a2b", mute: "#6b7686", line: "#dde2e8", bet: "#0f7b4b", skip: "#6b7686", blue: "#2f5bea", navy: "#1d3a8a" };
 
@@ -103,7 +104,7 @@ export function buildPreviewPdf(pv, leagueName, plan = null) {
   if (!bets.length) { pdf.text(M, y, "Nessun BET tra le partite scelte.", { size: 10, color: C.mute }); y += 22; }
   for (const i of bets) {
     const p = i.pick, row = plan?.rows.get(i.id);
-    const CARD = 84 + (row ? 18 : 0);
+    const cs = cornerShort(i), CARD = 84 + (row ? 18 : 0) + (cs ? 14 : 0);
     ensure(CARD);
     pdf.rect(M, y, W, CARD - 8, "#ffffff");
     pdf.strokeRect(M, y, W, CARD - 8, C.line);
@@ -119,6 +120,7 @@ export function buildPreviewPdf(pv, leagueName, plan = null) {
     if (i.alternatives[0]) bits.push(`Alternativa: ${i.alternatives[0].label} ${pct(i.alternatives[0].pLow)}`);
     pdf.lines(M + 14, y + 66, wrap(bits.join("   ·   "), 8.5, W - 28).slice(0, 1), { size: 8.5, color: C.mute });
     if (row) pdf.text(M + 14, y + 80, fit(planSentence(row.plan, row.eff, "il bookmaker paga"), 9, true, W - 28), { size: 9, bold: true, color: row.eff ? C.navy : C.mute });
+    if (cs) pdf.text(M + 14, y + (row ? 94 : 80), fit(cs, 8.5, false, W - 28), { size: 8.5, color: C.mute });
     y += CARD;
   }
 
