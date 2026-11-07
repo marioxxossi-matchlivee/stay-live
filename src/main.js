@@ -6,18 +6,23 @@ import { buildPreviewPdf } from "./report.js";
 import { renderAfDetail } from "./afdetail.js";
 import { crest, hideBrokenCrests, matchHeader } from "./ui.js";
 import { efficiency, efficiencyHtml, reliabilityHtml } from "./efficiency.js";
-import { absorbCorners, absorbResults, addPlay, evaluate, legFromItem, loadPlays, pendingCornerIds, pendingMatchIds, playFromItem, removePlay, savePlays, signature } from "./plays.js";
+import { absorbCorners, absorbResults, addPlay, evaluate, legFromItem, loadPlays, pendingCornerIds, pendingMatchIds, playFromItem, savePlays, signature } from "./plays.js";
 import { cornerBarHtml, cornerHtml, cornerShort } from "./corners.js";
 import { icon } from "./icons.js";
-import { enableReorder, enableSwipe, orderBy } from "./gestures.js";
+import { enableSwipe } from "./gestures.js";
+import { accordionHtml, filterRows, groupByDay, playHeadHtml } from "./playlist.js";
+import { showToast } from "./toast.js";
 
 hideBrokenCrests();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const RATE_RE = /too many requests|per minute|rate limit|limite di richieste/i;
 
 const $ = (s, r = document) => r.querySelector(s);
+/** Fisarmoniche aperte (giocate, statistiche, nazioni): stanno in memoria, così sopravvivono ai ridisegni delle viste. */
+const openAcc = new Set();
+const reduceMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 const state = {
-  matches: [], leagues: [], continents: [], league: "all", navOpen: false, openKeys: new Set(), day: null, onlyBet: false, selected: new Set(),
+  matches: [], leagues: [], continents: [], league: "all", navOpen: false, day: null, onlyBet: false, selected: new Set(),
   n: 8, loading: false, error: null, banner: null, syncTried: false, updatedAt: null,
 };
 // Modalità personalizzata: solo Over/Under 2,5 o corner sopra una soglia di probabilità.
@@ -119,15 +124,12 @@ async function fillCrests(leagueIds) {
 }
 
 /* ---------- Lista ---------- */
-function meter(p) {
-  return `<span class="meter" aria-hidden="true"><i style="width:${(p.pLow * 100).toFixed(1)}%"></i><b style="left:${(p.pLow * 100).toFixed(1)}%;width:${(Math.max(0, p.p - p.pLow) * 100).toFixed(1)}%"></b><u style="left:${MODEL.betThreshold * 100}%"></u></span>`;
-}
 /** Etichetta delle fonti usate dal cervello unico: API = pronostico di API-Football, Q = quote di mercato. */
 const basisTag = (b) => (!b || b === "storico" ? "" : `<i class="api-tag" title="${b === "mercato" ? "Calcolato con le quote di mercato" : b === "api" ? "Calcolato con il pronostico di API-Football" : "Calcolato con il pronostico di API-Football e le quote di mercato"}">${b === "api+mercato" ? "API+Q" : b === "api" ? "API" : "Q"}</i>`);
 function pickChip(p) {
   if (!p) return "";
   if (p.confidence === "insufficiente") return `<span class="pick none">Dati insufficienti: ${p.sample} gare di storico</span>`;
-  return `<span class="pick ${p.verdict === "BET" ? "bet" : "skip"}"><span class="pick-head"><b>${p.verdict === "BET" ? icon("check") : ""}${p.verdict}</b>${basisTag(p.basis)}<span>${esc(p.label)}</span><em>${pct(p.pLow)}</em></span>${meter(p)}</span>`;
+  return `<span class="pick ${p.verdict === "BET" ? "bet" : "skip"}"><span class="pick-head"><b>${p.verdict === "BET" ? icon("check") : ""}${p.verdict}</b>${basisTag(p.basis)}<span>${esc(p.label)}</span><em>${pct(p.pLow)}</em></span></span>`;
 }
 function customChips(m) {
   const cm = m.corner ?? cornerCache.get(m.id) ?? null;
@@ -158,12 +160,12 @@ function setSeg(v) {
 function rowHtml(m, k = 0) {
   const time = fmtTime.format(new Date(m.kickoffAt));
   const live = m.status === "in_progress" ? `<span class="live-tag">In corso</span>` : "";
-  const check = isOpen(m) ? `<input type="checkbox" data-sel="${esc(m.id)}" ${state.selected.has(m.id) ? "checked" : ""} aria-label="Seleziona ${esc(m.home)} – ${esc(m.away)}" />` : `<span></span>`;
+  const check = isOpen(m) ? `<label class="chk"><input type="checkbox" data-sel="${esc(m.id)}" ${state.selected.has(m.id) ? "checked" : ""} aria-label="Seleziona ${esc(m.home)} – ${esc(m.away)}" /></label>` : `<span></span>`;
   return `<div class="row ${state.selected.has(m.id) ? "sel" : ""}" style="--i:${Math.min(k, 9)}">${check}
     <button class="row-main" type="button" data-open="${esc(m.id)}">
       <span class="meta"><b>${time}</b><span>${esc(leagueName(m.league, true))}</span>${live}</span>
       <span class="fx">${sideHtml(m.home, m.homeLogo, m.homeScore)}${sideHtml(m.away, m.awayLogo, m.awayScore)}</span>
-      ${isCustom() ? customChips(m) : `${pickChip(m.pick)}${m.pick?.confidence === "insufficiente" ? "" : customChips(m)}`}
+      ${isCustom() ? customChips(m) : pickChip(m.pick)}
     </button></div>`;
 }
 function renderDays() {
@@ -187,7 +189,7 @@ function scopeLabel() {
 }
 function renderLeagueNav() {
   const toggle = $("#nav-toggle");
-  toggle.textContent = `${scopeLabel()} ${state.navOpen ? "▴" : "▾"}`;
+  toggle.textContent = scopeLabel();
   toggle.setAttribute("aria-expanded", String(state.navOpen));
   const nav = $("#league-nav");
   nav.hidden = !state.navOpen;
@@ -201,10 +203,9 @@ function renderLeagueNav() {
     const items = nations.map((n) => {
       const ls = inC.filter((l) => l.country === n.country).sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name, "it"));
       const key = `${c.id}:${n.country}`;
-      return `<details class="nation" data-key="${esc(key)}" ${state.openKeys.has(key) ? "open" : ""}>
-        <summary><span>${n.international ? "🏆 " : ""}${esc(n.nation)}</span><small>${ls.length} ${ls.length === 1 ? "campionato" : "campionati"}</small></summary>
-        <div class="nation-leagues">${ls.length > 1 ? chip(`n:${n.country}`, "Tutti") : ""}${ls.map((l) => chip(l.id, l.name)).join("")}</div>
-      </details>`;
+      return accordionHtml({ id: `nat:${key}`, open: openAcc.has(`nat:${key}`), cls: "nation", headCls: "nation-head",
+        head: `<span>${n.international ? "🏆 " : ""}${esc(n.nation)}</span><small>${ls.length} ${ls.length === 1 ? "campionato" : "campionati"}</small>`,
+        body: `<div class="nation-leagues">${ls.length > 1 ? chip(`n:${n.country}`, "Tutti") : ""}${ls.map((l) => chip(l.id, l.name)).join("")}</div>` });
     }).join("");
     return `<section class="continent"><h3>${esc(c.name)}</h3>${items}</section>`;
   }).join("");
@@ -221,22 +222,20 @@ function render() {
   segEl.style.setProperty("--i", String(["all", "bet", "custom"].indexOf(seg)));
   for (const b of segEl.querySelectorAll("[data-seg]")) b.setAttribute("aria-pressed", String(b.dataset.seg === seg));
   $("#select-bets").textContent = isCustom() ? "Le filtrate" : "I BET";
-  $("#custom-panel").hidden = state.day === "results";
-  $("#custom-panel").classList.toggle("simple", !isCustom());
+  $("#custom-panel").hidden = !isCustom() || state.day === "results";
   $("#thr").value = String(state.thr);
   const long = state.day && state.day !== "results" ? dayParts(state.day).long : "";
   $("#day-title").textContent = state.day === "results" ? "Ultimi risultati" : long ? long[0].toUpperCase() + long.slice(1) : "Partite";
   $("#summary").textContent = state.loading && !state.matches.length ? "Caricamento…"
     : state.error ? "Dati non disponibili."
-    : isCustom() && state.day !== "results" ? `${list.length} partite con O/U 2,5 o corner ≥ ${pct(state.thr)}${state.updatedAt ? ` · aggiornato alle ${fmtTime.format(new Date(state.updatedAt))}` : ""}`
-    : `${list.length} partite${state.day === "results" ? "" : ` · ${bets} con BET`}${state.updatedAt ? ` · aggiornato alle ${fmtTime.format(new Date(state.updatedAt))}` : ""}`;
+    : isCustom() && state.day !== "results" ? `${list.length} ${list.length === 1 ? "partita" : "partite"} con O/U 2,5 o corner ≥ ${pct(state.thr)}`
+    : `${list.length} ${list.length === 1 ? "partita" : "partite"}${state.day === "results" ? "" : ` · ${bets} con BET`}`;
   const banner = $("#banner");
   banner.hidden = !(state.error || state.banner);
   banner.className = `banner${state.error ? " error" : ""}`;
   banner.textContent = state.error ?? state.banner ?? "";
   const listEl = $("#list");
-  if (animateNext) { listEl.classList.add("anim"); animateNext = false; clearTimeout(animTimer); animTimer = setTimeout(() => listEl.classList.remove("anim"), 900); }
-  $("#list-count").textContent = state.loading && !state.matches.length ? "" : `${list.length} ${list.length === 1 ? "partita" : "partite"}`;
+  if (animateNext) { listEl.classList.add("anim"); animateNext = false; clearTimeout(animTimer); animTimer = setTimeout(() => listEl.classList.remove("anim"), 700); } else listEl.classList.remove("anim");   // un ridisegno senza cambio di filtro non rilancia l'ingresso delle righe
   listEl.innerHTML = state.loading && !state.matches.length ? Array.from({ length: 4 }, () => `<div class="row skel" aria-hidden="true"><i></i><i></i><i></i></div>`).join("")
     : list.length ? list.map((m, k) => rowHtml(m, k)).join("")
     : `<div class="empty">${state.loading ? "Carico i dati…" : state.error ? "" : isCustom() ? "Nessuna partita sopra la soglia. Abbassa la soglia oppure premi “Cerca i corner”." : state.onlyBet ? "Nessun BET in questa giornata con i filtri scelti." : "Nessuna partita per questa selezione."}</div>`;
@@ -245,6 +244,9 @@ function render() {
   const stamps = state.leagues.map((l) => l.syncedAt).filter(Boolean).sort();
   const when = (iso) => `${dayParts(dayKey(iso)).dm} ${fmtTime.format(new Date(iso))}`;
   $("#set-updated").textContent = stamps.length ? `Più recente ${when(stamps.at(-1))} · più vecchio ${when(stamps[0])}` : "Nessun dato ancora";
+  syncSelbar();
+}
+function syncSelbar() {
   const count = state.selected.size;
   $("#selbar").hidden = !count || document.body.dataset.view !== "matches";
   $("#sel-count").textContent = `${count} ${count === 1 ? "partita" : "partite"}`;
@@ -256,7 +258,7 @@ let detailState = null;
 
 async function openDetail(id) {
   $("#detail").showModal();
-  $("#detail-body").innerHTML = `<p class="empty">Calcolo in corso…</p>`;
+  $("#detail-body").innerHTML = `<div class="af-loading"><i></i>Calcolo in corso…</div>`;
   try {
     detailState = { id, af: null, afStarted: false, data: await getJson(`/api/analysis?id=${encodeURIComponent(id)}&n=${state.n}`) };
     renderDetail();
@@ -369,10 +371,10 @@ function renderDetail() {
       sub: played ? kick : dayParts(dayKey(match.kickoffAt)).long })}
     <section class="rec-sec"><h4>Cosa giocare <small>affidabilità ${esc(a.confidence)}</small></h4>${recs.length ? recs.map((x, i) => recCard(x, a, match.id, i)).join("") : noPlay}</section>
     <section class="rec-sec" id="detail-corner" hidden></section>
-    ${a.legs?.length ? `<section class="legs-sec"><h4>Per le multiple <small>le gambe più solide di questa partita</small></h4>${a.legs.map((l) => `<div class="leg-row"><b>${esc(l.label)}</b><span>prudente ${pct(l.pLow)} · quota ${num(l.odds)}${l.oddsSource === "mercato" ? "" : "*"}</span></div>`).join("")}${a.legs.some((l) => l.oddsSource !== "mercato") ? `<p class="api-note">* quota stimata: senza la quota di mercato.</p>` : ""}</section>` : ""}
     ${apiBlock(a, detailState.data.afStatus)}
     <div id="pane-data" class="u-data"><div class="af-loading"><i></i>Scarico i dati da API-Football…</div></div>
     <details class="more"><summary>Tutti i mercati e come è calcolato</summary>
+      ${a.legs?.length ? `<section class="legs-sec"><h4>Per le multiple <small>le gambe più solide di questa partita</small></h4>${a.legs.map((l) => `<div class="leg-row"><b>${esc(l.label)}</b><span>prudente ${pct(l.pLow)} · quota ${num(l.odds)}${l.oddsSource === "mercato" ? "" : "*"}</span></div>`).join("")}${a.legs.some((l) => l.oddsSource !== "mercato") ? `<p class="api-note">* quota stimata: senza la quota di mercato.</p>` : ""}</section>` : ""}
       <div class="kv">
         <div><small>Gol attesi</small><strong>${num(a.lambda.total)}</strong></div>
         <div><small>Basato su</small><strong>${a.basis === "api+mercato" ? "API + mercato + storico" : a.basis === "api" ? "API + storico" : a.basis === "mercato" ? "mercato + storico" : "solo storico"}</strong></div>
@@ -493,7 +495,7 @@ async function makePreview() {
   const ids = [...state.selected];
   if (!ids.length) return;
   $("#preview").showModal();
-  $("#preview-body").innerHTML = `<p class="empty">Genero la preview…</p>`;
+  $("#preview-body").innerHTML = `<div class="af-loading"><i></i>Genero la preview…</div>`;
   $("#make-preview").disabled = true;
   try {
     pvOdds.clear();
@@ -555,11 +557,11 @@ function whyShort(i) {
  * Card di una giocata singola: la STESSA nel preview e nelle giocate salvate (cambiano solo stato in alto, riga di puntata e pulsanti).
  * `i` = partita con consiglio (nel salvataggio se ne conserva una fotografia: quello che vedi qui è ciò che ritrovi nelle giocate).
  */
-function singleCardHtml(i, { top = "", stake = "", actions = "" }) {
+function singleCardHtml(i, { top = "", stake = "", actions = "", head = true }) {
   const bet = isBetItem(i), p = i.pick;
   return `<article class="pv-card${bet ? "" : " is-skip"}">
       <span class="meta"><b>${fmtTime.format(new Date(i.kickoffAt))}</b><span>${esc(leagueName(i.league, true))}</span>${top}</span>
-      <span class="fx">${sideHtml(i.home, i.homeLogo, i.homeScore)}${sideHtml(i.away, i.awayLogo, i.awayScore)}</span>
+      ${head ? `<span class="fx">${sideHtml(i.home, i.homeLogo, i.homeScore)}${sideHtml(i.away, i.awayLogo, i.awayScore)}</span>` : (i.homeScore != null && i.awayScore != null ? `<p class="pv-result">Risultato <b>${esc(i.homeScore)}–${esc(i.awayScore)}</b></p>` : "")}
       ${p ? `<div class="pv-pick"><span class="vd ${bet ? "bet" : "skip"}">${bet ? "BET" : "EVITA"}</span><b>${esc(p.label)}</b>${basisTag(p.basis)}<em>${pct(p.pLow)}</em></div>` : ""}
       <p class="pv-why">${esc(whyShort(i))}</p>
       ${cornerHtml(i)}
@@ -613,7 +615,7 @@ function renderPreview() {
       <label>Budget <input id="bankroll" inputmode="decimal" value="${esc(String(bankroll).replace(".", ","))}" aria-label="Budget in euro" /> €</label>
       <div id="pv-totals" class="pv-totals" aria-live="polite"></div>
     </div>
-    <div class="pv-actions"><button class="primary" id="share-pdf" type="button">Condividi PDF</button><details class="more-actions"><summary>Altre azioni</summary><div><button class="ghost" id="copy-preview" type="button">Copia testo</button><button class="ghost" id="save-bets" type="button">Salva le singole BET</button></div></details></div>
+    <div class="pv-actions"><button class="primary" id="save-bets" type="button"${bets.length ? (bets.every((i) => i.pick && isSaved(singleOf(i))) ? " disabled" : "") : " disabled"}>${bets.length && bets.every((i) => i.pick && isSaved(singleOf(i))) ? "✓ BET già salvate" : "Salva le BET"}</button><button class="ghost" id="share-pdf" type="button">Condividi PDF</button><button class="ghost" id="copy-preview" type="button">Copia testo</button></div>
     ${afPreviewNote(pv)}
     <section class="pv-section pv-multi-sec"><h3><span>Multiple consigliate</span></h3><div id="pv-multiples"></div></section>
     <section class="pv-section"><h3><span>Singole consigliate</span><small>${bets.length}</small></h3>${bets.length ? bets.map(singleCard).join("") : `<p class="empty">Nessun BET tra le partite scelte.</p>`}</section>
@@ -629,10 +631,10 @@ function multiLine(m) {
   return `Quota combinata ${p.source} ${num(p.odds)}: <b>sotto la minima ${num(p.need)}</b>, non conviene. Gioca <b>solo se</b> il bookmaker paga almeno ${num(p.need)} → punta <b>${eur(e.stake)}</b>, vincita netta <b>${eur(e.win)}</b>`;
 }
 /** Card di una multipla: la STESSA nel preview e nelle giocate salvate. `m` = { label, legs: [{ item, sel, odds, source }], p, source, minOdds, plan, eff }. */
-function multiCardHtml(m, { top = "", legExtra = () => "", stake = "", actions = "" }) {
+function multiCardHtml(m, { top = "", legExtra = () => "", stake = "", actions = "", head = true }) {
   const est = m.source !== "mercato";
   return `<article class="pv-multi-card">
-      <header><b>${esc(m.label)}</b>${top}<span class="pill">${m.legs.length} gare</span></header>
+      ${head ? `<header><b>${esc(m.label)}</b>${top}<span class="pill">${m.legs.length} gare</span></header>` : ""}
       <ol class="legs">${m.legs.map((l) => `<li><span class="t">${fmtTime.format(new Date(l.item.kickoffAt))}</span><span class="m">${crest(l.item.home, l.item.homeLogo, "crest xs")}${crest(l.item.away, l.item.awayLogo, "crest xs")}${esc(l.item.home)} – ${esc(l.item.away)}</span><b>${esc(l.sel.label)}</b><small class="lg-odd">${num(l.odds)}${l.source === "mercato" ? "" : "*"}</small>${legExtra(l)}${cornerHtml({ ...l.item, corner: l.item.corner ?? null, cornerActual: actualOf(l.item.id) }, { compact: true })}</li>`).join("")}</ol>
       <p class="pv-why">Entrano tutte: <b>${pct(m.p)}</b> (prudente ${pct(m.plan.pLow)}) · quota totale ${num(m.plan.odds)}${est ? "*" : ""} · quota minima ${num(m.minOdds)}${est ? "<br><small>* quota stimata: preleva le quote reali per confermarla</small>" : ""}</p>
       <div class="pv-stake">${stake}</div>${actions}
@@ -695,11 +697,10 @@ function legHtml(l) {
     <span class="pl-pick"><b>${esc(l.label)}</b><small>prudente ${pct(l.pLow)}${l.pApi != null ? ` · API ${pct(l.pApi)}` : ""}</small></span>
     <span class="pl-res">${sc ? `<b>${sc[0]}–${sc[1]}</b>` : `<small>${l.live?.status === "in_progress" ? "in corso" : "da giocare"}</small>`}<span class="af-pill ${PLAY_PILL[l.status]}">${PLAY_IT[l.status]}</span></span></li>`;
 }
-/** Una giocata salvata: stessa card del preview (dalla fotografia salvata) + stato, risultato, esito. Le giocate vecchie senza fotografia usano la card semplice. */
-function playCard({ play, legs, status, profit }) {
-  const st = `<span class="af-pill ${PLAY_PILL[status]}">${PLAY_IT[status]}</span>`;
+/** Dettagli di una giocata (pannello espanso): la stessa card del preview (dalla fotografia salvata) senza ripetere squadre ed esito, già visibili nella riga. */
+function playBody({ play, legs, status, profit }) {
   const foot = `<p class="pl-foot">Salvata ${esc(dayShort(play.savedAt))}${play.stake ? ` · puntata ${eur(play.stake)}` : ""}${profit != null ? ` · esito <b class="${profit >= 0 ? "pl-gain" : "pl-loss"}">${profit >= 0 ? "+" : ""}${eur(profit)}</b>` : ""}</p>`;
-  const del = `<button class="link" type="button" data-del-play="${esc(play.id)}">Elimina</button>`;
+  const del = `<button class="link danger" type="button" data-del-play="${esc(play.id)}">Elimina</button>`;
   const sc = (l) => l.res ?? (l.live?.status === "final" ? [l.live.homeScore, l.live.awayScore] : null);
   if (play.snap && play.kind === "single") {
     const l = legs[0], r = sc(l);
@@ -707,40 +708,72 @@ function playCard({ play, legs, status, profit }) {
     if (!item.corner && !r) item.corner = cornerCache.get(l.matchId) ?? null;          // salvata prima che arrivassero i corner e partita non ancora giocata: si mostra ora
     const bet = isBetItem(item);
     const stake = bet && play.snap.plan ? `<p class="pv-stake">${planLine(play.snap.plan)}</p>` : "";
-    return `<div class="pl-wrap ${status}">${singleCardHtml(item, { top: st, stake, actions: `<span class="pv-btns"><button class="link" type="button" data-open="${esc(l.matchId)}">Scheda partita</button>${del}</span>${foot}` })}</div>`;
+    return singleCardHtml(item, { head: false, stake, actions: `<span class="pv-btns"><button class="link" type="button" data-open="${esc(l.matchId)}">Scheda partita</button>${del}</span>${foot}` });
   }
   if (play.snap && play.kind === "multiple") {
     const m = play.snap;
     const legExtra = (leg) => { const l = legs.find((x) => x.matchId === leg.item.id); const r = l && sc(l); return l ? `<span class="lg-st ${l.status}">${r ? `${r[0]}–${r[1]} · ` : ""}${PLAY_IT[l.status]}</span>` : ""; };
     const legsOpen = `<span class="pv-btns"><span class="pl-open-legs">${m.legs.map((l) => `<button class="link" type="button" data-open="${esc(l.item.id)}">${esc(l.item.home)}</button>`).join("")}</span>${del}</span>${foot}`;
-    return `<div class="pl-wrap ${status}">${multiCardHtml(m, { top: st, legExtra, stake: multiLine(m), actions: legsOpen })}</div>`;
+    return multiCardHtml(m, { head: false, legExtra, stake: multiLine(m), actions: legsOpen });
   }
-  return `<article class="pl-card ${status}">
-        <header><b>${esc(play.label)}</b>${st}</header>
-        <ul>${legs.map(legHtml).join("")}</ul>
-        <footer><span>Salvata ${esc(dayShort(play.savedAt))}${play.odds ? ` · quota ${num(play.odds)}${play.oddsSource ? ` (${esc(play.oddsSource)})` : ""}` : ""}${play.stake ? ` · puntata ${eur(play.stake)}` : ""}${profit != null ? ` · <b class="${profit >= 0 ? "pl-gain" : "pl-loss"}">${profit >= 0 ? "+" : ""}${eur(profit)}</b>` : ""}</span>${del}</footer></article>`;
+  return `<div class="pl-legacy"><ul>${legs.map(legHtml).join("")}</ul><p class="pl-foot">Salvata ${esc(dayShort(play.savedAt))}${play.odds ? ` · quota ${num(play.odds)}${play.oddsSource ? ` (${esc(play.oddsSource)})` : ""}` : ""}${play.stake ? ` · puntata ${eur(play.stake)}` : ""}${profit != null ? ` · <b class="${profit >= 0 ? "pl-gain" : "pl-loss"}">${profit >= 0 ? "+" : ""}${eur(profit)}</b>` : ""}</p><span class="pv-btns">${del}</span></div>`;
 }
+/** Una giocata nell'elenco: riga compatta (squadre, scudetti, esito) + pannello a fisarmonica con tutti i dettagli. */
+const playItemHtml = (r) => accordionHtml({ id: `p:${r.play.id}`, open: openAcc.has(`p:${r.play.id}`), cls: `pl st-${r.status}`, headCls: "pl-head", head: playHeadHtml(r), body: `<div class="pl-pane">${playBody(r)}</div>` });
+const playUi = { filter: "all" };
+const PL_FILTERS = [["all", "Tutte"], ["pending", "In attesa"], ["done", "Concluse"]];
+function playListHtml(ev) {
+  if (!plays.length) return `<div class="empty"><p>Nessuna giocata salvata. Dal preview premi “Salva le BET” (o “Salva giocata” su una singola o una multipla): il giorno dopo le troverai qui, confrontate con i risultati.</p><button class="primary" type="button" data-goto="matches">Vai alle partite</button></div>`;
+  const rows = filterRows(ev.rows, playUi.filter);
+  if (!rows.length) return `<p class="empty">${playUi.filter === "pending" ? "Nessuna giocata in attesa." : "Nessuna giocata conclusa."}</p>`;
+  return groupByDay(rows).map((g) => `<section class="pl-day"><h3 class="grp">${esc(g.label)}</h3>${g.rows.map(playItemHtml).join("")}</section>`).join("");
+}
+const anyPlayOpen = () => [...openAcc].some((k) => k.startsWith("p:"));
 function renderPlays(note = "") {
-  const ev = evaluate(plays, playResults);
-  const t = ev.total;
+  const y = window.scrollY, ev = evaluate(plays, playResults), t = ev.total;
   const tile = (k, v, cls = "") => `<div class="${cls}"><small>${k}</small><b>${v}</b></div>`;
-  const body = !plays.length
-    ? `<p class="empty">Nessuna giocata salvata. Dal preview premi “Salva giocata” su una singola o su una multipla: il giorno dopo le troverai qui, confrontate con i risultati.</p>`
-    : `<div class="pl-sum">${tile("Centrate", t.won + t.lost ? `${t.won} su ${t.won + t.lost}${t.rate != null ? ` · ${pct(t.rate)}` : ""}` : "—", t.won + t.lost && t.rate >= 0.5 ? "good" : "")}${tile("In attesa", String(t.pending))}${tile("Esito netto", t.staked ? eur(t.profit) : "—", t.staked ? (t.profit >= 0 ? "good" : "bad") : "")}</div>
-      ${efficiencyHtml(efficiency(plays, playResults), { esc, pct })}
-            ${t.staked ? `<p class="pl-note">Esito netto calcolato sulle ${eur(t.staked)} puntate delle giocate già concluse (con puntata e quota salvate).</p>` : ""}
-      <div class="pl-list" id="pl-list">${ev.rows.map((r) => `<div class="pl-item" data-play="${esc(r.play.id)}"><button class="drag-h" type="button" aria-label="Trascina per riordinare la giocata, oppure usa le frecce su e giù">${icon("grip-vertical")}</button>${playCard(r)}</div>`).join("")}</div>`;
-  $("#plays-body").innerHTML = `<h2 class="d-title">Le mie giocate</h2><p class="d-sub">Le previsioni salvate dal preview, confrontate con i risultati veri.</p>
-    <div id="reliability">${reliabilityState.html}</div>
-    <div class="pv-actions"><button class="primary" id="refresh-plays" type="button">Aggiorna risultati</button></div><p class="pv-qstatus" id="plays-status" aria-live="polite">${esc(note)}</p>${body}
-    <p class="foot">Le giocate restano salvate in questo dispositivo (non su Supabase). I risultati arrivano dalla sincronizzazione dei campionati: se una partita finita risulta ancora “in attesa”, premi Aggiorna risultati tra qualche minuto.</p>`;
-  bindPlaysReorder();
+  const strip = plays.length ? `<div class="pl-sum pl-strip">${tile("Centrate", t.won + t.lost ? `${t.won} su ${t.won + t.lost}${t.rate != null ? ` · ${pct(t.rate)}` : ""}` : "—", t.won + t.lost && t.rate >= 0.5 ? "good" : "")}${tile("In attesa", String(t.pending))}${tile("Netto", t.staked ? eur(t.profit) : "—", t.staked ? (t.profit >= 0 ? "good" : "bad") : "")}</div>` : "";
+  const seg = plays.length ? `<div class="seg" id="pl-seg" role="group" aria-label="Filtro giocate" style="--i:${PL_FILTERS.findIndex(([k]) => k === playUi.filter)}">${PL_FILTERS.map(([k, l]) => `<button type="button" data-plf="${k}" aria-pressed="${playUi.filter === k}">${l}</button>`).join("")}</div>` : "";
+  const stats = accordionHtml({ id: "stats", open: openAcc.has("stats"), cls: "stats-acc", headCls: "stats-head",
+    head: `<span class="stats-t"><b>Statistiche e affidabilità</b><small>Efficienza dei pronostici e dei BET dell'app</small></span>`,
+    body: `<div class="pl-pane"><div id="reliability">${reliabilityState.html}</div>${plays.length ? efficiencyHtml(efficiency(plays, playResults), { esc, pct }) : ""}${t.staked ? `<p class="pl-note">Esito netto calcolato sulle ${eur(t.staked)} puntate delle giocate già concluse (con puntata e quota salvate).</p>` : ""}</div>` });
+  $("#plays-body").innerHTML = `<h2 class="d-title">Le mie giocate</h2>${strip}${seg}
+    <div class="pl-meta"><span class="pl-status" id="plays-status" aria-live="polite">${esc(note)}</span><button class="link" type="button" data-collapse-all${anyPlayOpen() ? "" : " hidden"}>Comprimi tutte</button></div>
+    <div class="pl-list${ev.rows.length > 40 ? " long" : ""}" id="pl-list">${playListHtml(ev)}</div>
+    ${stats}
+    <p class="foot">Le giocate restano salvate in questo dispositivo (non su Supabase). Tira verso il basso per aggiornare i risultati: se una partita finita risulta ancora “in attesa”, riprova tra qualche minuto.</p>`;
+  window.scrollTo({ top: y });
 }
-/** Trascina la maniglia (o frecce su/giù) per riordinare le giocate salvate: l'ordine resta nel browser. */
-function bindPlaysReorder() {
-  const box = $("#pl-list");
-  if (!box) return;
-  enableReorder(box, { itemSel: ".pl-item", handleSel: ".drag-h", idOf: (el) => el.dataset.play, onDone: (ids) => { plays = orderBy(plays, ids, (p) => p.id); savePlays(plays); } });
+/** Cambio filtro: aggiorna solo l'elenco (il selettore scorre senza essere ricreato). */
+function setPlayFilter(f) {
+  playUi.filter = f;
+  const seg = $("#pl-seg");
+  seg?.style.setProperty("--i", String(PL_FILTERS.findIndex(([k]) => k === f)));
+  for (const b of seg?.querySelectorAll("[data-plf]") ?? []) b.setAttribute("aria-pressed", String(b.dataset.plf === f));
+  const list = $("#pl-list"); if (list) list.innerHTML = playListHtml(evaluate(plays, playResults));
+  syncCollapseBtn();
+}
+function syncCollapseBtn() { const b = $("[data-collapse-all]"); if (b) b.hidden = !anyPlayOpen(); }
+/** Apre/chiude una fisarmonica: classe (animazione in CSS), aria-expanded e inert; lo stato resta in openAcc. */
+function toggleAcc(acc, force) {
+  const id = acc.dataset.acc, open = force ?? !acc.classList.contains("open");
+  acc.classList.toggle("open", open);
+  acc.querySelector(":scope > .acc-head")?.setAttribute("aria-expanded", String(open));
+  acc.querySelector(":scope > .acc-panel")?.toggleAttribute("inert", !open);
+  open ? openAcc.add(id) : openAcc.delete(id);
+  if (id.startsWith("p:")) syncCollapseBtn();
+  if (open && id.startsWith("p:")) setTimeout(() => {          // se il pannello finisce sotto la barra inferiore, la pagina scorre il minimo necessario
+    const r = acc.getBoundingClientRect(), limit = window.innerHeight - ($(".tabbar")?.offsetHeight ?? 62) - 12;
+    if (r.bottom > limit && r.top > 70) window.scrollBy({ top: Math.min(r.bottom - limit, r.top - 70), behavior: reduceMotion() ? "auto" : "smooth" });
+  }, 300);
+}
+/** Elimina con possibilità di annullare: la giocata torna nella stessa posizione. */
+function deletePlay(id) {
+  const index = plays.findIndex((p) => p.id === id);
+  if (index < 0) return;
+  const [play] = plays.splice(index, 1);
+  openAcc.delete(`p:${id}`); savePlays(plays); updatePlaysBadge(); renderPlays();
+  showToast("Giocata eliminata", { action: "Annulla", ms: 6000, onAction: () => { plays.splice(Math.min(index, plays.length), 0, play); savePlays(plays); updatePlaysBadge(); renderPlays(); } });
 }
 /* Affidabilità di tutti i BET registrati dall'app (non solo quelli salvati): letta dal server, mostrata in cima alla vista Giocate. */
 const reliabilityState = { html: `<section class="ef-card"><h3>Affidabilità dei BET dell'app</h3><p class="ef-empty">Calcolo in corso…</p></section>`, at: 0 };
@@ -755,7 +788,7 @@ async function loadReliability() {
 let playsBusy = false;
 async function refreshPlays() {
   if (playsBusy) return;
-  playsBusy = true;
+  playsBusy = true; $("#refresh").classList.add("spin");
   const set = (m) => { const el = $("#plays-status"); if (el) el.textContent = m; };
   try {
     const ids = pendingMatchIds(plays);
@@ -785,9 +818,8 @@ async function refreshPlays() {
       if (absorbCorners(plays, Object.fromEntries(actualCache))) savePlays(plays);
     }
     renderPlays(ids.length ? `Risultati aggiornati alle ${fmtTime.format(new Date())}.` : "");
-  } catch (e) { renderPlays(`Risultati non disponibili: ${e.message}`); } finally { playsBusy = false; }
+  } catch (e) { renderPlays(`Risultati non disponibili: ${e.message}`); } finally { playsBusy = false; $("#refresh").classList.toggle("spin", state.loading || Boolean(state.syncing)); }
 }
-function openPlays() { showView("plays"); }
 
 /* ---------- PDF del riepilogo ---------- */
 async function sharePdf(btn) {
@@ -809,61 +841,55 @@ async function sharePdf(btn) {
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     }
   } catch (e) {
-    if (e?.name !== "AbortError") btn.textContent = "Errore nel PDF";
-    else btn.textContent = label;
-    setTimeout(() => { btn.textContent = label; }, 2500);
-    btn.disabled = false;
+    if (e?.name !== "AbortError") showToast("Non riesco a creare il PDF");
+    btn.textContent = label; btn.disabled = false;
     return;
   }
   btn.textContent = label; btn.disabled = false;
 }
 
-/* ---------- Metodo ---------- */
 /* ---------- Eventi ---------- */
 document.addEventListener("click", (e) => {
   const t = e.target;
-  if (t.closest("[data-close]")) t.closest("dialog").close();
+  if (t.closest("[data-close]")) closeDialog(t.closest("dialog"));
   if (t.closest("[data-af-retry]") && detailState) { detailState.afTries = 0; loadAf(detailState.id, 0); }
   if (t.closest("[data-af-extra]") && detailState) { detailState.extra = true; detailState.afTries = 0; t.closest("[data-af-extra]").textContent = "Scarico gli altri dati…"; t.closest("[data-af-extra]").disabled = true; loadAf(detailState.id, 0); }
   if (t.closest("[data-af-refresh]") && detailState) { detailState.afTries = 0; t.closest("[data-af-refresh]").textContent = "Aggiorno…"; loadAf(detailState.id, 0, { refresh: true }); }
-  else if (t.tagName === "DIALOG") t.close();
+  else if (t.tagName === "DIALOG") closeDialog(t);
   const chip = t.closest("[data-league]");
   if (chip) {
     state.league = chip.dataset.league;
     const code = state.league.startsWith("n:") ? state.league.slice(2) : state.leagues.find((l) => l.id === state.league)?.country;
     const l = state.leagues.find((x) => x.country === code);
-    if (l) state.openKeys.add(`${l.continent}:${l.country}`);
+    if (l) openAcc.add(`nat:${l.continent}:${l.country}`);
     state.navOpen = false; animateNext = true; render();
   }
   if (t.closest("#nav-toggle")) { state.navOpen = !state.navOpen; render(); }
   if (!t.closest(".menu-wrap")) closeSelMenu();
   const day = t.closest("[data-day]"); if (day) { state.day = day.dataset.day; animateNext = true; render(); }
   const open = t.closest("[data-open]"); if (open) openDetail(open.dataset.open);
-  if (t.closest("#copy-preview")) navigator.clipboard?.writeText(previewText(lastPreview)).then(() => { t.textContent = "Copiato"; });
+  if (t.closest("#copy-preview")) navigator.clipboard?.writeText(previewText(lastPreview)).then(() => showToast("Testo copiato"), () => showToast("Non riesco a copiare il testo"));
   if (t.closest("#share-pdf")) sharePdf(t.closest("#share-pdf"));
   const sv = t.closest("[data-save]");
-  if (sv) { const item = lastPreview?.items.find((i) => i.id === sv.dataset.save); if (item?.pick) { commitPlay(singleOf(item)); sv.textContent = "✓ Salvata"; sv.classList.add("done"); sv.disabled = true; } }
+  if (sv) { const item = lastPreview?.items.find((i) => i.id === sv.dataset.save); if (item?.pick) { commitPlay(singleOf(item)); sv.textContent = "✓ Salvata"; sv.classList.add("done"); sv.disabled = true; showToast("Giocata salvata"); } }
   const sm = t.closest("[data-save-multi]");
-  if (sm && lastPlan?.multiples[Number(sm.dataset.saveMulti)]) { commitPlay(multiOf(lastPlan.multiples[Number(sm.dataset.saveMulti)])); sm.textContent = "✓ Salvata"; sm.classList.add("done"); sm.disabled = true; }
+  if (sm && lastPlan?.multiples[Number(sm.dataset.saveMulti)]) { commitPlay(multiOf(lastPlan.multiples[Number(sm.dataset.saveMulti)])); sm.textContent = "✓ Salvata"; sm.classList.add("done"); sm.disabled = true; showToast("Multipla salvata"); }
   if (t.closest("#save-bets") && lastPreview) {
     const bets = lastPreview.items.filter(isBetItem);
     const n = bets.filter((i) => commitPlay(singleOf(i))).length;
-    t.closest("#save-bets").textContent = n ? `✓ ${n} salvate` : "Già salvate";
+    const sb = t.closest("#save-bets"); sb.textContent = "✓ BET già salvate"; sb.disabled = true; showToast(n ? `${n} ${n === 1 ? "giocata salvata" : "giocate salvate"}` : "Giocate già salvate");
     for (const b of document.querySelectorAll("[data-save]")) if (bets.some((i) => i.id === b.dataset.save)) { b.textContent = "✓ Salvata"; b.classList.add("done"); b.disabled = true; }
   }
-  if (t.closest("#refresh-plays")) refreshPlays();
   const del = t.closest("[data-del-play]");
-  if (del) { plays = removePlay(plays, del.dataset.delPlay); savePlays(plays); updatePlaysBadge(); renderPlays(); }
+  if (del) deletePlay(del.dataset.delPlay);
+  const acch = t.closest(".acc-head"); if (acch) toggleAcc(acch.closest(".acc"));
+  const plf = t.closest("[data-plf]"); if (plf) setPlayFilter(plf.dataset.plf);
+  if (t.closest("[data-collapse-all]")) { for (const a of document.querySelectorAll("#pl-list .acc.open")) toggleAcc(a, false); }
+  const go = t.closest("[data-goto]"); if (go) showView(go.dataset.goto);
 });
-// <details> non propaga "toggle": lo ascoltiamo in cattura per ricordare quali nazioni sono aperte.
-document.addEventListener("toggle", (e) => {
-  const d = e.target;
-  if (!(d instanceof HTMLDetailsElement) || !d.dataset.key) return;
-  d.open ? state.openKeys.add(d.dataset.key) : state.openKeys.delete(d.dataset.key);
-}, true);
 document.addEventListener("change", (e) => {
   const t = e.target;
-  if (t.matches("[data-sel]")) { t.checked ? state.selected.add(t.dataset.sel) : state.selected.delete(t.dataset.sel); render(); }
+  if (t.matches("[data-sel]")) { t.checked ? state.selected.add(t.dataset.sel) : state.selected.delete(t.dataset.sel); t.closest(".row")?.classList.toggle("sel", t.checked); syncSelbar(); }   // niente ridisegno della lista: aggiorna solo la riga toccata
   if (t.id === "history-count") { state.n = Number(t.value); load({ sync: false }); }
   if (t.id === "detail-n") { state.n = Number(t.value); $("#history-count").value = String(state.n); openDetailKeep(); }
 });
@@ -879,6 +905,26 @@ async function openDetailKeep() {
   const id = detailState.id;
   detailState = { ...detailState, id, data: await getJson(`/api/analysis?id=${encodeURIComponent(id)}&n=${state.n}`) };
   renderDetail();
+}
+/* Fogli: chiusura animata, Esc e sfondo passano da qui; sul telefono si chiudono anche trascinando la maniglia verso il basso (solo la maniglia: lo scroll del contenuto non c'entra). */
+function closeDialog(d) {
+  if (!d?.open || d.classList.contains("closing")) return;
+  if (reduceMotion()) { d.close(); return; }
+  d.classList.add("closing");
+  let done = false;
+  const fin = () => { if (done) return; done = true; d.classList.remove("closing"); d.style.removeProperty("--sheet-dy"); d.close(); };
+  d.addEventListener("animationend", (e) => { if (e.target === d) fin(); });
+  setTimeout(fin, 360);
+}
+for (const d of document.querySelectorAll("dialog")) {
+  d.addEventListener("cancel", (e) => { e.preventDefault(); closeDialog(d); });
+  const g = d.querySelector(".grab");
+  if (!g) continue;
+  let y0 = null, dy = 0, pid = null;
+  g.addEventListener("pointerdown", (e) => { y0 = e.clientY; dy = 0; pid = e.pointerId; g.setPointerCapture?.(pid); d.style.transition = "none"; });
+  g.addEventListener("pointermove", (e) => { if (y0 == null || e.pointerId !== pid) return; dy = Math.max(0, e.clientY - y0); d.style.setProperty("--sheet-dy", `${dy}px`); });
+  const end = (e) => { if (y0 == null || e.pointerId !== pid) return; const go = dy > 90; y0 = null; d.style.transition = ""; if (go) closeDialog(d); else d.style.removeProperty("--sheet-dy"); };
+  g.addEventListener("pointerup", end); g.addEventListener("pointercancel", end);
 }
 $("#detail").addEventListener("close", () => { clearTimeout(afTimer); clearTimeout(anTimer); });
 $("#preview").addEventListener("close", () => clearTimeout(pvTimer));
@@ -917,17 +963,16 @@ $("#select-day").addEventListener("click", () => {
 $("#sel-none").addEventListener("click", () => { state.selected.clear(); closeSelMenu(); render(); });
 
 /* Impostazioni */
-$("#set-refresh").addEventListener("click", () => { state.syncTried = false; load(); showView("matches"); });
 $("#clear-plays").addEventListener("click", () => {
   if (!plays.length) return;
   if (confirm(`Eliminare le ${plays.length} giocate salvate? Non si può annullare.`)) { plays = []; savePlays(plays); updatePlaysBadge(); renderPlays(); }
 });
 
-/* Tira per aggiornare (solo nella lista partite, in cima alla pagina) */
+/* Tira per aggiornare (lista partite e giocate, in cima alla pagina) */
 {
   const ptr = $("#ptr"); let y0 = 0, dy = 0, on = false;
   const reset = () => { ptr.style.setProperty("--pull", "0"); ptr.classList.remove("ready"); on = false; dy = 0; };
-  document.addEventListener("touchstart", (e) => { on = document.body.dataset.view === "matches" && window.scrollY <= 0 && !document.querySelector("dialog[open]") && !state.loading; y0 = e.touches[0].clientY; dy = 0; }, { passive: true });
+  document.addEventListener("touchstart", (e) => { const v = document.body.dataset.view; on = (v === "matches" ? !state.loading : v === "plays" && !playsBusy) && window.scrollY <= 0 && !document.querySelector("dialog[open]"); y0 = e.touches[0].clientY; dy = 0; }, { passive: true });
   document.addEventListener("touchmove", (e) => {
     if (!on) return;
     dy = e.touches[0].clientY - y0;
@@ -935,7 +980,7 @@ $("#clear-plays").addEventListener("click", () => {
     ptr.style.setProperty("--pull", String(Math.min(dy, 140) / 140));
     ptr.classList.toggle("ready", dy > 100);
   }, { passive: true });
-  document.addEventListener("touchend", () => { const go = on && dy > 100; reset(); if (go) { state.syncTried = false; load(); } });
+  document.addEventListener("touchend", () => { const go = on && dy > 100; reset(); if (go) { if (document.body.dataset.view === "plays") refreshPlays(); else { state.syncTried = false; load(); } } });
 }
 
 /** Cerca le quote corner delle partite del giorno (a piccoli passi, riprova da solo se API-Football limita le richieste). */
@@ -977,7 +1022,7 @@ $("#select-bets").addEventListener("click", () => {
 });
 $("#sel-clear").addEventListener("click", () => { state.selected.clear(); render(); });
 $("#make-preview").addEventListener("click", makePreview);
-$("#refresh").addEventListener("click", () => { state.syncTried = false; load(); });
+$("#refresh").addEventListener("click", () => { if (document.body.dataset.view === "plays") refreshPlays(); else { state.syncTried = false; load(); } });
 setInterval(() => { if (document.visibilityState === "visible" && !state.error) { state.syncTried = false; load(); } }, 5 * 60e3);
 
 // Apertura: prima l'ultimo elenco salvato (istantaneo), poi l'aggiornamento in secondo piano.
