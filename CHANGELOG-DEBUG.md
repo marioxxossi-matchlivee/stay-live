@@ -76,3 +76,11 @@ Nessuna migrazione. Nessuna nuova variabile.
 - **Avvisi di sicurezza/prestazioni**: solo livello INFO. «RLS senza policy» su 7 tabelle è voluto (il server usa la chiave di servizio; aggiungere policy aprirebbe l'accesso). Indici non usati e FK senza indice sono nelle tabelle legacy vuote.
 - **Non toccato (decidi tu)**: `odds_quotes` (12 righe) e `odds_usage` (1) non servono più, ma l'app in produzione le usa finché non distribuisci questo patch; dopo il deploy: `drop table if exists public.odds_quotes, public.odds_usage;`. Le tabelle legacy vuote (`fixtures`, `teams`, `team_match_stats`, `predictions`, `odds_snapshots`, `competitions`, `seasons`, `favorites`, `api_cache`, `analysis_log`) non sono usate dal codice.
 - **Backtest non eseguito sui dati reali**: l'ambiente non può portare 3.838 righe dal database al sandbox senza ritrascriverle a mano (rischio di errori). Esporta il CSV e caricalo in chat: lo lancio io.
+
+## Taratura Over/Under: `formShrinkK` 4 → 24 (aggiornamento)
+Misurato su `backtest_finals` (2.126 partite dal 1/5/2026, forma delle ultime 8 gare, media gol del campionato, nessun dato futuro), mercato Over 2,5:
+- Con `formShrinkK = 4` (prima) il modello storico era PEGGIORE della sola media del campionato (Brier 0,2507 vs 0,2428). Over dichiarati al 71% uscivano al 64%; **Under dichiarati al 63% uscivano al 46,5%** (peggio di una moneta).
+- Con 24 (≈ 30 partite non pesate) Brier 0,2416 (meglio della media campionato) e **Over dichiarati al 67,2% escono al 67,1%**: taratura perfetta. Gli Under diventano rari (pochi con probabilità alta): è corretto, il segnale non c'è.
+- Nuovo parametro `MODEL.formShrinkK` (solo forma squadra); `shrinkK` resta per i gol attesi di API-Football. `model_ver` cambia da solo: le previsioni nuove non si mescolano alle vecchie.
+- Limite: misurato solo sulla componente storica (senza API-Football né quote) e senza quote storiche: dimostra la taratura, NON la redditività.
+- Effetto atteso: molti meno BET (su dati senza differenze reali tra squadre il numero di BET cala di oltre la metà: test in `tests/backtestbets.test.js`).
