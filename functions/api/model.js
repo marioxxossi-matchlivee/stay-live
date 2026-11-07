@@ -239,7 +239,8 @@ export function outcomes(hg, ag) {
 
 /** finals: righe {league,kickoff_at,home_id,away_id,home_name,away_name,home_score,away_score,neutral_site} */
 export function buildContext(finals) {
-  const valid = finals.filter((f) => Number.isFinite(f.home_score) && Number.isFinite(f.away_score) && Date.parse(f.kickoff_at));
+  // Le partite decise ai supplementari o ai rigori hanno nel punteggio anche i gol oltre il 90': falserebbero medie e frequenze (nel database sono ~0,7%).
+  const valid = finals.filter((f) => Number.isFinite(f.home_score) && Number.isFinite(f.away_score) && Date.parse(f.kickoff_at) && f.decided_in !== "extra_time" && f.decided_in !== "penalties");
   const acc = new Map();
   const pooled = { n: 0, h: 0, a: 0 };
   const freq = new Map(); // frequenza storica di ogni esito, per campionato e totale

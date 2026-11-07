@@ -128,7 +128,7 @@ export function loadFinals(env, now = Date.now()) {
   const hit = finalsMemo.get(key);
   if (hit && now - hit.at < FINALS_TTL) return hit.promise;
   const promise = supabaseGetAll(env, "matches", {
-    select: "league,kickoff_at,home_id,away_id,home_name,away_name,home_score,away_score,neutral_site",
+    select: "league,kickoff_at,home_id,away_id,home_name,away_name,home_score,away_score,neutral_site,decided_in",
     status: "eq.final",
     season: `eq.${SEASON}`,
     order: "kickoff_at.desc,game_id.asc",
