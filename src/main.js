@@ -58,11 +58,11 @@ function applyData(data) {
   if (data.needsCrests?.length) fillCrests(data.needsCrests);
 }
 
-async function load({ sync = true } = {}) {
+async function load({ sync = true, fresh = false } = {}) {
   if (state.loading || state.syncing) return;
   state.loading = true; state.error = null; render();
   try {
-    let data = await getJson("/api/fixtures");
+    let data = await getJson(fresh ? "/api/fixtures?fresh=1" : "/api/fixtures");
     applyData(data); state.banner = null;
     if (sync && !state.syncTried && data.needsSync.length) {
       state.syncTried = true;
@@ -90,7 +90,7 @@ async function load({ sync = true } = {}) {
       };
       state.banner = `Aggiorno i campionati… 0/${total}`; render();
       await Promise.all(Array.from({ length: Math.min(2, total) }, worker));
-      data = await getJson("/api/fixtures");
+      data = await getJson("/api/fixtures?fresh=1");     // dopo la sincronizzazione si salta la copia pronta
       applyData(data);
       state.banner = failures.length ? `Aggiornamento incompleto. ${failures[0]}` : null;
     }
@@ -119,7 +119,7 @@ async function fillCrests(leagueIds) {
       }
       await sleep(1200);
     }
-    if (any) { const data = await getJson("/api/fixtures"); state.matches = data.matches; render(); }
+    if (any) { const data = await getJson("/api/fixtures?fresh=1"); state.matches = data.matches; render(); }
   } catch { /* gli scudetti sono un di più: restano le sigle */ } finally { crestsBusy = false; }
 }
 
@@ -980,7 +980,7 @@ $("#clear-plays").addEventListener("click", () => {
     ptr.style.setProperty("--pull", String(Math.min(dy, 140) / 140));
     ptr.classList.toggle("ready", dy > 100);
   }, { passive: true });
-  document.addEventListener("touchend", () => { const go = on && dy > 100; reset(); if (go) { if (document.body.dataset.view === "plays") refreshPlays(); else { state.syncTried = false; load(); } } });
+  document.addEventListener("touchend", () => { const go = on && dy > 100; reset(); if (go) { if (document.body.dataset.view === "plays") refreshPlays(); else { state.syncTried = false; load({ fresh: true }); } } });
 }
 
 /** Cerca le quote corner delle partite del giorno (a piccoli passi, riprova da solo se API-Football limita le richieste). */
@@ -1022,7 +1022,7 @@ $("#select-bets").addEventListener("click", () => {
 });
 $("#sel-clear").addEventListener("click", () => { state.selected.clear(); render(); });
 $("#make-preview").addEventListener("click", makePreview);
-$("#refresh").addEventListener("click", () => { if (document.body.dataset.view === "plays") refreshPlays(); else { state.syncTried = false; load(); } });
+$("#refresh").addEventListener("click", () => { if (document.body.dataset.view === "plays") refreshPlays(); else { state.syncTried = false; load({ fresh: true }); } });
 setInterval(() => { if (document.visibilityState === "visible" && !state.error) { state.syncTried = false; load(); } }, 5 * 60e3);
 
 // Apertura: prima l'ultimo elenco salvato (istantaneo), poi l'aggiornamento in secondo piano.
