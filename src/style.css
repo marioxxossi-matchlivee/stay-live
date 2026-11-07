@@ -720,3 +720,18 @@ dialog::backdrop{background:rgba(14,26,43,.42);-webkit-backdrop-filter:blur(4px)
 /* Scheda partita unica: dati API-Football sotto l'analisi del modello */
 .u-data{margin-top:14px;display:grid;gap:8px}
 .u-h{margin:0 0 2px;font-size:15px}.u-h small{font-weight:400;color:var(--mute);margin-left:6px}
+
+/* Efficienza dei pronostici */
+.ef-card{background:var(--card);border:1px solid var(--soft-line,var(--line));border-radius:18px;padding:14px 16px;margin:0 0 14px;box-shadow:var(--shadow,none)}
+.ef-card h3{font:800 16px/1.2 var(--head);margin:0 0 8px;letter-spacing:-.02em}
+.ef-card h4{font:700 12px/1 var(--body);text-transform:uppercase;letter-spacing:.06em;color:var(--mute);margin:14px 0 8px}
+.ef-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.ef-head b{font:800 30px/1 var(--head);letter-spacing:-.03em;color:var(--pitch)}
+.ef-head span,.ef-empty,.ef-note{font-size:13px;color:var(--ink-2);margin:0}
+.ef-note{margin-top:10px;color:var(--warn)}
+.ef-list{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+.ef-list li{display:grid;grid-template-columns:minmax(78px,1.2fr) 2fr auto;align-items:center;gap:10px;font-size:13.5px}
+.ef-bar{height:8px;border-radius:99px;background:var(--soft-2,#e9edf2);overflow:hidden}
+.ef-bar i{display:block;height:100%;border-radius:99px;background:var(--pitch)}
+.ef-val{display:flex;gap:6px;align-items:baseline;justify-content:flex-end;min-width:74px}
+.ef-val small{color:var(--mute);font-size:11.5px}

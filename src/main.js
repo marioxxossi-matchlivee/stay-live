@@ -5,6 +5,7 @@ import { dayKey, dayParts, eur, esc, fmtTime, num, pct } from "./format.js";
 import { buildPreviewPdf } from "./report.js";
 import { renderAfDetail } from "./afdetail.js";
 import { crest, hideBrokenCrests, matchHeader } from "./ui.js";
+import { efficiency, efficiencyHtml } from "./efficiency.js";
 import { absorbCorners, absorbResults, addPlay, evaluate, legFromItem, loadPlays, pendingCornerIds, pendingMatchIds, playFromItem, removePlay, savePlays, signature } from "./plays.js";
 import { cornerHtml, cornerShort } from "./corners.js";
 
@@ -722,7 +723,8 @@ function renderPlays(note = "") {
   const body = !plays.length
     ? `<p class="empty">Nessuna giocata salvata. Dal preview premi “Salva giocata” su una singola o su una multipla: il giorno dopo le troverai qui, confrontate con i risultati.</p>`
     : `<div class="pl-sum">${tile("Centrate", t.won + t.lost ? `${t.won} su ${t.won + t.lost}${t.rate != null ? ` · ${pct(t.rate)}` : ""}` : "—", t.won + t.lost && t.rate >= 0.5 ? "good" : "")}${tile("In attesa", String(t.pending))}${tile("Esito netto", t.staked ? eur(t.profit) : "—", t.staked ? (t.profit >= 0 ? "good" : "bad") : "")}</div>
-      ${t.staked ? `<p class="pl-note">Esito netto calcolato sulle ${eur(t.staked)} puntate delle giocate già concluse (con puntata e quota salvate).</p>` : ""}
+      ${efficiencyHtml(efficiency(plays, playResults), { esc, pct })}
+            ${t.staked ? `<p class="pl-note">Esito netto calcolato sulle ${eur(t.staked)} puntate delle giocate già concluse (con puntata e quota salvate).</p>` : ""}
       ${ev.rows.map(playCard).join("")}`;
   $("#plays-body").innerHTML = `<h2 class="d-title">Le mie giocate</h2><p class="d-sub">Le previsioni salvate dal preview, confrontate con i risultati veri.</p>
     <div class="pv-actions"><button class="primary" id="refresh-plays" type="button">Aggiorna risultati</button></div><p class="pv-qstatus" id="plays-status" aria-live="polite">${esc(note)}</p>${body}
