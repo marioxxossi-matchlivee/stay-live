@@ -1,7 +1,7 @@
 import { errorMessage, json, loadFinals, missingConfig, supabaseGet } from "./_lib.js";
 import { analyzeMatch, buildContext } from "./model.js";
 import { loadBrainInputs } from "./_brain.js";
-import { modelVersion, predictionRow, recordPredictions } from "./_predictions.js";
+import { legRows, modelVersion, predictionRow, recordLegs, recordPredictions } from "./_predictions.js";
 
 /**
  * GET|POST /api/snapshot?hours=36&live=0   (header x-sync-secret = SYNC_SECRET)
@@ -28,10 +28,12 @@ export async function onRequest({ request, env }) {
     const none = { byGame: new Map() };
     const br = env.API_FOOTBALL_KEY ? await loadBrainInputs(env, matches, now, live ? { live: true, maxMap: Math.max(1, Math.ceil(live / 3)), maxLive: live } : { live: false }).catch((e) => { console.error("Stay Live snapshot brain:", errorMessage(e)); return none; }) : none;
     const ver = modelVersion();
-    const rows = matches.map((m) => predictionRow(m, analyzeMatch(m, ctx, { n: 8, ...(br.byGame.get(m.game_id) ?? {}) }), { now, ver })).filter(Boolean);
-    const stored = await recordPredictions(env, rows);
+    const analyses = matches.map((m) => [m, analyzeMatch(m, ctx, { n: 8, ...(br.byGame.get(m.game_id) ?? {}) })]);
+    const rows = analyses.map(([m, a]) => predictionRow(m, a, { now, ver })).filter(Boolean);
+    const legs = analyses.flatMap(([m, a]) => legRows(m, a, { now, ver }));
+    const [stored, storedLegs] = await Promise.all([recordPredictions(env, rows), recordLegs(env, legs)]);
     const by = (f) => rows.reduce((o, r) => ({ ...o, [f(r)]: (o[f(r)] ?? 0) + 1 }), {});
-    return json({ ok: true, matches: matches.length, stored, bets: rows.filter((r) => r.verdict === "BET").length, basis: by((r) => r.basis ?? "?"), version: ver });
+    return json({ ok: true, matches: matches.length, stored, legs: storedLegs, bets: rows.filter((r) => r.verdict === "BET").length, basis: by((r) => r.basis ?? "?"), version: ver });
   } catch (error) {
     console.error("Stay Live snapshot:", errorMessage(error));
     return json({ error: errorMessage(error) }, 502);
