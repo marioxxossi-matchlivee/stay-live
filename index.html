@@ -42,10 +42,6 @@
           <button type="button" data-seg="bet" aria-pressed="false">Solo BET</button>
           <button type="button" data-seg="custom" aria-pressed="false">O/U + corner</button>
         </div>
-        <div class="leaguebar">
-          <button class="ghost lg-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="league-nav"></button>
-        </div>
-        <nav class="league-nav" id="league-nav" aria-label="Campionati per nazione" hidden></nav>
         <div class="days" id="day-strip" aria-label="Giornata"></div>
         <div class="custom-panel" id="custom-panel" hidden>
           <div class="cp-row">
@@ -57,7 +53,7 @@
           <p class="api-note">Vedi solo le partite con Over o Under 2,5 sopra la soglia, oppure con un corner sopra la soglia. Over/Under 2,5: probabilità del modello (API-Football + ultime partite). Corner: nessun modello, solo la probabilità implicita nelle quote di API-Football; le quote si scaricano solo quando premi “Cerca i corner”.</p>
         </div>
         <div class="listbar">
-          <span id="list-count" class="list-count"></span>
+          <button class="chip-btn lg-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="league-nav"></button>
           <div class="menu-wrap">
             <button class="chip-btn" id="sel-more" type="button" aria-haspopup="menu" aria-expanded="false">Seleziona</button>
             <div class="menu" id="sel-menu" role="menu" hidden>
@@ -67,6 +63,7 @@
             </div>
           </div>
         </div>
+        <nav class="league-nav" id="league-nav" aria-label="Campionati per nazione" hidden></nav>
         <div id="list" class="list"></div>
         <p class="foot">Stime statistiche sperimentali. Non sono garanzie né consigli finanziari.</p>
       </section>
@@ -87,8 +84,7 @@
         <div class="set-group">
           <h2>Dati</h2>
           <div class="set-row"><span><b>Ultimo aggiornamento</b><small id="set-updated">—</small></span></div>
-          <button class="set-btn" id="set-refresh" type="button">Aggiorna ora</button>
-          <p class="set-hint">Per aggiornare i campionati da soli ogni notte (e al mattino) attiva il workflow “Aggiorna campionati” di GitHub: le istruzioni sono nel README. All’apertura l’app mostra subito gli ultimi dati salvati e si aggiorna in secondo piano.</p>
+          <p class="set-hint">I campionati si aggiornano da soli ogni notte e al mattino. All’apertura vedi subito gli ultimi dati salvati; per aggiornare ora usa l’icona in alto o tira la lista verso il basso.</p>
         </div>
         <div class="set-group">
           <h2>Giocate salvate</h2>
@@ -111,8 +107,8 @@
       <button class="tab-item" type="button" data-view="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.2M12 18.8V21M4.6 7.5l1.9 1.1M17.5 15.4l1.9 1.1M4.6 16.5l1.9-1.1M17.5 8.6l1.9-1.1"/></svg><span>Impostazioni</span></button>
     </nav>
 
-    <dialog id="detail" aria-label="Dettaglio partita"><button class="close" data-close aria-label="Chiudi">×</button><div id="detail-body"></div></dialog>
-    <dialog id="preview" aria-label="Preview giornata"><button class="close" data-close aria-label="Chiudi">×</button><div id="preview-body"></div></dialog>
+    <dialog id="detail" aria-label="Dettaglio partita"><span class="grab" aria-hidden="true"></span><button class="close" data-close aria-label="Chiudi">×</button><div id="detail-body"></div></dialog>
+    <dialog id="preview" aria-label="Preview giornata"><span class="grab" aria-hidden="true"></span><button class="close" data-close aria-label="Chiudi">×</button><div id="preview-body"></div></dialog>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
