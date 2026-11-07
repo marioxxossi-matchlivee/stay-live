@@ -58,6 +58,11 @@ In preview, nelle giocate salvate e (con i corner reali) a partita finita, la ca
 
 Il modulo corner usa solo le quote di API-Football (`verified: false`): una probabilità ricavata dalla quota non dimostra alcun vantaggio, quindi non entra in singole né multiple. Un modello statistico dei corner richiede i corner storici per partita (`fixtures/statistics`), che l'app non scarica.
 
+## Affidabilità dei BET (registro dei pronostici)
+Ogni pronostico principale dell'app viene registrato su Supabase (tabella `bet_predictions`, una riga per partita, ~200 byte) **prima** del calcio d'inizio: dopo, la riga è congelata da un trigger e non si può ritoccare a risultato noto. Si registra da tre punti: ogni preview, ogni analisi aperta e `/api/snapshot`, chiamato ogni 4 ore da `.github/workflows/snapshot-predictions.yml` per **tutte** le partite delle prossime 36 ore (anche quelle mai aperte). Lo snapshot usa solo i dati già in cache di API-Football (nessuna richiesta in più; `?live=N` ne permette N).
+`/api/reliability` confronta i BET con il punteggio finale (solo gol) e mostra, in cima a «Giocate»: percentuale di successo con intervallo al 95%, per mercato e per tipo, **dichiarato contro reale** per fasce di probabilità (taratura), rendimento a quota reale e risultati divisi per fonti usate. Conta solo la versione attuale dei parametri del modello (`model_ver`): se ne cambi uno le statistiche ripartono da zero, senza mescolarsi con le vecchie (`?all=1` le somma).
+Migrazione: `supabase/migrations/202611080001_bet_predictions.sql`.
+
 ## Backtest
 
 `npm run backtest -- --file finals.csv [--compare] [--tune]` (vedi l'intestazione di `scripts/backtest.js` per formato ed export da Supabase). Divisione cronologica 60/20/20, nessun dato futuro, metriche (accuracy, precisione, richiamo, Brier, log loss, ECE, ROI, drawdown, rendimento per campionato e mercato, multiple) e Platt scaling fittato sulla validazione. Con meno di 300 giocate nessun vantaggio viene dichiarato dimostrato. Finché non lo esegui su uno storico reale, nessun miglioramento del modello è provato.
