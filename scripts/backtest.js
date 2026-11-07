@@ -5,8 +5,8 @@
  * Input: righe di partite finali con  league, kickoff_at, home_id, away_id, home_name, away_name, home_score, away_score, neutral_site
  * e, facoltative, le quote decimali disponibili PRIMA del calcio d'inizio: odds_home, odds_draw, odds_away, odds_over15, odds_under15,
  * odds_over25, odds_under25, odds_over35, odds_under35. Senza quote si misura solo la qualità delle probabilità (non il rendimento).
- * Export dei dati da Supabase (SQL Editor, esporta CSV):
- *   select league, kickoff_at, home_id, away_id, home_name, away_name, home_score, away_score, neutral_site from matches where status = 'final' order by kickoff_at;
+ * Export dei dati da Supabase (SQL Editor → esporta CSV): `select * from public.backtest_finals;`
+ * (vista creata da supabase/migrations/202611070001_backtest_finals_view.sql; esclude supplementari e rigori).
  *
  * Garanzie: 60% storico / 20% validazione / 20% test in ordine di tempo; per ogni giornata il modello vede SOLO partite precedenti;
  * le soglie si scelgono sulla validazione e si giudicano sul test. Con meno di MIN_BETS_FOR_CLAIM giocate nessun miglioramento è "dimostrato".
