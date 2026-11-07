@@ -735,3 +735,9 @@ dialog::backdrop{background:rgba(14,26,43,.42);-webkit-backdrop-filter:blur(4px)
 .ef-bar i{display:block;height:100%;border-radius:99px;background:var(--pitch)}
 .ef-val{display:flex;gap:6px;align-items:baseline;justify-content:flex-end;min-width:74px}
 .ef-val small{color:var(--mute);font-size:11.5px}
+.ef-ci,.ef-foot{color:var(--mute)}
+.ef-line{font-size:13px;color:var(--ink-2);margin:8px 0 0;line-height:1.5}
+.ef-hint{font-size:13px;color:var(--pitch);margin:8px 0 0}
+.ef-foot{font-size:11.5px;margin:12px 0 0}
+.ef-cal li{grid-template-columns:78px 1fr auto}
+.ef-pair{color:var(--ink-2)}

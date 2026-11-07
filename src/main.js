@@ -5,7 +5,7 @@ import { dayKey, dayParts, eur, esc, fmtTime, num, pct } from "./format.js";
 import { buildPreviewPdf } from "./report.js";
 import { renderAfDetail } from "./afdetail.js";
 import { crest, hideBrokenCrests, matchHeader } from "./ui.js";
-import { efficiency, efficiencyHtml } from "./efficiency.js";
+import { efficiency, efficiencyHtml, reliabilityHtml } from "./efficiency.js";
 import { absorbCorners, absorbResults, addPlay, evaluate, legFromItem, loadPlays, pendingCornerIds, pendingMatchIds, playFromItem, removePlay, savePlays, signature } from "./plays.js";
 import { cornerHtml, cornerShort } from "./corners.js";
 
@@ -727,8 +727,19 @@ function renderPlays(note = "") {
             ${t.staked ? `<p class="pl-note">Esito netto calcolato sulle ${eur(t.staked)} puntate delle giocate già concluse (con puntata e quota salvate).</p>` : ""}
       ${ev.rows.map(playCard).join("")}`;
   $("#plays-body").innerHTML = `<h2 class="d-title">Le mie giocate</h2><p class="d-sub">Le previsioni salvate dal preview, confrontate con i risultati veri.</p>
+    <div id="reliability">${reliabilityState.html}</div>
     <div class="pv-actions"><button class="primary" id="refresh-plays" type="button">Aggiorna risultati</button></div><p class="pv-qstatus" id="plays-status" aria-live="polite">${esc(note)}</p>${body}
     <p class="foot">Le giocate restano salvate in questo dispositivo (non su Supabase). I risultati arrivano dalla sincronizzazione dei campionati: se una partita finita risulta ancora “in attesa”, premi Aggiorna risultati tra qualche minuto.</p>`;
+}
+/* Affidabilità di tutti i BET registrati dall'app (non solo quelli salvati): letta dal server, mostrata in cima alla vista Giocate. */
+const reliabilityState = { html: `<section class="ef-card"><h3>Affidabilità dei BET dell'app</h3><p class="ef-empty">Calcolo in corso…</p></section>`, at: 0 };
+async function loadReliability() {
+  if (Date.now() - reliabilityState.at < 60e3) return;
+  try {
+    reliabilityState.html = reliabilityHtml(await getJson("/api/reliability"), { esc, pct });
+    reliabilityState.at = Date.now();
+  } catch (e) { reliabilityState.html = `<section class="ef-card"><h3>Affidabilità dei BET dell'app</h3><p class="ef-empty">Non disponibile: ${esc(e.message)}</p></section>`; }
+  const el = $("#reliability"); if (el) el.innerHTML = reliabilityState.html;
 }
 let playsBusy = false;
 async function refreshPlays() {
@@ -874,7 +885,7 @@ function showView(name) {
   document.body.dataset.view = name;
   $("#selbar").hidden = name !== "matches" || !state.selected.size;
   window.scrollTo({ top: 0 });
-  if (name === "plays") { renderPlays(); refreshPlays(); }
+  if (name === "plays") { renderPlays(); loadReliability(); refreshPlays(); }
   if (name === "matches") { animateNext = true; render(); }
 }
 document.querySelector(".tabbar").addEventListener("click", (e) => {
