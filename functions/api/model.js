@@ -7,7 +7,10 @@ export const MODEL = {
   priorHome: 1.5, priorAway: 1.2, priorWeight: 30, // media gol di partenza (casa/trasferta) e peso in "partite"
   minLeagueMatches: 20,   // sotto questa soglia il campionato usa la media di tutti i campionati
   decay: 0.92,            // peso della k-esima partita più vecchia = decay^k
-  shrinkK: 4,             // "partite fittizie" di valore medio mescolate alla forma della squadra
+  shrinkK: 4,             // "partite fittizie" mescolate ai gol attesi stagionali del provider (afProbabilities)
+  formShrinkK: 24,        // "partite fittizie" di valore medio mescolate alla forma recente della squadra (teamForm). Era 4: sui dati reali
+                          // (2.126 partite, 2026) con 4 il modello storico peggiorava la media di campionato (Brier 0,251 vs 0,243) e dichiarava
+                          // Under al 63% che uscivano al 46%. Con 24 (≈ 30 partite non pesate) le percentuali dichiarate coincidono con quelle reali.
   lambdaMin: 0.2, lambdaMax: 4,
   maxGoals: 10,
   uncertainty: 0.30,      // SOLO metodo "legacy" (confronto nei backtest): delta = uncertainty / sqrt(partite campione)
@@ -305,8 +308,8 @@ export function teamForm(teamId, before, ctx, n) {
     gaAvg: w ? round(ga / w, 2) : null,
     attackRaw: round(attRaw, 3),
     defenseRaw: round(defRaw, 3),
-    attack: round((w * attRaw + MODEL.shrinkK) / (w + MODEL.shrinkK), 3),
-    defense: round((w * defRaw + MODEL.shrinkK) / (w + MODEL.shrinkK), 3),
+    attack: round((w * attRaw + MODEL.formShrinkK) / (w + MODEL.formShrinkK), 3),
+    defense: round((w * defRaw + MODEL.formShrinkK) / (w + MODEL.formShrinkK), 3),
     last: rows.slice(0, 5).map((r) => ({ date: new Date(r.t).toISOString().slice(0, 10), opp: r.opp, venue: r.venue, gf: r.gf, ga: r.ga })),
   };
 }
