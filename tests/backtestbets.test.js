@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildReport, splitPicks } from "../scripts/backtest-bets.js";
-import { normalize, predict } from "../scripts/backtest.js";
+import { normalize, predict, withModel } from "../scripts/backtest.js";
 
 let seed = 7; const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
 const pois = (l) => { let k = 0, p = 1; const L = Math.exp(-l); do { k += 1; p *= rnd(); } while (p > L); return k - 1; };
@@ -20,7 +20,14 @@ test("ogni consiglio del replay finisce in BET o EVITA con esito vinto/perso", (
 test("nel rodaggio non ci sono pronostici e nessuna partita vede il futuro", () => {
   assert.ok(preds.every((x) => x.kickoffAt >= data[Math.floor(data.length * 0.3)].kickoff_at));
 });
+test("su dati senza differenze reali tra squadre il modello non inventa vantaggi (formShrinkK alto), il vecchio 4 sì", () => {
+  const old = withModel({ formShrinkK: 4 }, () => predict(data, { trainFrac: 0.3, valFrac: 0.7 }));
+  const nBets = (pp) => splitPicks(pp).bets.length;
+  assert.ok(nBets(old) > 0, "con formShrinkK 4 il rumore genera BET");
+  assert.ok(nBets(preds) < nBets(old) * 0.5, "con il valore attuale i BET sul rumore calano di oltre la metà");
+});
 test("il report è Markdown completo e non va in errore con pochi dati", () => {
-  assert.match(buildReport(data, preds), /## Taratura/);
+  const withBets = withModel({ formShrinkK: 4 }, () => predict(data, { trainFrac: 0.3, valFrac: 0.7 }));
+  assert.match(buildReport(data, withBets), /## Taratura/);
   assert.match(buildReport(data.slice(0, 5), predict(data.slice(0, 5), { trainFrac: 0.3, valFrac: 0.7 })), /Nessun BET/);
 });
