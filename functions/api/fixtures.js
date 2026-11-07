@@ -6,6 +6,14 @@ import { loadCornerOdds } from "./_corners.js";
 import { loadLogoIndex, needsTeamList, withLogos } from "./_crests.js";
 import { loadBrainInputs } from "./_brain.js";
 
+/**
+ * Memoria dell'isolate Cloudflare: il consiglio rapido di una partita dipende solo da storico, dati API-Football e dalla partita stessa.
+ * Se nulla è cambiato (stessa firma) si riusa il risultato invece di rifare i calcoli: le aperture successive costano quasi zero CPU.
+ */
+const MEMO = new Map();
+const CTX = { sig: "", ctx: null };      // anche il contesto (medie e forza delle squadre da ~3.800 partite) si ricostruisce solo quando lo storico cambia
+const finalsSignature = (finals) => { let last = "", goals = 0; for (const f of finals) { if (f.kickoff_at > last) last = f.kickoff_at; goals += (f.home_score ?? 0) * 7 + (f.away_score ?? 0); } return `${finals.length}|${last}|${goals}`; };
+
 const COLUMNS = "game_id,league,round,kickoff_at,status,home_id,home_name,away_id,away_name,home_score,away_score,neutral_site";
 
 /** GET /api/fixtures: partite da 36 ore fa a 21 giorni avanti (variabile FIXTURES_DAYS, 3-30), con il consiglio rapido (BET / EVITA). */
@@ -23,7 +31,9 @@ export async function onRequest({ env }) {
       supabaseGet(env, "sync_state", { select: "*" }),
       loadLogoIndex(env),
     ]);
-    const ctx = buildContext(finals);
+    const sig = finalsSignature(finals);
+    if (CTX.sig !== sig) { CTX.ctx = buildContext(finals); CTX.sig = sig; MEMO.clear(); }
+    const ctx = CTX.ctx;
     // Pronostici di API-Football già in cache per le partite dei prossimi giorni (nessuna richiesta al provider da qui): il consiglio rapido ne tiene conto.
     const soon = window.filter((m) => (m.status === "scheduled" || m.status === "in_progress") && Date.parse(m.kickoff_at) < now + 3 * 86400e3);
     const br = env.API_FOOTBALL_KEY && soon.length ? await loadBrainInputs(env, soon, now, { live: false }).catch(() => null) : null;
@@ -31,12 +41,19 @@ export async function onRequest({ env }) {
     const byLeague = Object.fromEntries(states.map((s) => [s.league, s]));
     const matches = window.map((m) => {
       const open = m.status === "scheduled" || m.status === "in_progress";
-      const analysis = open ? analyzeMatch(m, ctx, { n: 8, ...(br?.byGame.get(m.game_id) ?? {}) }) : null;
+      let pick = null, ou = null;
+      if (open) {
+        const extra = br?.byGame.get(m.game_id) ?? null;
+        const key = `${sig}|${m.game_id}|${m.kickoff_at}|${m.status}|${extra ? JSON.stringify(extra) : ""}`;
+        let hit = MEMO.get(key);
+        if (!hit) { const analysis = analyzeMatch(m, ctx, { n: 8, ...(extra ?? {}) }); hit = { pick: compactPick(analysis), ou: ou25Of(analysis) }; if (MEMO.size > 3000) MEMO.clear(); MEMO.set(key, hit); }
+        ({ pick, ou } = hit);
+      }
       return {
         id: m.game_id, league: m.league, round: m.round, kickoffAt: m.kickoff_at, status: m.status,
         home: m.home_name, away: m.away_name, ...withLogos(m, logos), homeScore: m.home_score, awayScore: m.away_score,
-        pick: analysis ? compactPick(analysis) : null,
-        ou: analysis ? ou25Of(analysis) : null,                                   // modalità personalizzata: Over/Under 2,5
+        pick,
+        ou,                                                                       // modalità personalizzata: Over/Under 2,5
         corner: cr?.byGame.get(m.game_id) ?? null,                                // corner (quote di API-Football), solo se già scaricati
       };
     });

@@ -78,7 +78,8 @@ export const SELECTIONS = [
 export const isPreferred = (sel) => MODEL.preferredMarkets.includes(sel.market);
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-const round = (v, d = 4) => (Number.isFinite(v) ? Number(v.toFixed(d)) : null);
+const POW10 = [1, 10, 100, 1e3, 1e4, 1e5, 1e6];
+const round = (v, d = 4) => (Number.isFinite(v) ? Math.round(v * (POW10[d] ?? 10 ** d)) / (POW10[d] ?? 10 ** d) : null);   // niente toFixed: converte in stringa ed è lentissimo se chiamato migliaia di volte
 
 export function poissonPmf(lambda, max = MODEL.maxGoals) {
   const out = [Math.exp(-lambda)];
@@ -117,8 +118,36 @@ export function marketsFromMatrix(m) {
   return p;
 }
 
-export function probabilities(lh, la) {
-  return marketsFromMatrix(scoreMatrix(lh, la));
+const ZERO_MARKETS = Object.fromEntries(SELECTIONS.map((s) => [s.key, 0]));
+/**
+ * Probabilità di tutti i mercati per gol attesi (lh, la): stesso risultato di marketsFromMatrix(scoreMatrix(lh, la)) ma senza creare
+ * matrici (nessun array annidato): è la funzione chiamata decine di volte per partita, e su Cloudflare il tempo di calcolo è limitato.
+ */
+export function probabilities(lh, la, rho = MODEL.rho) {
+  const n = MODEL.maxGoals;
+  const ph = poissonPmf(lh, n), pa = poissonPmf(la, n);
+  const c00 = rho ? Math.max(0, 1 - lh * la * rho) : 1, c01 = rho ? Math.max(0, 1 + lh * rho) : 1, c10 = rho ? Math.max(0, 1 + la * rho) : 1, c11 = rho ? Math.max(0, 1 - rho) : 1;
+  let total = 0, home = 0, draw = 0, away = 0, o15 = 0, o25 = 0, o35 = 0, btts = 0;
+  for (let i = 0; i <= n; i += 1) {
+    for (let j = 0; j <= n; j += 1) {
+      let v = ph[i] * pa[j];
+      if (i < 2 && j < 2) v *= i === 0 ? (j === 0 ? c00 : c01) : (j === 0 ? c10 : c11);
+      total += v;
+      if (i > j) home += v; else if (i === j) draw += v; else away += v;
+      const t = i + j;
+      if (t > 1) o15 += v;
+      if (t > 2) o25 += v;
+      if (t > 3) o35 += v;
+      if (i > 0 && j > 0) btts += v;
+    }
+  }
+  const p = { ...ZERO_MARKETS };
+  p.home = home / total; p.draw = draw / total; p.away = away / total;
+  p.over15 = o15 / total; p.over25 = o25 / total; p.over35 = o35 / total; p.btts = btts / total;
+  p.dc1x = p.home + p.draw; p.dcx2 = p.draw + p.away; p.dc12 = p.home + p.away;
+  p.under15 = 1 - p.over15; p.under25 = 1 - p.over25; p.under35 = 1 - p.over35;
+  p.nobtts = 1 - p.btts;
+  return p;
 }
 
 /** Probabilità "prudente": la peggiore tra 5 scenari (attese gol base, entrambe +-delta, una +delta e l'altra -delta). */
@@ -143,16 +172,16 @@ const GRID_W = (() => { const w = GRID.map((z) => Math.exp(-z * z / 2)), t = w.r
  * su una griglia 7x7 e, per ogni mercato, si prende il quantile q (default 20%) della distribuzione risultante.
  */
 export function posteriorLowProbabilities(lh, la, sdH, sdA, q = MODEL.pLowQuantile) {
-  const samples = [];
+  const ws = [], ps = [];
   GRID.forEach((zh, i) => GRID.forEach((za, j) => {
     const h = clamp(lh * Math.exp(sdH * zh - sdH * sdH / 2), 0.05, 6), a = clamp(la * Math.exp(sdA * za - sdA * sdA / 2), 0.05, 6);
-    samples.push({ w: GRID_W[i] * GRID_W[j], p: probabilities(h, a) });
+    ws.push(GRID_W[i] * GRID_W[j]); ps.push(probabilities(h, a));
   }));
-  const out = {};
-  for (const key of Object.keys(samples[0].p)) {
-    const sorted = samples.map((x) => ({ w: x.w, v: x.p[key] })).sort((x, y) => x.v - y.v);
-    let c = 0; out[key] = sorted[sorted.length - 1].v;
-    for (const x of sorted) { c += x.w; if (c >= q - 1e-12) { out[key] = x.v; break; } }
+  const out = {}, order = ws.map((_, i) => i);
+  for (const key of Object.keys(ps[0])) {
+    order.sort((x, y) => ps[x][key] - ps[y][key]);       // sort stabile: stessi risultati di prima, ma senza creare oggetti a ogni mercato
+    let c = 0; out[key] = ps[order[order.length - 1]][key];
+    for (const i of order) { c += ws[i]; if (c >= q - 1e-12) { out[key] = ps[i][key]; break; } }
   }
   return out;
 }
