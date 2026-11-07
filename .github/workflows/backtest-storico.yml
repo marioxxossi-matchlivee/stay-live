@@ -1,0 +1,37 @@
+name: Backtest storico
+
+# Rifà il passato: per ogni partita già giocata il modello vede solo le partite precedenti, e il suo consiglio (BET / EVITA) viene confrontato col risultato.
+# Si avvia a mano (Actions → Backtest storico → Run workflow); il report compare nel riepilogo dell'esecuzione.
+# Usa gli stessi secrets di «Aggiorna campionati»: SITE_URL e SYNC_SECRET. Nessuna chiave Supabase su GitHub.
+on:
+  workflow_dispatch:
+    inputs:
+      warmup:
+        description: "Quota iniziale di partite usata solo per il rodaggio (0.1 - 0.8)"
+        default: "0.3"
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Scarica le partite finali
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SITE_URL:-}" ] || [ -z "${SYNC_SECRET:-}" ]; then echo "Mancano i secrets SITE_URL e SYNC_SECRET"; exit 1; fi
+          curl -fsS --retry 3 -m 120 -H "x-sync-secret: $SYNC_SECRET" "$SITE_URL/api/export-finals" -o finals.json
+          echo "Partite scaricate: $(jq length finals.json)"
+      - name: Backtest dei BET
+        run: |
+          node scripts/backtest-bets.js --file finals.json --warmup "${{ inputs.warmup || '0.3' }}" | tee report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: report-backtest
+          path: report.md
