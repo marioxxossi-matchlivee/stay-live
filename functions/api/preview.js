@@ -3,9 +3,10 @@ import { analyzeMatch, buildContext, buildMultiples, compactPick, ou25Of } from 
 import { loadCornerOdds } from "./_corners.js";
 import { loadLogoIndex, withLogos } from "./_crests.js";
 import { brainStatusOf, loadBrainInputs } from "./_brain.js";
+import { modelVersion, predictionRow, recordLater } from "./_predictions.js";
 
 /** GET /api/preview?ids=a,b,c&n=8  ->  consiglio per ogni partita scelta + multipla suggerita. */
-export async function onRequest({ request, env }) {
+export async function onRequest({ request, env, waitUntil }) {
   const url = new URL(request.url);
   const ids = [...new Set((url.searchParams.get("ids") ?? "").split(",").map((s) => s.trim()).filter(Boolean))];
   const n = [5, 8, 10].includes(Number(url.searchParams.get("n"))) ? Number(url.searchParams.get("n")) : 8;
@@ -30,8 +31,10 @@ export async function onRequest({ request, env }) {
     const custom = params.get("mode") === "ou25";
     const thr = Math.min(0.9, Math.max(0.5, Number(params.get("thr")) || 0.6));
     const cr = custom && env.API_FOOTBALL_KEY ? await loadCornerOdds(env, matches, Date.now(), { live: false, maps: br.maps }).catch(() => null) : null;
+    const rec = [], ver = modelVersion(), nowMs = Date.now();      // registro dei pronostici (prima del calcio d'inizio), per misurare l'affidabilità
     const items = matches.map((m) => {
       let a = analyzeMatch(m, ctx, { n, ...(br.byGame.get(m.game_id) ?? {}) });
+      if (!custom && n === 8) { const row = predictionRow(m, a, { now: nowMs, ver }); if (row) rec.push(row); }
       if (custom) {
         const best = ou25Of(a)?.best;
         const sel = best && a.selections.find((s) => s.key === best.key);
@@ -46,6 +49,7 @@ export async function onRequest({ request, env }) {
         af: br.state.get(m.game_id) ?? "missing", afPercent: a.api?.percent ?? null, afAdvice: a.api?.adviceIt?.label ?? null,
       };
     });
+    await recordLater({ env, waitUntil }, rec);
     return json({
       n, generatedAt: new Date().toISOString(), items, afStatus: { ...brainStatusOf(br, matches.map((m) => m.game_id)), off: !env.API_FOOTBALL_KEY },
       summary: { selected: items.length, bets: items.filter((i) => i.pick?.verdict === "BET").length, multiples: buildMultiples(items).length },
