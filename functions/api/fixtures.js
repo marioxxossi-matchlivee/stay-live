@@ -5,6 +5,7 @@ import { analyzeMatch, buildContext, compactPick, ou25Of } from "./model.js";
 import { loadCornerOdds } from "./_corners.js";
 import { loadLogoIndex, needsTeamList, withLogos } from "./_crests.js";
 import { loadBrainInputs } from "./_brain.js";
+import { edgeCached } from "./_edgecache.js";
 
 /**
  * Memoria dell'isolate Cloudflare: il consiglio rapido di una partita dipende solo da storico, dati API-Football e dalla partita stessa.
@@ -16,8 +17,23 @@ const finalsSignature = (finals) => { let last = "", goals = 0; for (const f of 
 
 const COLUMNS = "game_id,league,round,kickoff_at,status,home_id,home_name,away_id,away_name,home_score,away_score,neutral_site";
 
-/** GET /api/fixtures: partite da 36 ore fa a 21 giorni avanti (variabile FIXTURES_DAYS, 3-30), con il consiglio rapido (BET / EVITA). */
-export async function onRequest({ env }) {
+/**
+ * GET /api/fixtures: partite da 36 ore fa a 21 giorni avanti (variabile FIXTURES_DAYS, 3-30), con il consiglio rapido (BET / EVITA).
+ * La risposta resta pronta 60 secondi nella cache del data center (poi si rinnova in secondo piano, vedi _edgecache.js): così l'analisi
+ * pesante non pesa su ogni apertura e non supera il limite di CPU di Cloudflare. `?fresh=1` salta la copia (aggiorna a mano, dopo la sincronizzazione).
+ */
+export async function onRequest(ctx) {
+  const url = new URL(ctx.request.url);
+  return edgeCached({
+    cache: globalThis.caches?.default,
+    keyUrl: `${url.origin}/api/fixtures`,
+    waitUntil: ctx.waitUntil ? (p) => ctx.waitUntil(p) : undefined,
+    bypass: url.searchParams.has("fresh"),
+    build: () => fixturesResponse(ctx.env),
+  });
+}
+
+async function fixturesResponse(env) {
   const days = Math.min(30, Math.max(3, Number(env.FIXTURES_DAYS) || 21));
   const missing = missingConfig(env);
   if (missing.length) return json({ error: `Variabili mancanti su Cloudflare: ${missing.join(", ")}` }, 503);
