@@ -2,11 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { efficiency, efficiencyHtml, settledLegs } from "../src/efficiency.js";
 
-const leg = (matchId, key, pLow = 0.6) => ({ matchId, key, pLow });
+const leg = (matchId, key, p = 0.7) => ({ matchId, key, p, pLow: p - 0.1 });
 const plays = [
-  { kind: "single", legs: [leg("a", "over25", 0.6)] },
-  { kind: "multiple", legs: [leg("a", "over25", 0.6), leg("b", "btts", 0.5)] }, // a|over25 già contata
-  { kind: "single", legs: [leg("c", "under25", 0.7)] },
+  { kind: "single", legs: [leg("a", "over25", 0.7)] },
+  { kind: "multiple", legs: [leg("a", "over25", 0.7), leg("b", "btts", 0.6)] }, // a|over25 già contata
+  { kind: "single", legs: [leg("c", "under25", 0.8)] },
   { kind: "single", legs: [leg("d", "dc1x")] },
   { kind: "single", legs: [leg("e", "over25")] },
 ];
@@ -25,7 +25,8 @@ test("percentuale complessiva e per mercato / tipo", () => {
   const e = efficiency(plays, results);
   assert.equal(e.total.n, 3); assert.equal(e.total.won, 1);
   assert.ok(Math.abs(e.total.rate - 1 / 3) < 1e-9);
-  assert.ok(Math.abs(e.total.expected - (0.6 + 0.5 + 0.7) / 3) < 1e-9);
+  assert.ok(Math.abs(e.total.floor - (0.6 + 0.5 + 0.7) / 3) < 1e-9);
+  assert.ok(Math.abs(e.total.expected - (0.7 + 0.6 + 0.8) / 3) < 1e-9);
   const ou = e.byMarket.find((m) => m.id === "Over/Under"); assert.deepEqual([ou.n, ou.won], [2, 1]);
   assert.deepEqual([e.byKey.find((k) => k.id === "btts").won, e.byKey.find((k) => k.id === "btts").n], [0, 1]);
 });
