@@ -1,4 +1,5 @@
 import { esc, num, pct } from "./format.js";
+import { icon } from "./icons.js";
 
 /**
  * Blocco "calci d'angolo" della card di una partita: la STESSA funzione per preview, giocate salvate e multiple.
@@ -69,4 +70,16 @@ export function cornerHtml(item, { compact = false } = {}) {
     if (!c) rows.push(`<p class="pc-sub">Nessuna previsione corner salvata per questa partita.</p>`);
   } else if (item.status === "final") rows.push(`<p class="pc-sub">Corner reali non ancora disponibili: premi “Aggiorna risultati” tra poco.</p>`);
   return `<div class="pv-corner"><b class="pc-h">Calci d’angolo <small>quote dei bookmaker, non il nostro modello</small></b>${rows.join("")}</div>`;
+}
+
+/**
+ * Barra compatta per la lista partite: chi è favorita a fare più corner (quote dei bookmaker) con la barra casa / pari / trasferta.
+ * Stringa vuota se non ci sono dati corner (le quote si scaricano con "Cerca i corner").
+ */
+export function cornerBarHtml(item) {
+  const f = item?.corner?.favorite;
+  if (!f?.p) return "";
+  const w = (k) => `<i class="${k}" style="width:${(Math.max(0, Math.min(1, f.p[k])) * 100).toFixed(1)}%"></i>`;
+  const head = f.side === "even" ? `<b>Nessuna favorita</b> nei corner` : `Più corner: <b>${esc(teamOf(f.side, item))}</b> ${pct(f.p[f.side])}`;
+  return `<span class="cb ${f.side}">${icon("flag")}<span class="cb-t">${head}</span><span class="pc-bar" aria-hidden="true">${w("home")}${w("draw")}${w("away")}</span><span class="cb-s"><span>${esc(item.home)} ${pct(f.p.home)}</span><span>pari ${pct(f.p.draw)}</span><span>${esc(item.away)} ${pct(f.p.away)}</span></span></span>`;
 }

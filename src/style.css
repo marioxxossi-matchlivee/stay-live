@@ -741,3 +741,46 @@ dialog::backdrop{background:rgba(14,26,43,.42);-webkit-backdrop-filter:blur(4px)
 .ef-foot{font-size:11.5px;margin:12px 0 0}
 .ef-cal li{grid-template-columns:78px 1fr auto}
 .ef-pair{color:var(--ink-2)}
+
+/* ===== Icone animate, barra corner in lista, gesture (swipe, trascinamento) ===== */
+.ic{width:1em;height:1em;vertical-align:-.14em;margin-right:5px;flex:none}
+@keyframes draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+@keyframes wave{0%,100%{transform:skewY(0)}30%{transform:skewY(-9deg)}70%{transform:skewY(7deg)}}
+@keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes chipIn{from{opacity:0;transform:translateY(8px) scale(.96)}to{opacity:1;transform:none}}
+.ic-check path,.ic-trending-up polyline:first-child,.ic-trending-down polyline:first-child{stroke-dasharray:1;stroke-dashoffset:0}
+.ic-flag path{transform-box:fill-box;transform-origin:left center}
+.list.anim .ic-check path,.list.anim .ic-trending-up polyline:first-child,.list.anim .ic-trending-down polyline:first-child{animation:draw .7s var(--ease) both;animation-delay:calc(var(--i,0)*38ms + 260ms)}
+.list.anim .ic-flag path{animation:wave 1s ease-in-out both;animation-delay:calc(var(--i,0)*38ms + 300ms)}
+.cm:hover .ic-flag path,.cb:hover .ic-flag path{animation:wave .9s ease-in-out}
+.list.anim .cm,.list.anim .cb{animation:chipIn .4s var(--ease) both;animation-delay:calc(var(--i,0)*38ms + 160ms)}
+.list.anim .pc-bar i,.list.anim .meter i,.list.anim .meter b{transform-origin:left center;animation:grow .8s var(--ease) both;animation-delay:calc(var(--i,0)*38ms + 200ms)}
+
+/* O/U + corner dentro "Tutte": chip sotto il consiglio e barra della favorita nei corner */
+.pick+.cm-row,.row-main .cm-row{margin-top:8px}
+.cb{display:grid;grid-template-columns:auto 1fr;gap:5px 6px;align-items:center;margin-top:8px;padding:9px 12px;border-radius:14px;background:var(--soft);font-size:13px;color:var(--ink-2)}
+.cb .ic{margin:0;color:var(--pitch)}.cb.even .ic{color:var(--mute)}
+.cb-t b{color:var(--ink)}
+.cb .pc-bar{grid-column:1/-1}
+.cb-s{grid-column:1/-1;display:flex;justify-content:space-between;gap:6px;font-size:11.5px;color:var(--mute)}
+.cb-s span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cb-s span:nth-child(2){text-align:center;flex:none}
+.custom-panel.simple{padding:9px 12px}
+.custom-panel.simple .hist,.custom-panel.simple .api-note{display:none}
+.custom-panel.simple .cp-row{justify-content:flex-start}
+.pick-head .ic{margin-right:3px}
+
+/* Swipe sulle righe (touch): la riga segue il dito e si colora quando il gesto è valido */
+.row{touch-action:pan-y}
+.row.swiping,.row.swiping:active{transform:translateX(var(--dx,0));transition:none}
+.row.swipe-ready{background:var(--pitch-tint);box-shadow:0 0 0 2px var(--pitch),var(--shadow)}
+
+/* Riordino delle giocate salvate (maniglia a sinistra; anche frecce su/giù da tastiera) */
+.pl-list{display:grid}
+.pl-item{position:relative;padding-left:30px}
+.drag-h{position:absolute;left:0;top:10px;width:28px;height:36px;border:0;background:none;color:var(--mute);display:grid;place-items:center;touch-action:none;cursor:grab;border-radius:10px;padding:0}
+.drag-h .ic{margin:0;width:18px;height:18px;transition:transform .15s var(--ease)}
+.drag-h:hover,.drag-h:focus-visible{background:var(--soft);color:var(--ink)}
+.drag-h:hover .ic{transform:scale(1.15)}
+.pl-item.dragging{z-index:3;border-radius:18px;background:var(--card);box-shadow:0 14px 36px #0e1a2b3d;cursor:grabbing;transition:none}
+.pl-item.dragging .drag-h{cursor:grabbing;color:var(--pitch)}

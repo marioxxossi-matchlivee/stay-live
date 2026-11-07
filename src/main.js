@@ -7,7 +7,9 @@ import { renderAfDetail } from "./afdetail.js";
 import { crest, hideBrokenCrests, matchHeader } from "./ui.js";
 import { efficiency, efficiencyHtml, reliabilityHtml } from "./efficiency.js";
 import { absorbCorners, absorbResults, addPlay, evaluate, legFromItem, loadPlays, pendingCornerIds, pendingMatchIds, playFromItem, removePlay, savePlays, signature } from "./plays.js";
-import { cornerHtml, cornerShort } from "./corners.js";
+import { cornerBarHtml, cornerHtml, cornerShort } from "./corners.js";
+import { icon } from "./icons.js";
+import { enableReorder, enableSwipe, orderBy } from "./gestures.js";
 
 hideBrokenCrests();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -125,14 +127,15 @@ const basisTag = (b) => (!b || b === "storico" ? "" : `<i class="api-tag" title=
 function pickChip(p) {
   if (!p) return "";
   if (p.confidence === "insufficiente") return `<span class="pick none">Dati insufficienti: ${p.sample} gare di storico</span>`;
-  return `<span class="pick ${p.verdict === "BET" ? "bet" : "skip"}"><span class="pick-head"><b>${p.verdict}</b>${basisTag(p.basis)}<span>${esc(p.label)}</span><em>${pct(p.pLow)}</em></span>${meter(p)}</span>`;
+  return `<span class="pick ${p.verdict === "BET" ? "bet" : "skip"}"><span class="pick-head"><b>${p.verdict === "BET" ? icon("check") : ""}${p.verdict}</b>${basisTag(p.basis)}<span>${esc(p.label)}</span><em>${pct(p.pLow)}</em></span>${meter(p)}</span>`;
 }
 function customChips(m) {
-  const o = m.ou?.best, c = m.corner?.best;
-  const ou = o ? `<span class="cm ${o.p >= state.thr && o.agree !== "contraddice" ? "hi" : "lo"}"><b>${o.side === "over" ? "Over" : "Under"} 2,5</b><em>${pct(o.p)}</em>${o.pApi != null ? `<small>API ${pct(o.pApi)}</small>` : ""}</span>` : `<span class="cm none"><b>Over/Under 2,5</b><small>dati insufficienti</small></span>`;
+  const cm = m.corner ?? cornerCache.get(m.id) ?? null;
+  const o = m.ou?.best, c = cm?.best;
+  const ou = o ? `<span class="cm ${o.p >= state.thr && o.agree !== "contraddice" ? "hi" : "lo"}"><b>${icon(o.side === "over" ? "trending-up" : "trending-down")}${o.side === "over" ? "Over" : "Under"} 2,5</b><em>${pct(o.p)}</em>${o.pApi != null ? `<small>API ${pct(o.pApi)}</small>` : ""}</span>` : `<span class="cm none"><b>Over/Under 2,5</b><small>dati insufficienti</small></span>`;
   const none = m.cornerState === "none" || m.cornerState === "missing";
-  const co = c ? `<span class="cm ${c.p >= state.thr ? "hi" : "lo"}"><b>Corner ${c.side === "over" ? "Over" : "Under"} ${num(c.line, 1)}</b><em>${pct(c.p)}</em><small>quota ${num(c.odd)} · mercato</small></span>` : `<span class="cm none"><b>Corner</b><small>${none ? "nessuna quota" : "non cercati"}</small></span>`;
-  return `<span class="cm-row">${ou}${co}</span>`;
+  const co = c ? `<span class="cm ${c.p >= state.thr ? "hi" : "lo"}"><b>${icon("flag")}Corner ${c.side === "over" ? "Over" : "Under"} ${num(c.line, 1)}</b><em>${pct(c.p)}</em><small>quota ${num(c.odd)} · mercato</small></span>` : `<span class="cm none"><b>${icon("flag")}Corner</b><small>${none ? "nessuna quota" : "non cercati"}</small></span>`;
+  return `<span class="cm-row">${ou}${co}</span>${cornerBarHtml({ ...m, corner: cm })}`;
 }
 function visibleMatches() {
   return state.matches.filter((m) => {
@@ -160,7 +163,7 @@ function rowHtml(m, k = 0) {
     <button class="row-main" type="button" data-open="${esc(m.id)}">
       <span class="meta"><b>${time}</b><span>${esc(leagueName(m.league, true))}</span>${live}</span>
       <span class="fx">${sideHtml(m.home, m.homeLogo, m.homeScore)}${sideHtml(m.away, m.awayLogo, m.awayScore)}</span>
-      ${isCustom() ? customChips(m) : pickChip(m.pick)}
+      ${isCustom() ? customChips(m) : `${pickChip(m.pick)}${m.pick?.confidence === "insufficiente" ? "" : customChips(m)}`}
     </button></div>`;
 }
 function renderDays() {
@@ -218,7 +221,8 @@ function render() {
   segEl.style.setProperty("--i", String(["all", "bet", "custom"].indexOf(seg)));
   for (const b of segEl.querySelectorAll("[data-seg]")) b.setAttribute("aria-pressed", String(b.dataset.seg === seg));
   $("#select-bets").textContent = isCustom() ? "Le filtrate" : "I BET";
-  $("#custom-panel").hidden = !isCustom();
+  $("#custom-panel").hidden = state.day === "results";
+  $("#custom-panel").classList.toggle("simple", !isCustom());
   $("#thr").value = String(state.thr);
   const long = state.day && state.day !== "results" ? dayParts(state.day).long : "";
   $("#day-title").textContent = state.day === "results" ? "Ultimi risultati" : long ? long[0].toUpperCase() + long.slice(1) : "Partite";
@@ -725,11 +729,18 @@ function renderPlays(note = "") {
     : `<div class="pl-sum">${tile("Centrate", t.won + t.lost ? `${t.won} su ${t.won + t.lost}${t.rate != null ? ` · ${pct(t.rate)}` : ""}` : "—", t.won + t.lost && t.rate >= 0.5 ? "good" : "")}${tile("In attesa", String(t.pending))}${tile("Esito netto", t.staked ? eur(t.profit) : "—", t.staked ? (t.profit >= 0 ? "good" : "bad") : "")}</div>
       ${efficiencyHtml(efficiency(plays, playResults), { esc, pct })}
             ${t.staked ? `<p class="pl-note">Esito netto calcolato sulle ${eur(t.staked)} puntate delle giocate già concluse (con puntata e quota salvate).</p>` : ""}
-      ${ev.rows.map(playCard).join("")}`;
+      <div class="pl-list" id="pl-list">${ev.rows.map((r) => `<div class="pl-item" data-play="${esc(r.play.id)}"><button class="drag-h" type="button" aria-label="Trascina per riordinare la giocata, oppure usa le frecce su e giù">${icon("grip-vertical")}</button>${playCard(r)}</div>`).join("")}</div>`;
   $("#plays-body").innerHTML = `<h2 class="d-title">Le mie giocate</h2><p class="d-sub">Le previsioni salvate dal preview, confrontate con i risultati veri.</p>
     <div id="reliability">${reliabilityState.html}</div>
     <div class="pv-actions"><button class="primary" id="refresh-plays" type="button">Aggiorna risultati</button></div><p class="pv-qstatus" id="plays-status" aria-live="polite">${esc(note)}</p>${body}
     <p class="foot">Le giocate restano salvate in questo dispositivo (non su Supabase). I risultati arrivano dalla sincronizzazione dei campionati: se una partita finita risulta ancora “in attesa”, premi Aggiorna risultati tra qualche minuto.</p>`;
+  bindPlaysReorder();
+}
+/** Trascina la maniglia (o frecce su/giù) per riordinare le giocate salvate: l'ordine resta nel browser. */
+function bindPlaysReorder() {
+  const box = $("#pl-list");
+  if (!box) return;
+  enableReorder(box, { itemSel: ".pl-item", handleSel: ".drag-h", idOf: (el) => el.dataset.play, onDone: (ids) => { plays = orderBy(plays, ids, (p) => p.id); savePlays(plays); } });
 }
 /* Affidabilità di tutti i BET registrati dall'app (non solo quelli salvati): letta dal server, mostrata in cima alla vista Giocate. */
 const reliabilityState = { html: `<section class="ef-card"><h3>Affidabilità dei BET dell'app</h3><p class="ef-empty">Calcolo in corso…</p></section>`, at: 0 };
@@ -955,6 +966,11 @@ async function findCorners() {
 }
 $("#thr").addEventListener("change", (e) => { state.thr = Number(e.target.value); try { localStorage.setItem(THR_KEY, String(state.thr)); } catch { /* preferenza non salvata */ } render(); });
 $("#find-corners").addEventListener("click", findCorners);
+/* Swipe a destra su una partita = la seleziona, a sinistra = la deseleziona (solo touch; col mouse resta la casella). */
+enableSwipe($("#list"), {
+  rowSel: ".row", canSwipe: (r) => Boolean(r.querySelector("[data-sel]")),
+  onSwipe: (row, dir) => { const id = row.querySelector("[data-sel]").dataset.sel; if (dir === "right") state.selected.add(id); else state.selected.delete(id); navigator.vibrate?.(12); render(); },
+});
 $("#select-bets").addEventListener("click", () => {
   visibleMatches().filter((m) => isOpen(m) && (isCustom() || m.pick?.verdict === "BET")).forEach((m) => state.selected.add(m.id));
   closeSelMenu(); render();
