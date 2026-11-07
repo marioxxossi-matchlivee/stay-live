@@ -106,15 +106,15 @@ export function calibrationGain(preds) {
   return out;
 }
 
-export const GRID = { rho: [0, -0.05, -0.1, -0.15], shrinkK: [4, 8, 12], decay: [0.92, 0.96] };
+export const GRID = { rho: [0, -0.05, -0.1, -0.15], formShrinkK: [4, 12, 24, 40], decay: [0.92, 0.96] };
 /** Taratura sulla VALIDAZIONE (log loss su 1X2 + Over/Under 2,5 + BTTS); il test non viene mai guardato qui. */
 export function tune(rows, opts = {}) {
   const results = [];
-  for (const rho of GRID.rho) for (const shrinkK of GRID.shrinkK) for (const decay of GRID.decay) {
-    const preds = withModel({ rho, shrinkK, decay }, () => predict(rows, opts));
+  for (const rho of GRID.rho) for (const formShrinkK of GRID.formShrinkK) for (const decay of GRID.decay) {
+    const preds = withModel({ rho, formShrinkK, decay }, () => predict(rows, opts));
     const e = evaluate(preds, "val");
     const score = (e.x12.logLoss ?? 9) + (e.perMarket.over25.logLoss ?? 9) + (e.perMarket.btts.logLoss ?? 9);
-    results.push({ rho, shrinkK, decay, score, matches: e.matches });
+    results.push({ rho, formShrinkK, decay, score, matches: e.matches });
   }
   results.sort((a, b) => a.score - b.score);
   return results;
@@ -143,7 +143,7 @@ async function main() {
   const result = {};
   if (args.includes("--tune")) {
     const t = tune(rows, opts); result.tune = t.slice(0, 5);
-    console.log("\nMigliori parametri sulla VALIDAZIONE (rho, shrinkK, decay):"); t.slice(0, 5).forEach((r) => console.log(`  rho ${r.rho} shrinkK ${r.shrinkK} decay ${r.decay} → score ${f(r.score, 4)}`));
+    console.log("\nMigliori parametri sulla VALIDAZIONE (rho, formShrinkK, decay):"); t.slice(0, 5).forEach((r) => console.log(`  rho ${r.rho} formShrinkK ${r.formShrinkK} decay ${r.decay} → score ${f(r.score, 4)}`));
     console.log("Applicali in functions/api/model.js solo se il test conferma il miglioramento (--compare).");
   }
   const variants = args.includes("--compare") ? { legacy: { pLowMethod: "legacy", rho: 0 }, attuale: {} } : { attuale: {} };
