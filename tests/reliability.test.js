@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { reliabilityFrom } from "../functions/api/_reliability.js";
-import { modelVersion, predictionRow } from "../functions/api/_predictions.js";
+import { legRows, modelVersion, predictionRow } from "../functions/api/_predictions.js";
 import { MODEL } from "../functions/api/model.js";
 import { bucket, calibrationBuckets, reliabilityHtml, wilson } from "../src/efficiency.js";
 
@@ -55,4 +55,19 @@ test("la versione del modello cambia se cambia un parametro che influisce sui pr
   assert.equal(v, modelVersion());
   assert.notEqual(v, modelVersion({ ...MODEL, betThreshold: 0.65 }));
   assert.equal(v, modelVersion({ ...MODEL, kellyFraction: 0.5 }));       // le puntate non cambiano i pronostici
+});
+
+test("righe di tutti i mercati: una per selezione, con le tre fonti, solo prima del calcio d'inizio", () => {
+  const now = Date.parse("2026-11-08T10:00:00Z");
+  const m = { game_id: "x1", league: "seriea", status: "scheduled", kickoff_at: "2026-11-08T19:45:00Z" };
+  const sel = (key, extra = {}) => ({ key, p: 0.5, pLow: 0.4, pModel: 0.48, pApi: 0.52, pMarket: null, verdict: "EVITA", odds: null, ...extra });
+  const a = analysis({ selections: [sel("over25", { odds: { median: 1.9 }, pMarket: 0.51 }), sel("under25"), sel("btts")], fusion: { books: 7 } });
+  const rows = legRows(m, a, { now, ver: "v1" });
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows.map((r) => r.sel_key), ["over25", "under25", "btts"]);
+  assert.equal(rows[0].odds, 1.9); assert.equal(rows[0].p_market, 0.51); assert.equal(rows[1].odds, null); assert.equal(rows[0].n_books, 7); assert.equal(rows[0].model_ver, "v1");
+  assert.deepEqual(legRows({ ...m, kickoff_at: "2026-11-08T09:00:00Z" }, a, { now }), []);   // già iniziata
+  assert.deepEqual(legRows({ ...m, status: "final" }, a, { now }), []);
+  assert.deepEqual(legRows(m, { ...a, confidence: "insufficiente" }, { now }), []);
+  assert.deepEqual(legRows(m, analysis({ selections: [] }), { now }), []);
 });
