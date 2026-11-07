@@ -83,3 +83,13 @@ test("tutte le selezioni: probabilità in [0,1] e pLow <= p con dati completi", 
   assert.equal(a.selections.length, SELECTIONS.length);
   for (const s of a.selections) assert.ok(s.p >= 0 && s.p <= 1 && s.pLow >= 0 && s.pLow <= s.p + 1e-9, s.key);
 });
+
+test("storico: le partite decise ai supplementari o ai rigori non entrano nelle medie", () => {
+  const base = league();
+  const withEt = [...base, { ...base[0], kickoff_at: "2026-02-01T15:00:00Z", home_score: 5, away_score: 4, decided_in: "extra_time" }, { ...base[1], kickoff_at: "2026-02-02T15:00:00Z", home_score: 3, away_score: 3, decided_in: "penalties" }];
+  const a = buildContext(base), b = buildContext(withEt);
+  assert.deepEqual(b.baseline("seriea"), a.baseline("seriea"), "medie gol del campionato invariate");
+  assert.equal(b.matchCount, a.matchCount, "nessuna delle due partite è stata contata");
+  const reg = buildContext([...base, { ...base[0], kickoff_at: "2026-02-01T15:00:00Z", home_score: 5, away_score: 4, decided_in: "regulation" }]);
+  assert.equal(reg.matchCount, a.matchCount + 1, "una partita regolare invece conta");
+});
