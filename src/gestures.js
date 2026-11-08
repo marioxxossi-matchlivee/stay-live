@@ -35,7 +35,7 @@ export function enableSwipe(root, { rowSel, canSwipe = () => true, onSwipe }) {
   root.addEventListener("pointerdown", (e) => {
     if (e.pointerType === "mouse" || !e.isPrimary) return;
     const r = e.target.closest(rowSel);
-    if (!r || !canSwipe(r) || e.target.closest("input,select,a")) return;
+    if (!r || !canSwipe(r) || e.target.closest("input,select,a,.row-save")) return;
     row = r; x0 = e.clientX; y0 = e.clientY; id = e.pointerId; active = false;
   });
   root.addEventListener("pointermove", (e) => {

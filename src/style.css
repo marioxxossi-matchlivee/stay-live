@@ -36,7 +36,7 @@ main{max-width:880px;margin:0 auto;padding:22px 16px 110px}
 .hist select{border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:#fff}
 
 .list{display:grid;gap:8px}
-.row{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+.row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px}
 .row.sel{border-color:var(--blue);box-shadow:inset 0 0 0 1px var(--blue)}
 .row input[type=checkbox]{width:20px;height:20px;accent-color:var(--blue)}
 .row-main{all:unset;display:grid;grid-template-columns:1fr;gap:6px;cursor:pointer;min-width:0}
@@ -794,3 +794,12 @@ dialog.closing::backdrop{animation:fadeOut var(--dur) forwards}
 .toast{position:fixed;inset:auto 12px calc(var(--tab-h) + var(--safe-b) + 14px) 12px;margin:0 auto;width:fit-content;max-width:min(520px,calc(100% - 24px));height:auto;overflow:visible;padding:12px 16px;border:0;border-radius:16px;background:var(--ink);color:#fff;font:600 14px var(--body);display:flex;align-items:center;gap:14px;box-shadow:0 12px 32px #0e1a2b55;opacity:0;transform:translateY(12px);pointer-events:none;transition:opacity var(--dur) var(--ease),transform var(--dur) var(--ease)}
 .toast.show{opacity:1;transform:none;pointer-events:auto}
 .toast button{border:0;background:none;color:#8fe0b5;font-weight:800;padding:6px 4px;min-height:32px}
+
+/* Salva una giocata direttamente dalla lista */
+.row-save{all:unset;box-sizing:border-box;display:grid;place-items:center;width:44px;height:44px;margin:-12px -8px -12px 0;align-self:start;border-radius:50%;color:var(--mute);cursor:pointer;-webkit-tap-highlight-color:transparent;transition:color var(--dur-fast),background-color var(--dur-fast),transform var(--dur-fast) var(--ease)}
+.row-save svg{width:22px;height:22px;fill:none;stroke:currentColor}
+.row-save:hover{background:var(--soft-2);color:var(--ink)}
+.row-save:active{transform:scale(.9)}
+.row-save:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
+.row-save.done,.row-save:disabled{color:var(--pitch);cursor:default;background:none}
+.row-save.done svg{fill:currentColor}

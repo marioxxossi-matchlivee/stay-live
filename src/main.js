@@ -99,6 +99,7 @@ async function load({ sync = true, fresh = false } = {}) {
     else state.error = e.message;
   } finally {
     state.loading = false; state.syncing = false; render();
+    if (fresh && !state.error) autoCorners({ force: true });      // aggiornamento a mano: si completano anche i corner mancanti
   }
 }
 
@@ -157,6 +158,31 @@ function setSeg(v) {
   try { localStorage.setItem(MODE_KEY, isCustom() ? "1" : "0"); } catch { /* preferenza non salvata */ }
   animateNext = true; render();
 }
+/** Selezione che la riga mostra e si può salvare: il consiglio principale; in "O/U + corner" l'Over/Under 2,5 migliore (i corner non sono giocabili: nessun modello). */
+function listSel(m) {
+  if (isCustom()) {
+    const o = m.ou?.best;
+    if (!o) return null;
+    return { key: o.key, label: o.side === "over" ? "Over 2,5" : "Under 2,5", market: "Gol totali", preferred: false, p: o.p, pLow: o.pLow, minOdds: o.minOdds ?? null,
+      verdict: o.p >= state.thr && o.agree !== "contraddice" ? "BET" : "EVITA", reason: o.agree === "contraddice" ? "API-Football non conferma." : `Probabilità prudente ${pct(o.pLow)}.`,
+      confidence: m.ou.confidence, basis: m.ou.basis ?? null, pApi: o.pApi ?? null, agree: o.agree ?? null, odds: null, ev: null };
+  }
+  const p = m.pick;
+  return p && p.confidence !== "insufficiente" ? p : null;
+}
+/** Giocata dalla lista: stessa struttura e stessa fotografia del preview, ma senza puntata né quota (qui non c'è un piano). */
+function playOfList(m) {
+  const sel = listSel(m);
+  if (!sel) return null;
+  const item = { id: m.id, league: m.league, kickoffAt: m.kickoffAt, home: m.home, away: m.away, homeLogo: m.homeLogo ?? null, awayLogo: m.awayLogo ?? null, status: m.status ?? null, confidence: sel.confidence, pick: sel, corner: m.corner ?? cornerCache.get(m.id) ?? null };
+  return { ...playFromItem(item, {}), snap: { kickoffAt: item.kickoffAt, league: item.league, home: item.home, away: item.away, homeLogo: item.homeLogo, awayLogo: item.awayLogo, confidence: item.confidence, status: item.status, pick: sel, corner: item.corner, plan: null } };
+}
+function rowSaveHtml(m) {
+  const cand = isOpen(m) ? playOfList(m) : null;
+  if (!cand) return "";
+  const saved = isSaved(cand);
+  return `<button class="row-save${saved ? " done" : ""}" type="button" data-row-save="${esc(m.id)}" aria-label="${saved ? `Giocata salvata: ${esc(cand.label)}` : `Salva giocata: ${esc(cand.label)}`}" aria-pressed="${saved}"${saved ? " disabled" : ""}>${icon("bookmark")}</button>`;
+}
 function rowHtml(m, k = 0) {
   const time = fmtTime.format(new Date(m.kickoffAt));
   const live = m.status === "in_progress" ? `<span class="live-tag">In corso</span>` : "";
@@ -166,7 +192,7 @@ function rowHtml(m, k = 0) {
       <span class="meta"><b>${time}</b><span>${esc(leagueName(m.league, true))}</span>${live}</span>
       <span class="fx">${sideHtml(m.home, m.homeLogo, m.homeScore)}${sideHtml(m.away, m.awayLogo, m.awayScore)}</span>
       ${isCustom() ? customChips(m) : pickChip(m.pick)}
-    </button></div>`;
+    </button>${rowSaveHtml(m)}</div>`;
 }
 function renderDays() {
   const pool = state.matches.filter((m) => inScope(m.league));
@@ -230,6 +256,7 @@ function render() {
     : state.error ? "Dati non disponibili."
     : isCustom() && state.day !== "results" ? `${list.length} ${list.length === 1 ? "partita" : "partite"} con O/U 2,5 o corner ≥ ${pct(state.thr)}`
     : `${list.length} ${list.length === 1 ? "partita" : "partite"}${state.day === "results" ? "" : ` · ${bets} con BET`}`;
+  if (state.cornerNote && !state.loading && !state.error) $("#summary").textContent += ` · ${state.cornerNote}`;
   const banner = $("#banner");
   banner.hidden = !(state.error || state.banner);
   banner.className = `banner${state.error ? " error" : ""}`;
@@ -818,7 +845,7 @@ async function refreshPlays() {
       if (absorbCorners(plays, Object.fromEntries(actualCache))) savePlays(plays);
     }
     renderPlays(ids.length ? `Risultati aggiornati alle ${fmtTime.format(new Date())}.` : "");
-  } catch (e) { renderPlays(`Risultati non disponibili: ${e.message}`); } finally { playsBusy = false; $("#refresh").classList.toggle("spin", state.loading || Boolean(state.syncing)); }
+  } catch (e) { renderPlays(`Risultati non disponibili: ${e.message}`); } finally { playsBusy = false; $("#refresh").classList.toggle("spin", state.loading || Boolean(state.syncing)); autoCorners(); }
 }
 
 /* ---------- PDF del riepilogo ---------- */
@@ -879,6 +906,14 @@ document.addEventListener("click", (e) => {
     const n = bets.filter((i) => commitPlay(singleOf(i))).length;
     const sb = t.closest("#save-bets"); sb.textContent = "✓ BET già salvate"; sb.disabled = true; showToast(n ? `${n} ${n === 1 ? "giocata salvata" : "giocate salvate"}` : "Giocate già salvate");
     for (const b of document.querySelectorAll("[data-save]")) if (bets.some((i) => i.id === b.dataset.save)) { b.textContent = "✓ Salvata"; b.classList.add("done"); b.disabled = true; }
+  }
+  const rs = t.closest("[data-row-save]");
+  if (rs && !rs.disabled) {
+    const m = state.matches.find((x) => x.id === rs.dataset.rowSave), cand = m && playOfList(m);
+    if (cand && commitPlay(cand)) {
+      rs.classList.add("done"); rs.disabled = true; rs.setAttribute("aria-pressed", "true"); rs.setAttribute("aria-label", `Giocata salvata: ${cand.label}`);
+      showToast(`Giocata salvata: ${cand.label}`, { action: "Vedi", onAction: () => showView("plays") });
+    }
   }
   const del = t.closest("[data-del-play]");
   if (del) deletePlay(del.dataset.delPlay);
@@ -983,34 +1018,36 @@ $("#clear-plays").addEventListener("click", () => {
   document.addEventListener("touchend", () => { const go = on && dy > 100; reset(); if (go) { if (document.body.dataset.view === "plays") refreshPlays(); else { state.syncTried = false; load({ fresh: true }); } } });
 }
 
-/** Cerca le quote corner delle partite del giorno (a piccoli passi, riprova da solo se API-Football limita le richieste). */
-let cornerBusy = false;
-async function findCorners() {
-  if (cornerBusy) return;
+/**
+ * Corner automatici: nessun pulsante. A mezzanotte li cerca da solo il workflow "Corner notturni" per tutte le partite della settimana;
+ * qui si completano, in secondo piano, quelli che mancano ancora quando si ricarica (aggiornamento a mano o dei risultati).
+ * A piccoli passi, e riprova da solo se API-Football limita le richieste.
+ */
+let cornerBusy = false, cornerLastRun = 0;
+async function autoCorners({ force = false } = {}) {
+  if (cornerBusy || state.error || !state.matches.length) return;
+  if (!force && Date.now() - cornerLastRun < 10 * 60e3) return;       // aperture ripetute della stessa vista: non si riprova subito
+  const now = Date.now();
+  const ids = state.matches
+    .filter((m) => isOpen(m) && Date.parse(m.kickoffAt) > now && Date.parse(m.kickoffAt) <= now + 7 * 86400e3 && !m.corner && m.cornerState !== "none" && m.cornerState !== "missing")
+    .sort((x, y) => Date.parse(x.kickoffAt) - Date.parse(y.kickoffAt)).map((m) => m.id).slice(0, 40);
+  cornerLastRun = now;
+  if (!ids.length) return;
   cornerBusy = true;
-  const btn = $("#find-corners"), status = $("#corner-status");
-  btn.disabled = true;
+  let pending = [...ids], tries = 0;
   try {
-    const all = state.matches.filter((m) => inScope(m.league) && isOpen(m) && dayKey(m.kickoffAt) === state.day);
-    const ids = all.filter((m) => !m.corner && m.cornerState !== "none" && m.cornerState !== "missing").map((m) => m.id).slice(0, 40);
-    if (!ids.length) { status.textContent = "Corner già cercati per tutte le partite di questa giornata."; return; }
-    let pending = [...ids], tries = 0;
     while (pending.length && tries < 10) {
-      status.textContent = `Cerco i corner… ${ids.length - pending.length} su ${ids.length}`;
-      const part = pending.slice(0, 10);
+      state.cornerNote = `cerco i corner ${ids.length - pending.length}/${ids.length}`; render();
+      const part = pending.slice(0, 6);
       let r;
-      try { r = await getJson(`/api/corners?ids=${part.map(encodeURIComponent).join(",")}`); } catch (e) { if (RATE_RE.test(e.message)) { tries += 1; await sleep(15000); continue; } throw e; }
+      try { r = await getJson(`/api/corners?ids=${part.map(encodeURIComponent).join(",")}`); } catch (e) { if (RATE_RE.test(e.message)) { tries += 1; await sleep(15000); continue; } break; }
       for (const [id, pick] of Object.entries(r.corners)) { const m = state.matches.find((x) => x.id === id); if (m) { m.corner = pick; m.cornerState = r.state[id]; } }
       pending = pending.filter((id) => !part.includes(id) || r.state[id] === "waiting");
-      render();
-      if (r.retry?.pending) { tries += 1; status.textContent = `API-Football è occupata: riprovo tra ${Math.round(Math.min(60000, r.retry.afterMs || 20000) / 1000)} s…`; await sleep(Math.min(60000, r.retry.afterMs || 20000)); }
+      if (r.retry?.pending) { tries += 1; await sleep(Math.min(60000, r.retry.afterMs || 20000)); }
     }
-    const found = all.filter((m) => m.corner).length;
-    status.textContent = `Corner con quote per ${found} ${found === 1 ? "partita" : "partite"} su ${all.length}${pending.length ? `; ${pending.length} ancora da scaricare: riprova tra poco` : ""}.`;
-  } catch (e) { status.textContent = `Corner non disponibili: ${e.message}`; } finally { cornerBusy = false; btn.disabled = false; }
+  } finally { cornerBusy = false; state.cornerNote = ""; render(); }
 }
 $("#thr").addEventListener("change", (e) => { state.thr = Number(e.target.value); try { localStorage.setItem(THR_KEY, String(state.thr)); } catch { /* preferenza non salvata */ } render(); });
-$("#find-corners").addEventListener("click", findCorners);
 /* Swipe a destra su una partita = la seleziona, a sinistra = la deseleziona (solo touch; col mouse resta la casella). */
 enableSwipe($("#list"), {
   rowSel: ".row", canSwipe: (r) => Boolean(r.querySelector("[data-sel]")),
