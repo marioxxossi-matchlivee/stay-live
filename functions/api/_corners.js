@@ -81,7 +81,7 @@ export function cornerPick(corners, minOdd = MIN_CORNER_ODD, winner = null) {
  * Quote corner delle partite (stessa cache della scheda dati: una volta scaricate non si rifanno finché non possono essere cambiate).
  * live=false = solo cache. Restituisce { byGame: Map(game_id -> pick|null), state: Map(game_id -> "used"|"none"|"waiting"|"missing"), maps, retry }.
  */
-export async function loadCornerOdds(env, matches, now = Date.now(), { live = true, maxMap = 4, maxLive = 6, maps: known = null } = {}) {
+export async function loadCornerOdds(env, matches, now = Date.now(), { live = true, maxMap = 4, maxLive = 6, maps: known = null, refreshMs = null } = {}) {
   const byGame = new Map(), state = new Map();
   const open = matches.filter((m) => AF_LEAGUES[m.league] && m.status !== "canceled");
   for (const m of matches) if (!open.includes(m)) state.set(m.game_id, "missing");
@@ -94,10 +94,11 @@ export async function loadCornerOdds(env, matches, now = Date.now(), { live = tr
   if (mapped.length) {
     const { sections: pre } = await loadSections(env, [{ section: "bets", endpoint: "odds/bets", params: {}, ttl: ttlFor("odds-bets") }], now, { maxLive: live ? 1 : 0 });
     const ids = betIdsFrom(pre.bets?.data), bet = ids.corners;
-    const ttl = (m) => ttlFor("odds", { kickoff: Date.parse(m.kickoff_at), now, finished: m.status === "final" });
+    const ttl = (m) => ttlFor("corner-odds", { kickoff: Date.parse(m.kickoff_at), now, finished: m.status === "final" });
+    const fresh = (m) => (refreshMs == null ? ttl(m) : Math.min(ttl(m), refreshMs));      // refreshMs: si riscaricano le quote più vecchie di così (lo usa solo il giro notturno)
     const reqs = mapped.flatMap((m) => [
-      { section: m.game_id, endpoint: "odds", params: { fixture: maps.get(m.game_id).fixture_id, bet }, ttl: ttl(m) },
-      { section: `cw:${m.game_id}`, endpoint: "odds", params: { fixture: maps.get(m.game_id).fixture_id, bet: ids.cornerWinner }, ttl: ttl(m) },   // chi fa più corner (1X2 corner)
+      { section: m.game_id, endpoint: "odds", params: { fixture: maps.get(m.game_id).fixture_id, bet }, ttl: ttl(m), fresh: fresh(m) },
+      { section: `cw:${m.game_id}`, endpoint: "odds", params: { fixture: maps.get(m.game_id).fixture_id, bet: ids.cornerWinner }, ttl: ttl(m), fresh: fresh(m) },   // chi fa più corner (1X2 corner)
     ]);
     const r = await loadSections(env, reqs, now, { maxLive: live ? maxLive : 0 });
     if (live && r.retry.pending) afterMs = Math.max(afterMs, r.retry.afterMs);

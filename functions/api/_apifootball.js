@@ -46,6 +46,7 @@ export function ttlFor(kind, { kickoff = null, now = Date.now(), finished = fals
     case "injuries": return done ? 30 * D : toKo <= 3 * H ? 2 * H : toKo <= 24 * H ? 8 * H : 24 * H;
     case "predictions": return done ? 30 * D : 12 * H;
     case "odds": return done ? 30 * D : toKo <= 3 * H ? 90 * MIN : toKo <= 24 * H ? 4 * H : 12 * H;
+    case "corner-odds": return done ? 30 * D : 27 * H;                // quote corner: cercate ogni notte a mezzanotte, valide fino alla notte dopo (più un margine)
     case "odds-bets": return 30 * D;
     case "h2h": return 30 * D;
     case "team-stats": return 2 * D;
@@ -235,10 +236,13 @@ export const RETRY_HINT = { batch: 1500, rateLimit: 20000 };
 export async function loadSections(env, reqs, now = Date.now(), { maxLive = num(env?.API_FOOTBALL_MAX_PER_CALL) ?? 8, reserve = 300 } = {}) {
   if (!reqs.length) return { sections: {}, usage: null, retry: { pending: 0, afterMs: 0 } };
   const keys = reqs.map((r) => cacheKey(r.endpoint, r.params));
-  const [rows, usageRows] = await Promise.all([
-    supabaseGet(env, "af_cache", { select: "cache_key,response,results,fetched_at,expires_at,error", cache_key: `in.(${keys.map((k) => `"${k}"`).join(",")})`, limit: keys.length }),
+  // Le chiavi si leggono a gruppi (con molte partite l'indirizzo della richiesta diventerebbe troppo lungo).
+  const chunks = []; for (let i = 0; i < keys.length; i += 40) chunks.push(keys.slice(i, i + 40));
+  const [rowChunks, usageRows] = await Promise.all([
+    Promise.all(chunks.map((ks) => supabaseGet(env, "af_cache", { select: "cache_key,response,results,fetched_at,expires_at,error", cache_key: `in.(${ks.map((k) => `"${k}"`).join(",")})`, limit: ks.length }))),
     supabaseGet(env, "af_usage", { select: "*", day: `eq.${dayKey(now)}`, limit: 1 }),
   ]);
+  const rows = rowChunks.flat();
   const byKey = new Map(rows.map((r) => [r.cache_key, r]));
   const usage = usageRows[0] ?? null;
   const canSpend = !(usage?.remaining != null && usage.remaining < reserve);
@@ -250,7 +254,7 @@ export async function loadSections(env, reqs, now = Date.now(), { maxLive = num(
     const row = byKey.get(keys[i]);
     const view = (extra) => ({ data: row?.response ?? null, results: row?.results ?? 0, fetchedAt: row?.fetched_at ?? null, source: "cache", stale: false, error: null, ...extra });
     const blockedMs = row?.error ? Date.parse(row.expires_at) - now : 0;
-    if (row && !row.error && now - Date.parse(row.fetched_at) < r.ttl) sections[r.section] = view({});
+    if (row && !row.error && now - Date.parse(row.fetched_at) < (r.fresh ?? r.ttl)) sections[r.section] = view({});     // `fresh` (facoltativo) accorcia la validità solo per questa lettura
     else if (row?.error && RATE_RE.test(row.error) && blockedMs > 0) {                       // limite appena superato: si aspetta, senza insistere
       sections[r.section] = view({ stale: Boolean(row.response), deferred: true, error: "Limite di richieste al minuto: nuovo tentativo automatico" });
       later(blockedMs + 500);

@@ -53,7 +53,9 @@ async function fixturesResponse(env) {
     // Pronostici di API-Football già in cache per le partite dei prossimi giorni (nessuna richiesta al provider da qui): il consiglio rapido ne tiene conto.
     const soon = window.filter((m) => (m.status === "scheduled" || m.status === "in_progress") && Date.parse(m.kickoff_at) < now + 3 * 86400e3);
     const br = env.API_FOOTBALL_KEY && soon.length ? await loadBrainInputs(env, soon, now, { live: false }).catch(() => null) : null;
-    const cr = env.API_FOOTBALL_KEY && soon.length ? await loadCornerOdds(env, soon, now, { live: false, maps: br?.maps }).catch(() => null) : null;   // corner già in cache (nessuna richiesta da qui)
+    // Corner: quelli cercati ogni notte per tutte le partite della settimana, già in cache (nessuna richiesta al provider da qui).
+    const week = window.filter((m) => (m.status === "scheduled" || m.status === "in_progress") && Date.parse(m.kickoff_at) < now + 7 * 86400e3);
+    const cr = env.API_FOOTBALL_KEY && week.length ? await loadCornerOdds(env, week, now, { live: false, maps: br?.maps }).catch(() => null) : null;
     const byLeague = Object.fromEntries(states.map((s) => [s.league, s]));
     const matches = window.map((m) => {
       const open = m.status === "scheduled" || m.status === "in_progress";

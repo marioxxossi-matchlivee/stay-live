@@ -12,6 +12,9 @@ const COLS = "game_id,league,season,kickoff_at,status,home_id,away_id,home_name,
 export async function onRequest({ request, env }) {
   const ids = [...new Set((new URL(request.url).searchParams.get("ids") ?? "").split(",").map((s) => s.trim()).filter(Boolean))];
   if (!ids.length || ids.length > 40 || !ids.every((id) => /^[\w-]{3,80}$/.test(id))) return json({ error: "Indica da 1 a 40 partite." }, 400);
+  const wantsRefresh = new URL(request.url).searchParams.has("since");
+  const authorized = Boolean(env.SYNC_SECRET) && request.headers.get("x-sync-secret") === env.SYNC_SECRET;
+  if (wantsRefresh && !authorized) return json({ error: "Non autorizzato." }, 401);
   const missing = missingConfig(env, { apifootball: true });
   if (missing.length) return json({ error: `Variabili mancanti su Cloudflare: ${missing.join(", ")}` }, 503);
   try {
@@ -20,7 +23,10 @@ export async function onRequest({ request, env }) {
     const wantActual = new URL(request.url).searchParams.get("actual") === "1";
     const finals = wantActual ? matches.filter((m) => m.status === "final") : [];
     const live = matches.filter((m) => m.status !== "final" || !wantActual);          // le quote servono solo prima del fischio d'inizio
-    const r = await loadCornerOdds(env, live, now, { maxLive: 8 });
+    // Giro notturno (con il segreto): riscarica le quote più vecchie dell'inizio del giro; quelle già scaricate nel giro restano valide.
+    const since = Number(new URL(request.url).searchParams.get("since"));
+    const refreshMs = authorized && Number.isFinite(since) && since > 0 ? Math.max(0, now - since) : null;
+    const r = await loadCornerOdds(env, live, now, { maxLive: authorized ? 12 : 8, refreshMs });
     const a = finals.length ? await loadCornerActuals(env, finals, now, { maps: r.maps, maxLive: 6 }) : null;
     const retry = { pending: (r.retry.pending ?? 0) + (a?.retry.pending ?? 0), afterMs: Math.max(r.retry.afterMs ?? 0, a?.retry.afterMs ?? 0) };
     return json({
