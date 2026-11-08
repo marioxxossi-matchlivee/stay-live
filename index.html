@@ -47,10 +47,8 @@
           <div class="cp-row">
             <label class="hist">Soglia minima
               <select id="thr"><option value="0.55">55%</option><option value="0.6">60%</option><option value="0.65">65%</option><option value="0.7">70%</option><option value="0.75">75%</option></select></label>
-            <button class="ghost" id="find-corners" type="button">Cerca i corner</button>
           </div>
-          <p class="pv-qstatus" id="corner-status" aria-live="polite"></p>
-          <p class="api-note">Vedi solo le partite con Over o Under 2,5 sopra la soglia, oppure con un corner sopra la soglia. Over/Under 2,5: probabilità del modello (API-Football + ultime partite). Corner: nessun modello, solo la probabilità implicita nelle quote di API-Football; le quote si scaricano solo quando premi “Cerca i corner”.</p>
+          <p class="api-note">Vedi solo le partite con Over o Under 2,5 sopra la soglia, oppure con un corner sopra la soglia. Over/Under 2,5: probabilità del modello (API-Football + ultime partite). Corner: nessun modello, solo la probabilità implicita nelle quote di API-Football; le quote si cercano da sole ogni notte a mezzanotte per tutte le partite della settimana e, se ne mancano, quando aggiorni.</p>
         </div>
         <div class="listbar">
           <button class="chip-btn lg-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="league-nav"></button>
