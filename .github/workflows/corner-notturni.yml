@@ -1,0 +1,28 @@
+name: Corner notturni
+
+# A mezzanotte (ora italiana) cerca le quote corner di tutte le partite dei prossimi 7 giorni e le lascia pronte in cache:
+# nell'app non c'è più nessuna ricerca manuale. GitHub usa l'ora UTC, quindi il giro parte due volte (22:05 e 23:05 UTC)
+# e lo script prosegue solo quando a Roma è davvero mezzanotte (ora solare o legale).
+# Usa gli stessi secrets degli altri workflow: SITE_URL e SYNC_SECRET.
+# `workflow_dispatch` serve solo a provarlo da GitHub (non dall'app): puoi toglierlo se non ti serve.
+on:
+  schedule:
+    - cron: "5 22 * * *"
+    - cron: "5 23 * * *"
+  workflow_dispatch:
+
+jobs:
+  corner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Cerca i corner
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' }}
+        run: node scripts/nightly-corners.js
