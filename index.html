@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#f2f4f6" />
+    <meta name="theme-color" content="#f0f3f1" />
     <meta name="description" content="Stay Live: probabilità, BET o EVITA e preview di giornata per i principali campionati, Champions ed Europa League." />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
@@ -26,7 +26,7 @@
   <body>
     <div class="ptr" id="ptr" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></svg></div>
     <header class="top">
-      <a class="brand" href="/">Stay<span>Live</span></a>
+      <a class="brand" href="/" aria-label="Stay Live"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="10" fill="#0b1a2a"/><circle cx="16" cy="16" r="7.5" fill="none" stroke="#18b36f" stroke-width="3"/><circle cx="16" cy="16" r="2.4" fill="#fff"/></svg><span class="word">Stay<span class="live">Live</span></span></a>
       <button class="icon-btn" id="refresh" type="button" aria-label="Aggiorna dati"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></svg></button>
     </header>
     <main>
@@ -48,7 +48,7 @@
             <label class="hist">Soglia minima
               <select id="thr"><option value="0.55">55%</option><option value="0.6">60%</option><option value="0.65">65%</option><option value="0.7">70%</option><option value="0.75">75%</option></select></label>
           </div>
-          <p class="api-note">Vedi solo le partite con Over o Under 2,5 sopra la soglia, oppure con un corner sopra la soglia. Over/Under 2,5: probabilità del modello (API-Football + ultime partite). Corner: nessun modello, solo la probabilità implicita nelle quote di API-Football; le quote si cercano da sole ogni notte a mezzanotte per tutte le partite della settimana e, se ne mancano, quando aggiorni.</p>
+          <p class="api-note">Over/Under 2,5 dal modello (API-Football + ultime partite). Corner solo dalle quote di API-Football, cercate da sole ogni notte: nessun modello.</p>
         </div>
         <div class="listbar">
           <button class="chip-btn lg-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="league-nav"></button>

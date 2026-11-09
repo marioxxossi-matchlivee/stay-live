@@ -120,3 +120,9 @@ Misurato su `backtest_finals` (2.126 partite dal 1/5/2026, forma delle ultime 8 
 - **Validità**: le quote corner restano valide 27 ore (`ttlFor("corner-odds")`), cioè fino alla notte dopo; `/api/fixtures` ora porta i corner già in cache di tutte le partite dei prossimi 7 giorni (prima 3). La lettura della cache `af_cache` avviene a gruppi di 40 chiavi (indirizzi troppo lunghi con molte partite).
 - **Salva una giocata dalla lista**: ogni partita non ancora iniziata con un consiglio ha un segnalibro che salva la giocata (consiglio principale; in «O/U + corner» l'Over/Under 2,5 mostrato), senza puntata né quota. I corner non si salvano come giocata: non esiste un modello né un esito verificabile.
 - Nessuna modifica al database.
+
+## Restyle v2 «Pitch & Ink»
+- Stessa identità (inchiostro + verde campo), rivista: logo con segno, titolo giornata grande, riepilogo a pillole, giorni più leggibili, barra di navigazione fluttuante, fogli con angoli ampi.
+- **Riga partita**: orario e campionato in alto, squadre a sinistra, a destra il verdetto (pillola BET/EVITA, mercato, percentuale grande); le BET hanno un filo verde a sinistra; selezione con cerchio verde; segnalibro per salvare.
+- Preview: riepilogo, azioni su una griglia (primaria «Salva le BET»), sezioni con titoli uniformi, stati vuoti come schede. Un solo blu (acciaio) al posto dei blu sparsi; contrasti dei testi secondari migliorati.
+- CSS consolidato: tolte 278 dichiarazioni ridefinite più sotto e 34 regole/animazioni duplicate (verificato: schermate identiche pixel per pixel prima e dopo).
