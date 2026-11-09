@@ -74,7 +74,7 @@ export function cornerHtml(item, { compact = false } = {}) {
 
 /**
  * Barra compatta per la lista partite: chi è favorita a fare più corner (quote dei bookmaker) con la barra casa / pari / trasferta.
- * Stringa vuota se non ci sono dati corner (le quote si scaricano con "Cerca i corner").
+ * Stringa vuota se non ci sono dati corner (le quote si cercano da sole ogni notte).
  */
 export function cornerBarHtml(item) {
   const f = item?.corner?.favorite;

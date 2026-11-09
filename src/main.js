@@ -129,8 +129,9 @@ async function fillCrests(leagueIds) {
 const basisTag = (b) => (!b || b === "storico" ? "" : `<i class="api-tag" title="${b === "mercato" ? "Calcolato con le quote di mercato" : b === "api" ? "Calcolato con il pronostico di API-Football" : "Calcolato con il pronostico di API-Football e le quote di mercato"}">${b === "api+mercato" ? "API+Q" : b === "api" ? "API" : "Q"}</i>`);
 function pickChip(p) {
   if (!p) return "";
-  if (p.confidence === "insufficiente") return `<span class="pick none">Dati insufficienti: ${p.sample} gare di storico</span>`;
-  return `<span class="pick ${p.verdict === "BET" ? "bet" : "skip"}"><span class="pick-head"><b>${p.verdict === "BET" ? icon("check") : ""}${p.verdict}</b>${basisTag(p.basis)}<span>${esc(p.label)}</span><em>${pct(p.pLow)}</em></span></span>`;
+  if (p.confidence === "insufficiente") return `<span class="pick none"><b class="vd-pill">Pochi dati</b><span class="pk-label">${p.sample} gare di storico</span></span>`;
+  const bet = p.verdict === "BET";
+  return `<span class="pick ${bet ? "bet" : "skip"}"><b class="vd-pill">${bet ? icon("check") : ""}${p.verdict}</b><span class="pk-label">${esc(p.label)}${basisTag(p.basis)}</span><em class="pk-pct" title="Probabilità prudente">${pct(p.pLow)}</em></span>`;
 }
 function customChips(m) {
   const cm = m.corner ?? cornerCache.get(m.id) ?? null;
@@ -187,7 +188,7 @@ function rowHtml(m, k = 0) {
   const time = fmtTime.format(new Date(m.kickoffAt));
   const live = m.status === "in_progress" ? `<span class="live-tag">In corso</span>` : "";
   const check = isOpen(m) ? `<label class="chk"><input type="checkbox" data-sel="${esc(m.id)}" ${state.selected.has(m.id) ? "checked" : ""} aria-label="Seleziona ${esc(m.home)} – ${esc(m.away)}" /></label>` : `<span></span>`;
-  return `<div class="row ${state.selected.has(m.id) ? "sel" : ""}" style="--i:${Math.min(k, 9)}">${check}
+  return `<div class="row ${state.selected.has(m.id) ? "sel" : ""}${!isCustom() && m.pick?.verdict === "BET" && m.pick.confidence !== "insufficiente" ? " is-bet" : ""}" style="--i:${Math.min(k, 9)}">${check}
     <button class="row-main" type="button" data-open="${esc(m.id)}">
       <span class="meta"><b>${time}</b><span>${esc(leagueName(m.league, true))}</span>${live}</span>
       <span class="fx">${sideHtml(m.home, m.homeLogo, m.homeScore)}${sideHtml(m.away, m.awayLogo, m.awayScore)}</span>
@@ -252,11 +253,12 @@ function render() {
   $("#thr").value = String(state.thr);
   const long = state.day && state.day !== "results" ? dayParts(state.day).long : "";
   $("#day-title").textContent = state.day === "results" ? "Ultimi risultati" : long ? long[0].toUpperCase() + long.slice(1) : "Partite";
-  $("#summary").textContent = state.loading && !state.matches.length ? "Caricamento…"
-    : state.error ? "Dati non disponibili."
-    : isCustom() && state.day !== "results" ? `${list.length} ${list.length === 1 ? "partita" : "partite"} con O/U 2,5 o corner ≥ ${pct(state.thr)}`
-    : `${list.length} ${list.length === 1 ? "partita" : "partite"}${state.day === "results" ? "" : ` · ${bets} con BET`}`;
-  if (state.cornerNote && !state.loading && !state.error) $("#summary").textContent += ` · ${state.cornerNote}`;
+  const n = list.length, one = n === 1;
+  $("#summary").innerHTML = (state.loading && !state.matches.length ? `<span class="stat">Caricamento…</span>`
+    : state.error ? `<span class="stat">Dati non disponibili</span>`
+    : isCustom() && state.day !== "results" ? `<span class="stat"><b>${n}</b> ${one ? "partita" : "partite"} con O/U 2,5 o corner ≥ ${pct(state.thr)}</span>`
+    : `<span class="stat"><b>${n}</b> ${one ? "partita" : "partite"}</span>${state.day === "results" ? "" : `<span class="stat bet"><b>${bets}</b> con BET</span>`}`)
+    + (state.cornerNote && !state.loading && !state.error ? `<span class="stat note">${esc(state.cornerNote)}</span>` : "");
   const banner = $("#banner");
   banner.hidden = !(state.error || state.banner);
   banner.className = `banner${state.error ? " error" : ""}`;
@@ -265,7 +267,7 @@ function render() {
   if (animateNext) { listEl.classList.add("anim"); animateNext = false; clearTimeout(animTimer); animTimer = setTimeout(() => listEl.classList.remove("anim"), 700); } else listEl.classList.remove("anim");   // un ridisegno senza cambio di filtro non rilancia l'ingresso delle righe
   listEl.innerHTML = state.loading && !state.matches.length ? Array.from({ length: 4 }, () => `<div class="row skel" aria-hidden="true"><i></i><i></i><i></i></div>`).join("")
     : list.length ? list.map((m, k) => rowHtml(m, k)).join("")
-    : `<div class="empty">${state.loading ? "Carico i dati…" : state.error ? "" : isCustom() ? "Nessuna partita sopra la soglia. Abbassa la soglia oppure premi “Cerca i corner”." : state.onlyBet ? "Nessun BET in questa giornata con i filtri scelti." : "Nessuna partita per questa selezione."}</div>`;
+    : `<div class="empty">${state.loading ? "Carico i dati…" : state.error ? "" : isCustom() ? "Nessuna partita sopra la soglia. Abbassa la soglia: i corner si cercano da soli ogni notte." : state.onlyBet ? "Nessun BET in questa giornata con i filtri scelti." : "Nessuna partita per questa selezione."}</div>`;
   $("#refresh").disabled = state.loading;
   $("#refresh").classList.toggle("spin", state.loading || Boolean(state.syncing));
   const stamps = state.leagues.map((l) => l.syncedAt).filter(Boolean).sort();
@@ -750,7 +752,7 @@ const playItemHtml = (r) => accordionHtml({ id: `p:${r.play.id}`, open: openAcc.
 const playUi = { filter: "all" };
 const PL_FILTERS = [["all", "Tutte"], ["pending", "In attesa"], ["done", "Concluse"]];
 function playListHtml(ev) {
-  if (!plays.length) return `<div class="empty"><p>Nessuna giocata salvata. Dal preview premi “Salva le BET” (o “Salva giocata” su una singola o una multipla): il giorno dopo le troverai qui, confrontate con i risultati.</p><button class="primary" type="button" data-goto="matches">Vai alle partite</button></div>`;
+  if (!plays.length) return `<div class="empty"><p>Nessuna giocata salvata. Salvale dal segnalibro nella lista delle partite o dal preview: il giorno dopo le troverai qui, confrontate con i risultati.</p><button class="primary" type="button" data-goto="matches">Vai alle partite</button></div>`;
   const rows = filterRows(ev.rows, playUi.filter);
   if (!rows.length) return `<p class="empty">${playUi.filter === "pending" ? "Nessuna giocata in attesa." : "Nessuna giocata conclusa."}</p>`;
   return groupByDay(rows).map((g) => `<section class="pl-day"><h3 class="grp">${esc(g.label)}</h3>${g.rows.map(playItemHtml).join("")}</section>`).join("");
