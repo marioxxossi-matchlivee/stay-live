@@ -34,9 +34,19 @@ export async function onRequest(ctx) {
 }
 
 async function fixturesResponse(env) {
-  const days = Math.min(30, Math.max(3, Number(env.FIXTURES_DAYS) || 21));
+  const r = await buildFixtures(env);
+  return r.ok ? json(r.payload) : json({ error: r.error }, r.status);
+}
+
+/**
+ * Elenco partite con consiglio rapido, corner e stato dei campionati, costruito SOLO dai dati già in cache (nessuna richiesta al provider).
+ * Lo usano /api/fixtures (calcolo al volo, soluzione di ripiego) e il giro completo ogni 4 ore (scripts/full-refresh.js), che lo salva
+ * già pronto su Supabase: l'app lo legge da /api/board senza nessun calcolo.
+ */
+export async function buildFixtures(env) {
+  const days = Math.min(30, Math.max(3, Number(env.FIXTURES_DAYS) || 7));
   const missing = missingConfig(env);
-  if (missing.length) return json({ error: `Variabili mancanti su Cloudflare: ${missing.join(", ")}` }, 503);
+  if (missing.length) return { ok: false, status: 503, error: `Variabili mancanti: ${missing.join(", ")}` };
   try {
     const now = Date.now();
     const from = new Date(now - 36 * 3600e3).toISOString();
@@ -75,7 +85,7 @@ async function fixturesResponse(env) {
         corner: cr?.byGame.get(m.game_id) ?? null,                                // corner (quote di API-Football), solo se già scaricati
       };
     });
-    return json({
+    return { ok: true, payload: {
       updatedAt: new Date(now).toISOString(),
       historyMatches: ctx.matchCount,
       continents: CONTINENTS,
@@ -83,9 +93,9 @@ async function fixturesResponse(env) {
       needsCrests: LEAGUES.filter((l) => needsTeamList(l.id) && !logos.has(l.afId) && window.some((m) => m.league === l.id)).map((l) => l.id),   // campionati con partite ma senza scudetti in cache
       needsSync: LEAGUES.filter((l) => syncDue(byLeague[l.id], isActiveLeague(window, l.id, now), now)).map((l) => l.id),
       matches,
-    });
+    } };
   } catch (error) {
     console.error("Stay Live fixtures:", errorMessage(error));
-    return json({ error: `Impossibile leggere i dati da Supabase: ${errorMessage(error)}. Hai applicato la migrazione 202610290002?` }, 502);
+    return { ok: false, status: 502, error: `Impossibile leggere i dati da Supabase: ${errorMessage(error)}. Hai applicato la migrazione 202610290002?` };
   }
 }

@@ -26,7 +26,7 @@ export function countAbsent(list, map) {
  * Restituisce { byGame: Map(game_id -> { af, market, inj }), state: Map(game_id -> "used"|"waiting"|"missing") (pronostico),
  *               marketState: Map(game_id -> "used"|"waiting"|"missing"), maps, retry: { pending, afterMs } }.
  */
-export async function loadBrainInputs(env, matches, now = Date.now(), { live = true, maxMap = 6, maxLive = 12, market = true, maps: known = null } = {}) {
+export async function loadBrainInputs(env, matches, now = Date.now(), { live = true, maxMap = 6, maxLive = 12, market = true, maps: known = null, freshFor = null } = {}) {
   const byGame = new Map(), state = new Map(), marketState = new Map();
   const open = matches.filter((m) => AF_LEAGUES[m.league] && m.status !== "canceled");
   for (const m of matches) if (!open.includes(m)) { state.set(m.game_id, "missing"); marketState.set(m.game_id, "missing"); }
@@ -39,6 +39,7 @@ export async function loadBrainInputs(env, matches, now = Date.now(), { live = t
 
   const mapped = open.filter((m) => maps.has(m.game_id));
   const ttl = (kind, m) => ttlFor(kind, { kickoff: Date.parse(m.kickoff_at), now, finished: m.status === "final" });
+  const fresh = (kind, m) => (freshFor ? Math.min(ttl(kind, m), freshFor(m)) : undefined);      // freshFor(m): età massima accettata dal giro completo (ms)
   const fx = (m) => maps.get(m.game_id).fixture_id;
   let bets = { goals: 5, winner: 1 };
   if (market && mapped.length) {
@@ -47,10 +48,10 @@ export async function loadBrainInputs(env, matches, now = Date.now(), { live = t
   }
   // Ordine: prima i pronostici di tutte le partite, poi le quote: se il provider limita le richieste, ogni partita ha almeno il pronostico.
   const reqs = [
-    ...mapped.map((m) => ({ section: `${m.game_id}|pred`, endpoint: "predictions", params: { fixture: fx(m) }, ttl: ttl("predictions", m) })),
+    ...mapped.map((m) => ({ section: `${m.game_id}|pred`, endpoint: "predictions", params: { fixture: fx(m) }, ttl: ttl("predictions", m), fresh: fresh("predictions", m) })),
     ...(market ? mapped.flatMap((m) => [
-      { section: `${m.game_id}|goals`, endpoint: "odds", params: { fixture: fx(m), bet: bets.goals }, ttl: ttl("odds", m) },
-      { section: `${m.game_id}|x12`, endpoint: "odds", params: { fixture: fx(m), bet: bets.winner }, ttl: ttl("odds", m) },
+      { section: `${m.game_id}|goals`, endpoint: "odds", params: { fixture: fx(m), bet: bets.goals }, ttl: ttl("odds", m), fresh: fresh("odds", m) },
+      { section: `${m.game_id}|x12`, endpoint: "odds", params: { fixture: fx(m), bet: bets.winner }, ttl: ttl("odds", m), fresh: fresh("odds", m) },
     ]) : []),
   ];
   const sections = {};
