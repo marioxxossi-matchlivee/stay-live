@@ -48,7 +48,7 @@
             <label class="hist">Soglia minima
               <select id="thr"><option value="0.55">55%</option><option value="0.6">60%</option><option value="0.65">65%</option><option value="0.7">70%</option><option value="0.75">75%</option></select></label>
           </div>
-          <p class="api-note">Over/Under 2,5 dal modello (API-Football + ultime partite). Corner solo dalle quote di API-Football, cercate da sole ogni notte: nessun modello.</p>
+          <p class="api-note">Over/Under 2,5 dal modello (API-Football + ultime partite). Corner solo dalle quote di API-Football, cercate da sole ogni 4 ore: nessun modello.</p>
         </div>
         <div class="listbar">
           <button class="chip-btn lg-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="league-nav"></button>
@@ -74,6 +74,10 @@
       <!-- IMPOSTAZIONI -->
       <section class="view" id="view-settings" hidden>
         <h1 class="vtitle">Impostazioni</h1>
+        <div class="set-group" id="status-card">
+          <h2>Stato dei dati</h2>
+          <div id="set-status"></div>
+        </div>
         <div class="set-group">
           <h2>Analisi</h2>
           <label class="set-row"><span><b>Storico delle squadre</b><small>Quante ultime partite usa il calcolo</small></span>
@@ -82,7 +86,7 @@
         <div class="set-group">
           <h2>Dati</h2>
           <div class="set-row"><span><b>Ultimo aggiornamento</b><small id="set-updated">—</small></span></div>
-          <p class="set-hint">I campionati si aggiornano da soli ogni notte e al mattino. All’apertura vedi subito gli ultimi dati salvati; per aggiornare ora usa l’icona in alto o tira la lista verso il basso.</p>
+          <p class="set-hint">Tutto si aggiorna da solo ogni 4 ore (campionati, risultati, corner, Over/Under, statistiche). L’app legge l’ultimo aggiornamento già pronto: l’icona in alto o il tira-giù controllano se ce n’è uno più recente.</p>
         </div>
         <div class="set-group">
           <h2>Giocate salvate</h2>
