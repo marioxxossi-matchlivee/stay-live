@@ -3,9 +3,8 @@ name: Registra i pronostici
 # Ogni 4 ore registra su Supabase il pronostico principale di tutte le partite in programma nelle prossime 36 ore (anche quelle mai aperte nell'app),
 # usando solo i dati già in cache (nessuna richiesta in più ad API-Football). La riga si congela al calcio d'inizio.
 # Usa gli stessi secrets di "Aggiorna campionati": SITE_URL e SYNC_SECRET.
+# NON più programmato: il registro dei pronostici è una fase di "Aggiornamento completo" (ogni 4 ore). Resta avviabile a mano da GitHub.
 on:
-  schedule:
-    - cron: "20 */4 * * *"
   workflow_dispatch:
 
 jobs:

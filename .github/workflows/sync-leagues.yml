@@ -6,10 +6,8 @@ name: Aggiorna campionati
 # Servono due "secrets" del repository (Settings → Secrets and variables → Actions):
 #   SITE_URL     indirizzo del sito, senza barra finale (es. https://stay-live.pages.dev)
 #   SYNC_SECRET  lo stesso valore della variabile SYNC_SECRET su Cloudflare Pages
+# NON più programmato: lo sostituisce "Aggiornamento completo" (ogni 4 ore). Resta avviabile a mano da GitHub.
 on:
-  schedule:
-    - cron: "30 23 * * *"
-    - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
       force:

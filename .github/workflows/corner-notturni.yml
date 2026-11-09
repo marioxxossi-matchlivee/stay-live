@@ -5,10 +5,8 @@ name: Corner notturni
 # e lo script prosegue solo quando a Roma è davvero mezzanotte (ora solare o legale).
 # Usa gli stessi secrets degli altri workflow: SITE_URL e SYNC_SECRET.
 # `workflow_dispatch` serve solo a provarlo da GitHub (non dall'app): puoi toglierlo se non ti serve.
+# NON più programmato: i corner si cercano a ogni giro di "Aggiornamento completo" (ogni 4 ore). Resta avviabile a mano da GitHub.
 on:
-  schedule:
-    - cron: "5 22 * * *"
-    - cron: "5 23 * * *"
   workflow_dispatch:
 
 jobs:

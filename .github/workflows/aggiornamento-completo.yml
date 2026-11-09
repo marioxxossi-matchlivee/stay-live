@@ -1,0 +1,37 @@
+name: Aggiornamento completo
+
+# Ogni 4 ore (00:10, 04:10, 08:10, 12:10, 16:10, 20:10 UTC) aggiorna TUTTO: campionati e risultati, scudetti, pronostici, quote Over/Under e 1X2,
+# corner di tutte le partite della settimana, schede dati delle partite nelle prossime 48 ore, registro dei pronostici; poi salva l'istantanea
+# che l'app legge (tabella app_snapshot). Il lavoro avviene qui e non su Cloudflare: il piano Free concede solo 10 ms di CPU a richiesta.
+# L'esito di ogni giro (riuscito / parziale / fallito) compare nel riassunto della corsa e nell'app, in Impostazioni → Stato dei dati.
+#
+# Secrets del repository (Settings → Secrets and variables → Actions), gli stessi valori che hai su Cloudflare Pages:
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, API_FOOTBALL_KEY, API_NINJAS_KEY
+#   (SYNC_SECRET è facoltativo: se manca se ne usa uno interno.)
+on:
+  schedule:
+    - cron: "10 */4 * * *"
+  workflow_dispatch:     # serve solo a provarlo subito da GitHub (Actions → Aggiornamento completo → Run workflow)
+
+concurrency:
+  group: aggiornamento-completo
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Aggiornamento completo
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          API_NINJAS_KEY: ${{ secrets.API_NINJAS_KEY }}
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
+          FIXTURES_DAYS: "7"
+        run: node scripts/full-refresh.js
