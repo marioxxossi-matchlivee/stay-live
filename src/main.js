@@ -51,10 +51,19 @@ async function getJson(url) {
 /* Apertura istantanea: l'ultimo elenco ricevuto resta nel dispositivo e si mostra subito; poi l'app si aggiorna in secondo piano. */
 const CACHE_KEY = "stayLive.fixtures";
 const readCache = () => { try { const c = JSON.parse(localStorage.getItem(CACHE_KEY) ?? "null"); return c?.data?.matches && Date.now() - c.at < 36 * 3600e3 ? c : null; } catch { return null; } };
-const writeCache = (data) => { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), data })); } catch { /* spazio esaurito: si salta */ } };
-function applyData(data) {
-  Object.assign(state, { matches: data.matches, leagues: data.leagues, continents: data.continents ?? [], updatedAt: data.updatedAt });
-  writeCache(data);
+const writeCache = (data, board = null) => { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), data, board })); } catch { /* spazio esaurito: si salta */ } };
+/**
+ * L'elenco pronto: il giro completo ogni 4 ore (GitHub Actions) lo calcola e lo salva su Supabase, /api/board lo restituisce senza calcoli.
+ * Se non c'è ancora (migrazione o primo giro mancanti) si ripiega sul calcolo al volo di /api/fixtures con le sincronizzazioni dal telefono.
+ */
+async function fetchBoard() {
+  const j = await getJson("/api/board");
+  if (!j?.payload?.matches) throw new Error("Istantanea non disponibile");
+  return { data: { ...j.payload, needsSync: [], needsCrests: [] }, board: { builtAt: j.built_at, meta: j.meta ?? null } };
+}
+function applyData(data, board = null) {
+  Object.assign(state, { matches: data.matches, leagues: data.leagues, continents: data.continents ?? [], updatedAt: data.updatedAt, board });
+  writeCache(data, board);
   if (data.needsCrests?.length) fillCrests(data.needsCrests);
 }
 
@@ -62,9 +71,10 @@ async function load({ sync = true, fresh = false } = {}) {
   if (state.loading || state.syncing) return;
   state.loading = true; state.error = null; render();
   try {
-    let data = await getJson(fresh ? "/api/fixtures?fresh=1" : "/api/fixtures");
-    applyData(data); state.banner = null;
-    if (sync && !state.syncTried && data.needsSync.length) {
+    let data, board = null;
+    try { ({ data, board } = await fetchBoard()); } catch { board = null; data = await getJson(fresh ? "/api/fixtures?fresh=1" : "/api/fixtures"); }
+    applyData(data, board); state.banner = null;
+    if (!board && sync && !state.syncTried && data.needsSync.length) {
       state.syncTried = true;
       state.loading = false; state.syncing = true; render();            // l'elenco è già utilizzabile: l'aggiornamento prosegue in secondo piano
       const failures = [];
@@ -91,7 +101,7 @@ async function load({ sync = true, fresh = false } = {}) {
       state.banner = `Aggiorno i campionati… 0/${total}`; render();
       await Promise.all(Array.from({ length: Math.min(2, total) }, worker));
       data = await getJson("/api/fixtures?fresh=1");     // dopo la sincronizzazione si salta la copia pronta
-      applyData(data);
+      applyData(data, null);
       state.banner = failures.length ? `Aggiornamento incompleto. ${failures[0]}` : null;
     }
   } catch (e) {
@@ -99,7 +109,7 @@ async function load({ sync = true, fresh = false } = {}) {
     else state.error = e.message;
   } finally {
     state.loading = false; state.syncing = false; render();
-    if (fresh && !state.error) autoCorners({ force: true });      // aggiornamento a mano: si completano anche i corner mancanti
+    if (fresh && !state.error && !state.board) autoCorners({ force: true });      // solo senza istantanea: con l'istantanea i corner li cerca il giro completo
   }
 }
 
@@ -258,7 +268,9 @@ function render() {
     : state.error ? `<span class="stat">Dati non disponibili</span>`
     : isCustom() && state.day !== "results" ? `<span class="stat"><b>${n}</b> ${one ? "partita" : "partite"} con O/U 2,5 o corner ≥ ${pct(state.thr)}</span>`
     : `<span class="stat"><b>${n}</b> ${one ? "partita" : "partite"}</span>${state.day === "results" ? "" : `<span class="stat bet"><b>${bets}</b> con BET</span>`}`)
-    + (state.cornerNote && !state.loading && !state.error ? `<span class="stat note">${esc(state.cornerNote)}</span>` : "");
+    + (state.cornerNote && !state.loading && !state.error ? `<span class="stat note">${esc(state.cornerNote)}</span>` : "")
+    + (state.error ? "" : freshChipHtml());
+  renderStatusCard();
   const banner = $("#banner");
   banner.hidden = !(state.error || state.banner);
   banner.className = `banner${state.error ? " error" : ""}`;
@@ -267,7 +279,7 @@ function render() {
   if (animateNext) { listEl.classList.add("anim"); animateNext = false; clearTimeout(animTimer); animTimer = setTimeout(() => listEl.classList.remove("anim"), 700); } else listEl.classList.remove("anim");   // un ridisegno senza cambio di filtro non rilancia l'ingresso delle righe
   listEl.innerHTML = state.loading && !state.matches.length ? Array.from({ length: 4 }, () => `<div class="row skel" aria-hidden="true"><i></i><i></i><i></i></div>`).join("")
     : list.length ? list.map((m, k) => rowHtml(m, k)).join("")
-    : `<div class="empty">${state.loading ? "Carico i dati…" : state.error ? "" : isCustom() ? "Nessuna partita sopra la soglia. Abbassa la soglia: i corner si cercano da soli ogni notte." : state.onlyBet ? "Nessun BET in questa giornata con i filtri scelti." : "Nessuna partita per questa selezione."}</div>`;
+    : `<div class="empty">${state.loading ? "Carico i dati…" : state.error ? "" : isCustom() ? "Nessuna partita sopra la soglia. Abbassa la soglia: i corner si cercano da soli ogni 4 ore." : state.onlyBet ? "Nessun BET in questa giornata con i filtri scelti." : "Nessuna partita per questa selezione."}</div>`;
   $("#refresh").disabled = state.loading;
   $("#refresh").classList.toggle("spin", state.loading || Boolean(state.syncing));
   const stamps = state.leagues.map((l) => l.syncedAt).filter(Boolean).sort();
@@ -847,7 +859,7 @@ async function refreshPlays() {
       if (absorbCorners(plays, Object.fromEntries(actualCache))) savePlays(plays);
     }
     renderPlays(ids.length ? `Risultati aggiornati alle ${fmtTime.format(new Date())}.` : "");
-  } catch (e) { renderPlays(`Risultati non disponibili: ${e.message}`); } finally { playsBusy = false; $("#refresh").classList.toggle("spin", state.loading || Boolean(state.syncing)); autoCorners(); }
+  } catch (e) { renderPlays(`Risultati non disponibili: ${e.message}`); } finally { playsBusy = false; $("#refresh").classList.toggle("spin", state.loading || Boolean(state.syncing)); if (!state.board) autoCorners(); }
 }
 
 /* ---------- PDF del riepilogo ---------- */
@@ -968,6 +980,57 @@ $("#preview").addEventListener("close", () => clearTimeout(pvTimer));
 updatePlaysBadge();
 /* ---------- Navigazione ---------- */
 const VIEWS = ["matches", "plays", "settings"];
+/* ---------- Stato dei dati: quanto è fresco l'ultimo giro completo e com'è andato ---------- */
+const agoLabel = (ms) => { const m = Math.round(ms / 60e3); return m < 2 ? "adesso" : m < 60 ? `${m} min fa` : m < 48 * 60 ? `${Math.round(m / 60)} h fa` : `${Math.round(m / 1440)} giorni fa`; };
+/** Verde: giro recente e riuscito. Ambra: giro parziale o in ritardo. Rosso: dati vecchi o giro fallito. */
+function freshInfo() {
+  const b = state.board;
+  if (!b?.builtAt) return null;
+  const age = Date.now() - Date.parse(b.builtAt), st = b.meta?.status ?? "ok";
+  const cls = age > 9 * 3600e3 || st === "failed" ? "bad" : age > 5 * 3600e3 || st === "partial" ? "warn" : "ok";
+  return { cls, age, label: agoLabel(age), tail: st === "partial" ? " · parziale" : st === "failed" ? " · ultimo giro fallito" : "", status: st };
+}
+const freshChipHtml = () => { const f = freshInfo(); return f ? `<button class="stat fresh ${f.cls}" type="button" data-goto="settings" title="Apri lo stato dei dati"><i class="dot"></i>Aggiornato ${esc(f.label + f.tail)}</button>` : ""; };
+/** Prossimo giro previsto (00:10, 04:10, 08:10… UTC) come ora locale. */
+function nextRun(now = Date.now()) { const d = new Date(now); d.setUTCMinutes(10, 0, 0); for (let i = 0; i < 7; i += 1) { if (d.getUTCHours() % 4 === 0 && d.getTime() > now) return d; d.setUTCHours(d.getUTCHours() + 1); } return d; }
+function renderStatusCard() {
+  const el = $("#set-status");
+  if (!el) return;
+  const b = state.board, f = freshInfo();
+  if (!b) { el.innerHTML = `<div class="st-head bad"><i class="dot"></i><span><b>Aggiornamento automatico non ancora attivo</b><small>I dati si calcolano all'apertura (più lenti). Applica la migrazione “app_snapshot” su Supabase e avvia il workflow “Aggiornamento completo” su GitHub.</small></span></div>`; return; }
+  const m = b.meta ?? {}, when = (iso) => `${dayParts(dayKey(iso)).dm} ${fmtTime.format(new Date(iso))}`;
+  const title = { ok: "Tutto aggiornato", partial: "Aggiornamento parziale", failed: "Ultimo aggiornamento fallito" }[f.status] ?? "Aggiornato";
+  const line = (ok, label, value, note = "") => `<li class="${ok ? "ok" : "warn"}"><span class="mk">${ok ? "✓" : "!"}</span><span><b>${label}</b> ${value}${note ? `<small>${note}</small>` : ""}</span></li>`;
+  const el2 = m.matches?.eligible ?? 0, pc = (n) => (el2 ? `${n}/${el2}` : `${n}`);
+  const rows = m.leagues ? [
+    line(!m.leagues.failed.length, "Campionati", `${m.leagues.ok}/${m.leagues.total}`, m.leagues.failed.length ? m.leagues.failed.map((x) => `${esc(x.name)}: ${esc(x.error ?? "errore")}`).join(" · ") : ""),
+    line(el2 === 0 || m.prediction.used / el2 >= 0.9, "Pronostici API-Football", pc(m.prediction.used)),
+    line(el2 === 0 || m.market.used / el2 >= 0.8, "Quote Over/Under e 1X2", pc(m.market.used), "Dove i bookmaker le pubblicano"),
+    line(el2 === 0 || (m.corners.used + m.corners.none) / el2 >= 0.9, "Corner", `${m.corners.used} con quote`, `${m.corners.none} senza quote dei bookmaker · ${m.corners.missing + m.corners.waiting} non trovati`),
+    line(!m.details?.skipped, "Schede dati", `${m.details?.matches ?? 0} partite delle prossime 48 ore`),
+  ].join("") : "";
+  const credits = m.credits?.remaining != null ? `<p class="st-foot">Crediti API-Football: ${m.credits.used?.toLocaleString("it-IT") ?? "?"} usati oggi · ${m.credits.remaining.toLocaleString("it-IT")} restanti su ${m.credits.limit?.toLocaleString("it-IT") ?? "?"}</p>` : "";
+  const notes = (m.notes ?? []).length ? `<ul class="st-notes">${m.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : "";
+  const next = nextRun();
+  el.innerHTML = `<div class="st-head ${f.cls}"><i class="dot"></i><span><b>${title}</b><small>Ultimo giro completo ${when(b.builtAt)} (${esc(agoLabel(f.age))})${m.durationSec ? ` · durata ${Math.max(1, Math.round(m.durationSec / 60))} min` : ""}</small></span></div>
+    ${m.error ? `<p class="banner error">${esc(m.error)}</p>` : ""}<ul class="st-list">${rows}</ul>${notes}${credits}
+    <p class="st-foot">Prossimo giro previsto alle ${fmtTime.format(next)}. Verde = giro recente e riuscito · Ambra = parziale o in ritardo · Rosso = dati vecchi o giro fallito.</p>`;
+}
+function updateFresh() {
+  const f = freshInfo();
+  for (const el of document.querySelectorAll(".fresh")) { el.className = `stat fresh ${f?.cls ?? "ok"}`; el.innerHTML = `<i class="dot"></i>Aggiornato ${esc((f?.label ?? "") + (f?.tail ?? ""))}`; }
+  renderStatusCard();
+}
+setInterval(() => { if (document.visibilityState === "visible") updateFresh(); }, 60e3);
+/** Aggiornamento a mano: rilegge l'ultimo giro pronto e dice quanto è fresco. */
+async function manualRefresh() {
+  const before = state.board?.builtAt ?? null;
+  state.syncTried = false;
+  await load({ fresh: true });
+  const f = freshInfo();
+  if (state.board && f) showToast(state.board.builtAt === before ? `Già aggiornato: ultimo giro ${f.label}${f.tail}` : `Dati aggiornati: ${f.label}${f.tail}`);
+}
+
 function showView(name) {
   closeSelMenu();
   for (const v of VIEWS) {
@@ -1017,7 +1080,7 @@ $("#clear-plays").addEventListener("click", () => {
     ptr.style.setProperty("--pull", String(Math.min(dy, 140) / 140));
     ptr.classList.toggle("ready", dy > 100);
   }, { passive: true });
-  document.addEventListener("touchend", () => { const go = on && dy > 100; reset(); if (go) { if (document.body.dataset.view === "plays") refreshPlays(); else { state.syncTried = false; load({ fresh: true }); } } });
+  document.addEventListener("touchend", () => { const go = on && dy > 100; reset(); if (go) { if (document.body.dataset.view === "plays") refreshPlays(); else manualRefresh(); } });
 }
 
 /**
@@ -1061,13 +1124,13 @@ $("#select-bets").addEventListener("click", () => {
 });
 $("#sel-clear").addEventListener("click", () => { state.selected.clear(); render(); });
 $("#make-preview").addEventListener("click", makePreview);
-$("#refresh").addEventListener("click", () => { if (document.body.dataset.view === "plays") refreshPlays(); else { state.syncTried = false; load({ fresh: true }); } });
+$("#refresh").addEventListener("click", () => { if (document.body.dataset.view === "plays") refreshPlays(); else manualRefresh(); });
 setInterval(() => { if (document.visibilityState === "visible" && !state.error) { state.syncTried = false; load(); } }, 5 * 60e3);
 
 // Apertura: prima l'ultimo elenco salvato (istantaneo), poi l'aggiornamento in secondo piano.
 {
   const cached = readCache();
-  if (cached) { Object.assign(state, { matches: cached.data.matches, leagues: cached.data.leagues, continents: cached.data.continents ?? [], updatedAt: cached.data.updatedAt }); }
+  if (cached) { Object.assign(state, { matches: cached.data.matches, leagues: cached.data.leagues, continents: cached.data.continents ?? [], updatedAt: cached.data.updatedAt, board: cached.board ?? null }); }
 }
 document.body.dataset.view = "matches";
 render();
