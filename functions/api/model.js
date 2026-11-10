@@ -1,5 +1,5 @@
 /**
- * Modello statistico Stay Live (solo gol: API Ninjas non fornisce corner né quote).
+ * Modello statistico Stay Live (gol; i corner hanno il loro modello in _cornerstats.js). Dati storici: solo API-Football.
  * Poisson indipendente con forza attacco/difesa pesata sulle ultime partite.
  * Tutte le costanti sono qui e vengono mostrate all'utente: nulla è nascosto.
  */

@@ -91,7 +91,7 @@ export async function resolveUrl(env, source, league, now = Date.now()) {
 /* ---------- Abbinamento squadre e giocatori ---------- */
 const jaccard = (a, b) => { const A = new Set(a), B = new Set(b); return [...A].filter((x) => B.has(x)).length / new Set([...A, ...B]).size; };
 
-/** Squadra della fonte che corrisponde al nome API Ninjas ("Milan" non deve diventare "Inter Milan": nomi identici vincono). */
+/** Squadra della fonte che corrisponde al nome indicato ("Milan" non deve diventare "Inter Milan": nomi identici vincono). */
 export function bestTeam(name, candidates, exclude = null) {
   const tn = nameTokens(name);
   let best = null, bestScore = 0;

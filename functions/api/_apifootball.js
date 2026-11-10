@@ -326,7 +326,7 @@ export async function resolveFixture(env, match, now = Date.now()) {
   return { map };
 }
 
-/* ---------- Partite da API-Football (campionati senza API Ninjas) ---------- */
+/* ---------- Partite da API-Football ---------- */
 const AF_STATUS = {
   TBD: "scheduled", NS: "scheduled", "1H": "in_progress", HT: "in_progress", "2H": "in_progress", ET: "in_progress", BT: "in_progress", P: "in_progress", SUSP: "in_progress", INT: "in_progress", LIVE: "in_progress",
   FT: "final", AET: "final", PEN: "final", AWD: "final", WO: "final", PST: "postponed", CANC: "canceled", ABD: "canceled",
@@ -335,7 +335,7 @@ const AF_STATUS = {
 const roundText = (r) => { const t = String(r ?? "").trim(); const m = /^Regular Season - (\d+)$/i.exec(t); return m ? m[1] : t || null; };
 const roundType = (r) => (/league phase|group/i.test(r ?? "") ? "league_phase" : /final|round of|play-?off|knockout|qualif/i.test(r ?? "") ? "knockout" : "regular");
 
-/** Partita API-Football -> riga della tabella `matches` (stessa forma di API Ninjas). Risultato = 90 minuti (senza supplementari/rigori). */
+/** Partita API-Football -> riga della tabella `matches`. Risultato = 90 minuti (senza supplementari/rigori). */
 export function normalizeAfFixture(f, cfg, season, now = Date.now()) {
   const st = f.fixture?.status?.short ?? "NS";
   const status = AF_STATUS[st] ?? "scheduled";
