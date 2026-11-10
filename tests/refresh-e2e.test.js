@@ -43,7 +43,8 @@ function makeWorld() {
     const rows = (db[table] ??= []);
     const ok = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
     if (method === "GET") {
-      let r = matchesFilter(rows, params).map((x) => ({ ...x }));
+      const sel = u.searchParams.get("select");   // come PostgREST: solo le colonne richieste (un campo non richiesto arriva undefined)
+      let r = matchesFilter(rows, params).map((x) => (sel && sel !== "*" ? Object.fromEntries(sel.split(",").map((c) => [c, x[c]])) : { ...x }));
       const order = u.searchParams.get("order");
       if (order) { const [col, dir] = order.split(",")[0].split("."); r.sort((a, b) => (String(a[col]) < String(b[col]) ? -1 : 1) * (dir === "desc" ? -1 : 1)); }
       const off = Number(u.searchParams.get("offset") ?? 0), lim = Number(u.searchParams.get("limit") ?? 1000);
