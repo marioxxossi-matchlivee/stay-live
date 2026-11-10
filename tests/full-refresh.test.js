@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { FRESH_FAR, FRESH_NEAR, eligibleOpen, freshForAt, statusOf, summaryMarkdown, syncAll, tally } from "../scripts/full-refresh.js";
+import { runBudgetFor, FRESH_FAR, FRESH_NEAR, eligibleOpen, freshForAt, statusOf, summaryMarkdown, syncAll, tally } from "../scripts/full-refresh.js";
 import { LEAGUES } from "../functions/api/_lib.js";
 
 const H = 3600e3, now = Date.parse("2026-11-09T12:00:00Z");
@@ -57,4 +57,15 @@ test("campionati: riprova dopo il limite di richieste, segnala gli errori veri, 
   assert.equal(res.length, LEAGUES.length, "tutti i campionati passano da API-Football");
   const only = await syncAll({ SYNC_SECRET: "s" }, { call, wait: async () => {}, only: ["seriea", "ucl"] });
   assert.deepEqual(only.map((r) => r.id), ["seriea", "ucl"]);
+});
+
+test("budget del giro: i crediti restanti si dividono per i giri che mancano, con riserva per i recuperi", () => {
+  const at = (h) => Date.parse(`2026-11-09T${String(h).padStart(2, "0")}:10:00Z`);
+  assert.equal(runBudgetFor(7500, at(0)), Math.floor(7500 * 0.85 / 6), "inizio giornata: 6 giri");
+  assert.equal(runBudgetFor(4000, at(12)), Math.floor(4000 * 0.85 / 3));
+  assert.equal(runBudgetFor(1000, at(21)), 850, "ultimo giro: quasi tutto");
+  assert.equal(runBudgetFor(100, at(21)), 250, "minimo garantito");
+  assert.equal(runBudgetFor(4000, at(12), "recover"), 250, "recupero: 5% ma mai sotto il minimo");
+  assert.equal(runBudgetFor(7000, at(12), "recover"), 350);
+  assert.equal(runBudgetFor(null, at(12)), Infinity, "senza dato sui crediti non si limita");
 });

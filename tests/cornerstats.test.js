@@ -65,3 +65,11 @@ test("scarico dello storico: squadre che giocano a breve, ultime partite, niente
   assert.equal(cornerRow({ game_id: "af-1", league: "seriea", kickoff_at: "x", home_id: "a", away_id: "b" }, null).available, false);
   assert.equal(typeof backfillCorners, "function");
 });
+
+test("scarico corner: si saltano i campionati per cui il provider non fornisce statistiche", () => {
+  const now = Date.parse("2026-11-09T12:00:00Z");
+  const fin = (id, league) => ({ game_id: id, league, home_id: "af-1", away_id: "af-2", kickoff_at: new Date(now - 3 * 86400e3).toISOString() });
+  const open = [{ game_id: "af-100", league: "seriea", home_id: "af-1", away_id: "af-2", kickoff_at: new Date(now + 5 * 3600e3).toISOString() }];
+  const q = selectBackfill(open, [fin("af-1", "seriea"), fin("af-2", "serie_c_a")], new Set(), { now, skipLeagues: new Set(["serie_c_a"]) });
+  assert.deepEqual(q.map((f) => f.game_id), ["af-1"]);
+});
