@@ -30,6 +30,17 @@ export const NEAR_MS = 48 * H;                                   // "vicine": qu
 export const RESERVE_FOR_DETAILS = 1500;                         // sotto questi crediti restanti si salta la fase 4
 export const RESERVE_HISTORY = 2500;                             // e i corner storici (la parte meno urgente)
 export const HISTORY_CAP = { full: 400, recover: 150 };          // richieste massime per giro per i corner storici
+/**
+ * Crediti che un giro può spendere: il 85% di quelli restanti diviso per i giri completi che mancano a fine giornata (UTC, ogni 4 ore);
+ * il resto è riserva per i recuperi. Con 70+ campionati nei weekend le partite vicine costano più di 7.500 richieste al giorno se non si
+ * dosano: così le partite più vicine (ordinate per orario) hanno la precedenza e il resto riprende al giro successivo.
+ */
+export function runBudgetFor(remaining, now = Date.now(), mode = "full") {
+  if (remaining == null) return Infinity;
+  const d = new Date(now), hour = d.getUTCHours() + d.getUTCMinutes() / 60;
+  const runsLeft = Math.max(1, Math.ceil((24 - hour) / 4));
+  return Math.max(250, Math.floor(remaining * (mode === "recover" ? 0.05 : 0.85 / runsLeft)));
+}
 const RATE_RE = /limite|richieste|too many|rate/i;
 const VOLATILE = new Set(["fixture", "injuries", "predictions", "oddsGoals", "oddsCorners", "odds1x2"]);
 
@@ -114,6 +125,8 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
   const prev = await loadTasks(env);
   if (prev === null) meta.notes.push("Tabelle di diagnostica assenti: applica la migrazione 202611110001_refresh_diagnostics.sql su Supabase (senza, il recupero automatico non può funzionare).");
   const prevTasks = prev ?? [];
+  const runBudget = runBudgetFor(usage0?.remaining, now0, mode === "recover" ? "recover" : "full");
+  const spentNow = async () => ((await readUsage(env, Date.now()))?.requests ?? 0) - (usage0?.requests ?? 0);
   const attemptsOf = new Map(prevTasks.map((t) => [t.task_key, t.attempts]));
   const due = mode === "recover" ? prevTasks.filter((t) => Date.parse(t.next_try_at) <= now0) : [];
   try {
@@ -178,6 +191,7 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
       if (usage?.remaining != null && usage.remaining < 300) { meta.budgetStop = true; meta.notes.push(`Crediti giornalieri quasi esauriti (${usage.remaining} restanti): scarico interrotto, riprende da solo.`); break; }
       log(`   giro ${round}: in attesa ${pending}`);
       if (!pending) break;
+      if (await spentNow() > runBudget) { meta.notes.push(`Budget di crediti del giro raggiunto (${runBudget}): ${pending} partite riprendono al prossimo giro, in ordine di orario.`); break; }
       stalled = pending >= lastPending ? stalled + 1 : 0; lastPending = pending;
       if (round === 14 || stalled >= 2) { meta.notes.push(`${pending} partite ancora in coda dopo ${round} giri: le riprende il recupero automatico.`); break; }
       await wait(Math.max(3000, br.retry?.afterMs ?? 0, cr.retry?.afterMs ?? 0));
@@ -233,6 +247,7 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
         if (stall >= 2) { meta.notes.push(`${pending} sezioni delle schede dati non scaricate: le riprende il recupero automatico.`); break; }
         const u = await readUsage(env, Date.now());
         if (u?.remaining != null && u.remaining < 300) { meta.budgetStop = true; break; }
+        if (await spentNow() > runBudget) { meta.notes.push(`Schede dati: budget di crediti del giro raggiunto (${runBudget}), il resto al prossimo giro.`); break; }
         await wait(Math.max(3000, afterMs));
       }
       for (const m of near) {
@@ -244,7 +259,7 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
       }
     }
     // schede non rielaborate in questo giro (recupero): i compiti precedenti restano
-    for (const t of prevTasks.filter((t) => t.component === "details" && !near.some((m) => m.game_id === t.scope))) items.push({ component: "details", scope: t.scope, league: t.league, cls: t.state, error: t.last_error, carry: true });
+    for (const t of mode === "recover" ? prevTasks.filter((t) => t.component === "details" && open.some((m) => m.game_id === t.scope) && !near.some((m) => m.game_id === t.scope)) : []) items.push({ component: "details", scope: t.scope, league: t.league, cls: t.state, error: t.last_error, carry: true });
 
     /* 5 · corner storici reali (modello corner) */
     log("5 Corner storici (statistiche reali)…");
@@ -252,11 +267,15 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
       const usage5 = await readUsage(env, Date.now());
       const finals = await supabaseGetAll(env, "matches", { select: "game_id,league,kickoff_at,home_id,away_id", status: "eq.final", season: `eq.${SEASON}`, order: "kickoff_at.desc,game_id.asc" });   // con game_id (loadFinals non lo include)
       const have = new Set((await supabaseGetAll(env, "match_corners", { select: "game_id", season: `eq.${SEASON}` }, 1000, 20)).map((r) => r.game_id));
-      const queue = selectBackfill(open, finals, have, { limit: 5000, now });
-      const cap = HISTORY_CAP[mode === "recover" ? "recover" : "full"];
+      const noStats = new Set([...flags].filter(([, f]) => f.statistics === false).map(([id]) => id));     // il provider non fornisce statistiche per queste leghe: inutile spendere richieste
+      const queue = selectBackfill(open, finals, have, { limit: 5000, now, skipLeagues: noStats });
+      const cap = Math.min(HISTORY_CAP[mode === "recover" ? "recover" : "full"], Math.max(0, runBudget - (await spentNow()) - 100));      // solo con crediti del giro avanzati
       if (usage5?.remaining != null && usage5.remaining < RESERVE_HISTORY) {
         meta.cornerHistory = { stored: have.size, backlog: queue.length, fetched: 0, skipped: true };
         meta.notes.push(`Corner storici rimandati: crediti restanti ${usage5.remaining} sotto la riserva (${RESERVE_HISTORY}).`);
+      } else if (queue.length && cap < 40) {
+        meta.cornerHistory = { stored: have.size, backlog: queue.length, fetched: 0, skipped: true };
+        meta.notes.push("Corner storici rimandati: i crediti del giro sono serviti alle partite più vicine.");
       } else if (queue.length) {
         const res = await backfillCorners(env, queue.slice(0, cap), Date.now(), { maxLive: cap });
         meta.components.cornerStats.ok += res.available; meta.components.cornerStats.not_covered += res.unavailable;
