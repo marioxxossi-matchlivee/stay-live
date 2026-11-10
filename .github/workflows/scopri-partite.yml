@@ -1,0 +1,26 @@
+name: Scopri partite disponibili
+
+# Elenca tutte le competizioni con partite nei prossimi giorni (nazionali e campionati minori compresi) che il tuo piano API-Football
+# fornisce, segnando quali non sono ancora in Stay Live e la loro copertura. Non scrive nulla. Costo: ~7 + fino a 60 richieste.
+# Si avvia a mano: Actions → "Scopri partite disponibili" → Run workflow. Secret: API_FOOTBALL_KEY.
+on:
+  workflow_dispatch:
+    inputs:
+      giorni:
+        description: "Quanti giorni guardare (1-14)"
+        default: "7"
+
+jobs:
+  scopri:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Scopri
+        env:
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          GIORNI: ${{ inputs.giorni }}
+        run: node scripts/discover-matches.js "$GIORNI"
