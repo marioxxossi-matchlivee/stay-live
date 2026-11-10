@@ -119,12 +119,12 @@ export function cornerModel(ctx, match, { lines = LINES } = {}) {
  * Partite finite da scaricare: ultime `perTeam` di ogni squadra che gioca nelle partite aperte, senza riga in match_corners,
  * in ordine di prossimità del prossimo impegno. `have` = Set di game_id già in match_corners (anche quelli "non disponibili").
  */
-export function selectBackfill(openMatches, finals, have, { perTeam = 15, limit = 300, now = Date.now(), minAgeMs = 6 * 3600e3 } = {}) {
+export function selectBackfill(openMatches, finals, have, { perTeam = 15, limit = 300, now = Date.now(), minAgeMs = 6 * 3600e3, skipLeagues = new Set() } = {}) {
   const order = new Map();
   [...openMatches].sort((a, b) => Date.parse(a.kickoff_at) - Date.parse(b.kickoff_at)).forEach((m, i) => { for (const id of [m.home_id, m.away_id]) if (!order.has(id)) order.set(id, i); });
   const byTeam = new Map();
   for (const f of finals) {
-    if (!/^af-\d+$/.test(f.game_id) || !AF_LEAGUES[f.league] || Date.parse(f.kickoff_at) > now - minAgeMs) continue;    // statistiche complete solo qualche ora dopo la fine
+    if (!/^af-\d+$/.test(f.game_id) || !AF_LEAGUES[f.league] || skipLeagues.has(f.league) || Date.parse(f.kickoff_at) > now - minAgeMs) continue;    // statistiche complete solo qualche ora dopo la fine
     for (const id of [f.home_id, f.away_id]) if (order.has(id)) (byTeam.get(id) ?? byTeam.set(id, []).get(id)).push(f);
   }
   const chosen = new Map();
