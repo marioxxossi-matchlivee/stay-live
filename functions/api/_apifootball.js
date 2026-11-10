@@ -403,6 +403,8 @@ export async function fetchAfSeason(env, cfg, now = Date.now(), { reserve = 200 
   await trackUsage(env, now, res, 1).catch(() => {});
   const bad = leagueCheck(cfg, res.response[0]?.league);
   if (bad) throw new AfError(bad);
+  // Nessuna partita = stagione o id sbagliati (un campionato in corso ne ha sempre): si segnala invece di salvare "0 partite" in silenzio.
+  if (!res.response.length) throw new AfError(`API-Football non restituisce partite per ${cfg.name} (id ${cfg.afId}, stagione ${season}): stagione o id da verificare.`);
   const seen = new Map();
   for (const f of res.response) if (f.fixture?.id && f.teams?.home?.id && f.teams?.away?.id && f.fixture.date) seen.set(f.fixture.id, normalizeAfFixture(f, cfg, season, now));
   return [...seen.values()];

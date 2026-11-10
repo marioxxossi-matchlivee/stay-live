@@ -48,6 +48,24 @@ export const LEAGUES = [
   { id: "eliteserien", name: "Eliteserien", short: "Eliteserien", continent: "europa", country: "NO", nation: "Norvegia", tier: 1, provider: "apifootball", afId: 103, afCountry: "Norway", afName: "Eliteserien", calendarYear: true },
   { id: "allsvenskan", name: "Allsvenskan", short: "Allsvenskan", continent: "europa", country: "SE", nation: "Svezia", tier: 1, provider: "apifootball", afId: 113, afCountry: "Sweden", afName: "Allsvenskan", calendarYear: true },
   { id: "uecl", name: "Conference League", short: "Conference", continent: "europa", country: "UEFA-C", nation: "Coppe europee", tier: 0, international: true, provider: "apifootball", afId: 848, afCountry: "World", afName: "Conference" },
+  // Aggiunti dopo la scoperta delle partite disponibili (scripts/discover-matches.js): solo competizioni con pronostici E quote sul piano
+  // API-Football, serie professionistiche o semi-professionistiche (niente giovanili, femminili, riserve, coppe con formazioni miste, amichevoli senza quote).
+  { id: "efl2", name: "League Two", short: "League Two", continent: "europa", country: "GB", nation: "Inghilterra", tier: 4, provider: "apifootball", afId: 42, afCountry: "England", afName: "League Two" },
+  { id: "national_league", name: "National League", short: "National League", continent: "europa", country: "GB", nation: "Inghilterra", tier: 5, provider: "apifootball", afId: 43, afCountry: "England", afName: "National League" },
+  { id: "national_north", name: "National League North", short: "Nat. North", continent: "europa", country: "GB", nation: "Inghilterra", tier: 6, provider: "apifootball", afId: 50, afCountry: "England", afName: "National League - North" },
+  { id: "eerste", name: "Eerste Divisie", short: "Eerste Divisie", continent: "europa", country: "NL", nation: "Paesi Bassi", tier: 2, provider: "apifootball", afId: 89, afCountry: "Netherlands", afName: "Eerste Divisie" },
+  { id: "superlig2", name: "2. Lig", short: "2. Lig", continent: "europa", country: "TR", nation: "Turchia", tier: 2, provider: "apifootball", afId: 205, afCountry: "Turkey", afName: "2. Lig" },
+  { id: "serie_c_a", name: "Serie C - Girone A", short: "Serie C A", continent: "europa", country: "IT", nation: "Italia", tier: 3, provider: "apifootball", afId: 138, afCountry: "Italy", afName: "Serie C" },
+  { id: "serie_c_b", name: "Serie C - Girone B", short: "Serie C B", continent: "europa", country: "IT", nation: "Italia", tier: 3, provider: "apifootball", afId: 942, afCountry: "Italy", afName: "Serie C" },
+  { id: "serie_c_c", name: "Serie C - Girone C", short: "Serie C C", continent: "europa", country: "IT", nation: "Italia", tier: 3, provider: "apifootball", afId: 943, afCountry: "Italy", afName: "Serie C" },
+  { id: "rfef1", name: "Primera RFEF - Gruppo 1", short: "RFEF 1", continent: "europa", country: "ES", nation: "Spagna", tier: 3, provider: "apifootball", afId: 435, afCountry: "Spain", afName: "RFEF" },
+  { id: "rfef2", name: "Primera RFEF - Gruppo 2", short: "RFEF 2", continent: "europa", country: "ES", nation: "Spagna", tier: 3, provider: "apifootball", afId: 436, afCountry: "Spain", afName: "RFEF" },
+  { id: "wales", name: "FAW Championship", short: "Galles", continent: "europa", country: "GB-WLS", nation: "Galles", tier: 2, provider: "apifootball", afId: 111, afCountry: "Wales", afName: "Championship" },
+  { id: "nirl", name: "Championship", short: "N. Irlanda", continent: "europa", country: "GB-NIR", nation: "Irlanda del Nord", tier: 2, provider: "apifootball", afId: 407, afCountry: "Northern-Ireland", afName: "Championship" },
+  { id: "brasileirao", name: "Brasileirão Serie A", short: "Brasileirão", continent: "sud-america", country: "BR", nation: "Brasile", tier: 1, provider: "apifootball", afId: 71, afCountry: "Brazil", afName: "Serie A", calendarYear: true },
+  { id: "j2", name: "J2 League", short: "J2", continent: "asia", country: "JP", nation: "Giappone", tier: 2, provider: "apifootball", afId: 99, afCountry: "Japan", afName: "J2" },
+  { id: "j3", name: "J3 League", short: "J3", continent: "asia", country: "JP", nation: "Giappone", tier: 3, provider: "apifootball", afId: 100, afCountry: "Japan", afName: "J3" },
+  { id: "nations", name: "UEFA Nations League", short: "Nations League", continent: "europa", country: "UEFA-N", nation: "Nazionali", tier: 0, international: true, provider: "apifootball", afId: 5, afCountry: "World", afName: "Nations League" },
 ];
 export const LEAGUE_IDS = new Set(LEAGUES.map((l) => l.id));
 
