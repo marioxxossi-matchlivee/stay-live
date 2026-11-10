@@ -1,20 +1,22 @@
 name: Aggiornamento completo
 
-# Ogni 4 ore (00:10, 04:10, 08:10, 12:10, 16:10, 20:10 UTC) aggiorna TUTTO: campionati e risultati, scudetti, pronostici, quote Over/Under e 1X2,
-# corner di tutte le partite della settimana, schede dati delle partite nelle prossime 48 ore, registro dei pronostici; poi salva l'istantanea
-# che l'app legge (tabella app_snapshot). Il lavoro avviene qui e non su Cloudflare: il piano Free concede solo 10 ms di CPU a richiesta.
-# L'esito di ogni giro (riuscito / parziale / fallito) compare nel riassunto della corsa e nell'app, in Impostazioni → Stato dei dati.
+# Ogni 4 ore (00:10, 04:10, 08:10, 12:10, 16:10, 20:10 UTC) aggiorna TUTTO con API-Football (unico provider): campionati e risultati,
+# pronostici, quote Over/Under e 1X2, quote corner, schede dati delle partite nelle prossime 48 ore, corner storici reali per il modello,
+# registro dei pronostici; poi salva l'istantanea che l'app legge (tabella app_snapshot) e la rilegge per verificarla.
+# Le operazioni rimaste incomplete le riprende "Recupero aggiornamento" (ogni 30 minuti), senza aspettare il giro successivo.
+# Si avvia anche a mano: da GitHub (Actions → Run workflow) o dall'app (Impostazioni → Stato dei dati → "Aggiorna tutto ora").
 #
-# Secrets del repository (Settings → Secrets and variables → Actions), gli stessi valori che hai su Cloudflare Pages:
-#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, API_FOOTBALL_KEY, API_NINJAS_KEY
-#   (SYNC_SECRET è facoltativo: se manca se ne usa uno interno.)
+# Secrets del repository (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, API_FOOTBALL_KEY      (SYNC_SECRET è facoltativo)
+#   API_NINJAS_KEY non serve più: si può eliminare.
 on:
   schedule:
     - cron: "10 */4 * * *"
-  workflow_dispatch:     # serve solo a provarlo subito da GitHub (Actions → Aggiornamento completo → Run workflow)
+  workflow_dispatch:
 
+# Stesso gruppo del recupero: i due non girano mai insieme (niente richieste doppie né crediti sprecati).
 concurrency:
-  group: aggiornamento-completo
+  group: aggiornamento-stay-live
   cancel-in-progress: false
 
 jobs:
@@ -31,7 +33,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
-          API_NINJAS_KEY: ${{ secrets.API_NINJAS_KEY }}
           SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
           FIXTURES_DAYS: "7"
+          REFRESH_MODE: full
         run: node scripts/full-refresh.js

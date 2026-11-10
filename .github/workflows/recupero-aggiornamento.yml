@@ -1,0 +1,34 @@
+name: Recupero aggiornamento
+
+# Ogni 30 minuti riprende SOLO le operazioni rimaste incomplete da un aggiornamento parziale (tabella refresh_tasks):
+# non ripete ciò che è già completo (la cache su Supabase evita richieste duplicate) e non chiama API-Football se non c'è nulla da fare
+# oppure se i crediti giornalieri sono sotto la riserva. Quando tutto è completo l'esito torna "riuscito" nell'app.
+# Attenzione ai minuti di GitHub Actions (repository privato: 2.000/mese nel piano gratuito): se non ti bastano, cambia il cron in "0 * * * *" (ogni ora).
+# Secrets: gli stessi di "Aggiornamento completo".
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: aggiornamento-stay-live
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Recupero
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
+          FIXTURES_DAYS: "7"
+          REFRESH_MODE: recover
+        run: node scripts/full-refresh.js --recover
