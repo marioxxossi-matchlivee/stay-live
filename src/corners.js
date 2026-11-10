@@ -42,8 +42,8 @@ const verdictText = (v, item, actual) => {
 
 /** compact = una riga di sintesi (per le gambe delle multiple); altrimenti scheda completa con dettagli e, a fine partita, i corner reali. */
 export function cornerHtml(item, { compact = false } = {}) {
-  const c = item.corner, a = item.cornerActual, f = c?.favorite;
-  if (!c && !a) return "";
+  const c = item.corner, a = item.cornerActual, f = c?.favorite, mod = item.cornerModel?.ok ? item.cornerModel : null;
+  if (!c && !a && !mod) return "";
   const verdicts = cornerVerdicts(c, a);
   if (compact) {
     const bits = [];
@@ -52,7 +52,16 @@ export function cornerHtml(item, { compact = false } = {}) {
     return bits.length ? `<small class="lg-corner">Corner · ${bits.join(" · ")}</small>` : "";
   }
   const rows = [];
+  if (mod) {   // modello Stay Live: corner reali storici (API-Football), distinto dalle quote dei bookmaker
+    const mc = mod.moreCorners, ml = mod.lines.find((l) => l.line === mod.mainLine);
+    rows.push(`<p class="pc-h2"><b>Modello Stay Live</b> <small>corner reali delle ultime partite</small></p>
+      <p class="pc-fav ${mc.side}">${mc.side === "even" ? "<b>Nessuna favorita</b> nei corner secondo il modello" : `Più corner: <b>${esc(teamOf(mc.side, item))}</b> ${pct(mc[mc.side])}`}</p>
+      <p class="pc-sub">Attesi: ${esc(item.home)} ${num(mod.lambda.home, 1)} · ${esc(item.away)} ${num(mod.lambda.away, 1)} · totale ${num(mod.lambda.total, 1)}</p>
+      ${ml ? `<p class="pc-line">Totale, linea ${num(ml.line, 1)}: Over <b>${pct(ml.over)}</b> · Under <b>${pct(ml.under)}</b> <small>(probabilità del modello, non quote)</small></p>` : ""}
+      <p class="pc-sub">Basato su ${mod.sample.home} partite di ${esc(item.home)} e ${mod.sample.away} di ${esc(item.away)} · non ancora tarato con un backtest</p>`);
+  }
   if (f) {
+    rows.push(`<p class="pc-h2"><b>Quote dei bookmaker</b></p>`);
     const side = (k) => `<i class="${k}" style="width:${(f.p[k] * 100).toFixed(1)}%"></i>`;
     rows.push(`<p class="pc-fav ${f.side}">${f.side === "even" ? "<b>Nessuna favorita</b>: il mercato vede casa e trasferta alla pari" : `Più corner: <b>${esc(teamOf(f.side, item))}</b> ${pct(f.p[f.side])}`}</p>
       <span class="pc-bar" aria-hidden="true">${side("home")}${side("draw")}${side("away")}</span>

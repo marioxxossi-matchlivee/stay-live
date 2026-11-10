@@ -946,3 +946,11 @@ details.more .mk,details.more .form,details.more .kv div{background:var(--soft)}
 .st-foot{margin:10px 0 0;color:var(--mute);font-size:12.5px;line-height:1.4}
 .st-list li{padding:8px 0;line-height:1.3}
 .st-head{padding-bottom:10px}
+
+.st-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 10px}
+.st-grid>div{background:var(--soft,#f4f6f5);border-radius:12px;padding:8px 10px}
+.st-grid small{display:block;color:var(--mute);font-size:11.5px}
+.st-grid b{display:block;font-size:13px;line-height:1.3;margin-top:2px}
+.st-more{margin:8px 0 0}.st-more summary{cursor:pointer;font:700 13px var(--body);padding:6px 0}
+.st-btn{margin-top:12px;width:100%;padding:12px;border:0;border-radius:14px;background:var(--pitch-deep);color:#fff;font:800 14px var(--head)}
+.st-btn:disabled{opacity:.55}

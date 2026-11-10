@@ -993,29 +993,65 @@ function freshInfo() {
 const freshChipHtml = () => { const f = freshInfo(); return f ? `<button class="stat fresh ${f.cls}" type="button" data-goto="settings" title="Apri lo stato dei dati"><i class="dot"></i>Aggiornato ${esc(f.label + f.tail)}</button>` : ""; };
 /** Prossimo giro previsto (00:10, 04:10, 08:10… UTC) come ora locale. */
 function nextRun(now = Date.now()) { const d = new Date(now); d.setUTCMinutes(10, 0, 0); for (let i = 0; i < 7; i += 1) { if (d.getUTCHours() % 4 === 0 && d.getTime() > now) return d; d.setUTCHours(d.getUTCHours() + 1); } return d; }
+const COMP_LABEL = { prediction: "Pronostici API-Football", market: "Quote Over/Under e 1X2", corners: "Quote corner", details: "Schede dati (48 ore)", cornerStats: "Corner storici reali" };
+const CLASS_LABEL = [["ok", "aggiornati"], ["not_yet", "non ancora disponibili"], ["not_covered", "non previsti dal provider"], ["temporary", "temporaneamente non recuperabili"], ["error", "errori"]];
 function renderStatusCard() {
   const el = $("#set-status");
   if (!el) return;
   const b = state.board, f = freshInfo();
-  if (!b) { el.innerHTML = `<div class="st-head bad"><i class="dot"></i><span><b>Aggiornamento automatico non ancora attivo</b><small>I dati si calcolano all'apertura (più lenti). Applica la migrazione “app_snapshot” su Supabase e avvia il workflow “Aggiornamento completo” su GitHub.</small></span></div>`; return; }
-  const m = b.meta ?? {}, when = (iso) => `${dayParts(dayKey(iso)).dm} ${fmtTime.format(new Date(iso))}`;
+  if (!b) { el.innerHTML = `<div class="st-head bad"><i class="dot"></i><span><b>Aggiornamento automatico non ancora attivo</b><small>I dati si calcolano all'apertura (più lenti). Applica le migrazioni su Supabase e avvia il workflow “Aggiornamento completo” su GitHub.</small></span></div>${refreshButtonHtml()}`; return; }
+  const m = b.meta ?? {}, when = (iso) => `${dayParts(dayKey(iso)).dm} ${fmtTime.format(new Date(iso))}`, n = (x) => (x ?? 0).toLocaleString("it-IT");
   const title = { ok: "Tutto aggiornato", partial: "Aggiornamento parziale", failed: "Ultimo aggiornamento fallito" }[f.status] ?? "Aggiornato";
-  const line = (ok, label, value, note = "") => `<li class="${ok ? "ok" : "warn"}"><span class="mk">${ok ? "✓" : "!"}</span><span><b>${label}</b> ${value}${note ? `<small>${note}</small>` : ""}</span></li>`;
-  const el2 = m.matches?.eligible ?? 0, pc = (n) => (el2 ? `${n}/${el2}` : `${n}`);
-  const rows = m.leagues ? [
-    line(!m.leagues.failed.length, "Campionati", `${m.leagues.ok}/${m.leagues.total}`, m.leagues.failed.length ? m.leagues.failed.map((x) => `${esc(x.name)}: ${esc(x.error ?? "errore")}`).join(" · ") : ""),
-    line(el2 === 0 || m.prediction.used / el2 >= 0.9, "Pronostici API-Football", pc(m.prediction.used)),
-    line(el2 === 0 || m.market.used / el2 >= 0.8, "Quote Over/Under e 1X2", pc(m.market.used), "Dove i bookmaker le pubblicano"),
-    line(el2 === 0 || (m.corners.used + m.corners.none) / el2 >= 0.9, "Corner", `${m.corners.used} con quote`, `${m.corners.none} senza quote dei bookmaker · ${m.corners.missing + m.corners.waiting} non trovati`),
-    line(!m.details?.skipped, "Schede dati", `${m.details?.matches ?? 0} partite delle prossime 48 ore`),
-  ].join("") : "";
-  const credits = m.credits?.remaining != null ? `<p class="st-foot">Crediti API-Football: ${m.credits.used?.toLocaleString("it-IT") ?? "?"} usati oggi · ${m.credits.remaining.toLocaleString("it-IT")} restanti su ${m.credits.limit?.toLocaleString("it-IT") ?? "?"}</p>` : "";
-  const notes = (m.notes ?? []).length ? `<ul class="st-notes">${m.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : "";
-  const next = nextRun();
-  el.innerHTML = `<div class="st-head ${f.cls}"><i class="dot"></i><span><b>${title}</b><small>Ultimo giro completo ${when(b.builtAt)} (${esc(agoLabel(f.age))})${m.durationSec ? ` · durata ${Math.max(1, Math.round(m.durationSec / 60))} min` : ""}</small></span></div>
-    ${m.error ? `<p class="banner error">${esc(m.error)}</p>` : ""}<ul class="st-list">${rows}</ul>${notes}${credits}
-    <p class="st-foot">Prossimo giro previsto alle ${fmtTime.format(next)}. Verde = giro recente e riuscito · Ambra = parziale o in ritardo · Rosso = dati vecchi o giro fallito.</p>`;
+  if (m.v !== 2) {   // istantanea vecchia (prima della diagnostica dettagliata): si aggiorna dopo il prossimo giro
+    el.innerHTML = `<div class="st-head ${f.cls}"><i class="dot"></i><span><b>${title}</b><small>Ultimo giro ${when(b.builtAt)} (${esc(agoLabel(f.age))}). Il rapporto dettagliato compare dopo il prossimo giro.</small></span></div>${refreshButtonHtml()}`; return;
+  }
+  const comps = Object.entries(m.components ?? {}).map(([k, c]) => {
+    const open = (c.temporary ?? 0) + (c.error ?? 0);
+    const detail = CLASS_LABEL.filter(([key]) => c[key]).map(([key, label]) => `${n(c[key])} ${label}`).join(" · ") || "nessuna partita";
+    return `<li class="${open ? "warn" : "ok"}"><span class="mk">${open ? "!" : "✓"}</span><span><b>${esc(COMP_LABEL[k] ?? k)}</b><small>${esc(detail)}</small></span></li>`;
+  }).join("");
+  const lg = m.leagues ?? { total: 0, ok: 0, failed: [] };
+  const why = f.status === "partial" ? [
+    ...(lg.failed ?? []).map((x) => `Campionato ${x.name}: ${x.error ?? "errore"}`),
+    ...(m.pending ?? []).map((p) => `${COMP_LABEL[p.component] ?? p.component}: ${n(p.count)} da completare${p.sample ? ` (${p.sample})` : ""}`),
+    ...(m.budgetStop ? ["Crediti giornalieri quasi esauriti"] : []),
+    ...(m.verify?.ok === false ? ["Istantanea non verificata in lettura da Supabase"] : []),
+  ] : [];
+  const rq = m.requests ?? {};
+  const grid = [
+    ["Ultimo aggiornamento", when(b.builtAt)],
+    ["Prossimo aggiornamento", fmtTime.format(new Date(m.nextRunAt ?? nextRun())) + (m.nextRecoverAt ? ` · recupero dalle ${fmtTime.format(new Date(m.nextRecoverAt))}` : "")],
+    ["Campionati", `${n(lg.ok)}/${n(lg.total)} aggiornati · ${n(lg.failed?.length)} no`],
+    ["Partite", `${n(m.matches?.processed)} elaborate · ${n(m.matches?.waiting)} in attesa`],
+    ["Statistiche", `${n(m.stats?.updated)} aggiornate · ${n(m.stats?.missing)} mancanti · ${n(m.stats?.notAvailable)} non disponibili`],
+    ["Richieste API-Football", `${n(rq.thisRun)} in questo giro · ${n(rq.today)} oggi`],
+    ["Crediti", rq.remaining != null ? `${n(rq.today)} consumati · ${n(rq.remaining)} disponibili su ${n(rq.limit)}` : "—"],
+  ].map(([k, v]) => `<div><small>${k}</small><b>${esc(v)}</b></div>`).join("");
+  const errs = (m.errors ?? []).length ? `<details class="st-more"><summary>Errori (${m.errors.length})</summary><ul class="st-notes">${m.errors.map((x) => `<li>${esc(COMP_LABEL[x.component] ?? x.component)} · ${esc(x.scope)}: ${esc(x.message)}</li>`).join("")}</ul></details>` : "";
+  const pend = (m.pending ?? []).length ? `<details class="st-more" open><summary>Operazioni da completare (${m.pending.reduce((s, p) => s + p.count, 0)})</summary><ul class="st-notes">${m.pending.map((p) => `<li>${esc(COMP_LABEL[p.component] ?? p.component)}: ${n(p.count)} · nuovo tentativo automatico dalle ${fmtTime.format(new Date(p.nextTryAt))}</li>`).join("")}</ul></details>` : "";
+  const lgl = (m.leagues?.list ?? []).length ? `<details class="st-more"><summary>Dettaglio campionati</summary><ul class="st-list">${m.leagues.list.map((l) => `<li class="${l.ok ? "ok" : "warn"}"><span class="mk">${l.ok ? "✓" : "!"}</span><span><b>${esc(l.name)}</b><small>${l.ok ? `${n(l.count)} partite · ${l.syncedAt ? when(l.syncedAt) : "—"}` : esc(l.error ?? "errore")}</small></span></li>`).join("")}</ul></details>` : "";
+  const ch = m.cornerHistory ? `<p class="st-foot">Corner storici reali: ${n(m.cornerHistory.stored)} partite salvate${m.cornerHistory.backlog ? ` · ${n(m.cornerHistory.backlog)} ancora da scaricare` : ""}.</p>` : "";
+  const notes = (m.notes ?? []).length ? `<ul class="st-notes">${m.notes.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
+  el.innerHTML = `<div class="st-head ${f.cls}"><i class="dot"></i><span><b>${title}</b><small>${m.mode === "recover" ? "Recupero" : m.mode === "manual" ? "Aggiornamento manuale" : "Giro completo"} del ${when(b.builtAt)} (${esc(agoLabel(f.age))})${m.durationSec ? ` · durata ${Math.max(1, Math.round(m.durationSec / 60))} min` : ""}</small></span></div>
+    ${m.error ? `<p class="banner error">${esc(m.error)}</p>` : ""}
+    ${why.length ? `<ul class="st-notes"><li><b>Perché è parziale</b></li>${why.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    <div class="st-grid">${grid}</div>
+    <ul class="st-list">${comps}</ul>${pend}${errs}${lgl}${ch}${notes}${refreshButtonHtml()}
+    <p class="st-foot">Verde = giro riuscito · Ambra = restano operazioni da completare (si riprendono da sole ogni 30 minuti) · Rosso = dati vecchi o giro fallito. I dati che API-Football non fornisce non contano come errore.</p>`;
 }
+function refreshButtonHtml() { return `<button class="st-btn" type="button" data-act="refresh-all">Aggiorna tutto ora</button><p class="st-foot" id="refresh-msg"></p>`; }
+async function startFullRefresh() {
+  const msg = $("#refresh-msg"), btn = document.querySelector('[data-act="refresh-all"]');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch("/api/refresh", { method: "POST" });
+    const j = await res.json().catch(() => ({}));
+    if (res.status === 202) { if (msg) msg.textContent = "Aggiornamento avviato su GitHub: richiede alcuni minuti. Quando finisce, tira giù per ricaricare."; showToast("Aggiornamento completo avviato"); }
+    else if (msg) msg.textContent = j.error ?? `Errore ${res.status}`;
+  } catch (e) { if (msg) msg.textContent = `Richiesta non riuscita: ${e.message}`; }
+  if (btn) setTimeout(() => { btn.disabled = false; }, 15000);
+}
+document.addEventListener("click", (e) => { if (e.target.closest('[data-act="refresh-all"]')) startFullRefresh(); });
 function updateFresh() {
   const f = freshInfo();
   for (const el of document.querySelectorAll(".fresh")) { el.className = `stat fresh ${f?.cls ?? "ok"}`; el.innerHTML = `<i class="dot"></i>Aggiornato ${esc((f?.label ?? "") + (f?.tail ?? ""))}`; }
