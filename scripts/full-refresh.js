@@ -13,7 +13,7 @@
  *
  * Variabili (secrets di GitHub): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, API_FOOTBALL_KEY; facoltative: SYNC_SECRET, FIXTURES_DAYS (7).
  */
-import { LEAGUES, SEASON, errorMessage, supabaseDelete, supabaseGet, supabaseGetAll, supabasePatch, supabaseUpsert, loadFinals } from "../functions/api/_lib.js";
+import { LEAGUES, SEASON, errorMessage, supabaseDelete, supabaseGet, supabaseGetAll, supabasePatch, supabaseUpsert } from "../functions/api/_lib.js";
 import { AF_LEAGUES, betIdsFrom, dayKey, loadSections, planFor, seasonFor, ttlFor } from "../functions/api/_apifootball.js";
 import { loadBrainInputs } from "../functions/api/_brain.js";
 import { loadCornerOdds } from "../functions/api/_corners.js";
@@ -250,7 +250,7 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
     log("5 Corner storici (statistiche reali)…");
     try {
       const usage5 = await readUsage(env, Date.now());
-      const finals = await loadFinals(env);
+      const finals = await supabaseGetAll(env, "matches", { select: "game_id,league,kickoff_at,home_id,away_id", status: "eq.final", season: `eq.${SEASON}`, order: "kickoff_at.desc,game_id.asc" });   // con game_id (loadFinals non lo include)
       const have = new Set((await supabaseGetAll(env, "match_corners", { select: "game_id", season: `eq.${SEASON}` }, 1000, 20)).map((r) => r.game_id));
       const queue = selectBackfill(open, finals, have, { limit: 5000, now });
       const cap = HISTORY_CAP[mode === "recover" ? "recover" : "full"];
