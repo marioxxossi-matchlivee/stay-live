@@ -11,9 +11,9 @@ Stack: Vite (JS vanilla) · Cloudflare Pages Functions · Supabase · **API-Foot
 1. **Supabase → SQL Editor**: esegui `supabase/migrations/202610290002_matches_cache.sql` (additiva, crea `matches` e `sync_state`; la migrazione precedente resta valida ma non è più usata).
 2. **Cloudflare Pages → Settings → Variables and Secrets**: `API_FOOTBALL_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (secret). Opzionali: `SYNC_SECRET`, e per il pulsante «Aggiorna tutto ora» `GH_REPO` + `GH_DISPATCH_TOKEN` (token GitHub fine-grained solo su questo repository, permesso Actions: Read and write). `API_NINJAS_KEY` non serve più.
 3. Build: `npm run build`, output `dist`. Push su GitHub e il deploy parte da solo.
-4. Apri il sito: al primo accesso l'app legge l'ultima istantanea; i campionati li scarica da API-Football il workflow «Aggiornamento completo» (avvialo la prima volta da GitHub → Actions).
+4. Apri il sito: al primo accesso l'app legge l'ultima istantanea; i campionati li scarica da API-Football il workflow «Aggiornamento completo» (avvialo da GitHub → Actions dopo il punto 6).
 5. **Migrazioni nuove** (Supabase → SQL Editor, in ordine): `202611100001_app_snapshot.sql` se non l'hai già fatta, poi `202611110001_refresh_diagnostics.sql` (compiti di recupero, rapporti, corner storici).
-6. **Una sola volta, dopo il primo giro**: `node scripts/migrate-ninjas-ids.js` (prova, non cambia nulla) e poi `node scripts/migrate-ninjas-ids.js --apply` per riallineare lo storico delle 8 leghe ex-Ninjas agli id di API-Football (variabili SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, API_FOOTBALL_KEY).
+6. **Una sola volta, PRIMA del primo giro** (altrimenti le partite storiche compaiono doppie): `node scripts/migrate-ninjas-ids.js` (prova, non cambia nulla) e poi `node scripts/migrate-ninjas-ids.js --apply` per riallineare lo storico delle 8 leghe ex-Ninjas agli id di API-Football (variabili SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, API_FOOTBALL_KEY).
 
 ## Menu campionati e PDF
 
