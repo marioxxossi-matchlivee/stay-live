@@ -146,7 +146,7 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
 
     const now = Date.now();
     const from = new Date(now - 36 * H).toISOString(), to = new Date(now + days * 86400e3).toISOString();
-    const window = await supabaseGetAll(env, "matches", { select: COLUMNS, season: `eq.${SEASON}`, and: `(kickoff_at.gte.${from},kickoff_at.lte.${to})`, order: "kickoff_at.asc,game_id.asc" });
+    const window = await supabaseGetAll(env, "matches", { select: COLUMNS, season: `eq.${SEASON}`, status: "neq.superseded", and: `(kickoff_at.gte.${from},kickoff_at.lte.${to})`, order: "kickoff_at.asc,game_id.asc" });
     const open = eligibleOpen(window, now, days);
     meta.matches.window = window.length; meta.matches.eligible = open.length;
     const freshFor = freshForAt(now);
