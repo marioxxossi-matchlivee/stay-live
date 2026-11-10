@@ -2,7 +2,7 @@
 /**
  * Scopre TUTTE le competizioni con partite nei prossimi N giorni (default 7) disponibili sul tuo piano API-Football,
  * indicando quali sono già in Stay Live e quali no, con i flag di copertura (pronostici, quote, statistiche per partita).
- * Costo: N richieste (una per giorno) + una per ogni competizione non configurata (max 200, escluse giovanili/femminili/riserve) per la copertura. Non scrive nulla.
+ * Costo: N richieste (una per giorno) + una per ogni competizione non configurata (max 450, escluse giovanili/femminili/riserve) per la copertura. Non scrive nulla.
  *   API_FOOTBALL_KEY=... node scripts/discover-matches.js [giorni]
  */
 import { LEAGUES, errorMessage } from "../functions/api/_lib.js";
@@ -13,7 +13,7 @@ const SKIP_RE = /u-?\d\d|youth|women|femin|reserve|primavera|junior|j[uú]niores
 const NATIONAL_RE = /nations league|friendl|qualif|world cup|euro(pean)? championship|copa am|africa cup|asian cup|gold cup|olympic|u-?\d\d|women/i;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const GAP_MS = 400;                 // ~2,5 richieste al secondo: sotto qualsiasi limite al minuto
-const COVERAGE_BUDGET_MS = 6 * 60e3;   // la lettura della copertura si ferma dopo 6 minuti e stampa quanto ha letto
+const COVERAGE_BUDGET_MS = 9 * 60e3;   // la lettura della copertura si ferma dopo 6 minuti e stampa quanto ha letto
 
 /** Raggruppa le partite per competizione. responses = array di `response` di fixtures?date=. */
 export function summarizeFixtures(responses, configuredIds = new Set(LEAGUES.map((l) => l.afId))) {
@@ -58,18 +58,19 @@ async function main() {
   }
   const rows = summarizeFixtures(out);
   const missing = rows.filter((r) => !r.configured);
-  const worth = missing.filter((r) => !SKIP_RE.test(r.name ?? ""));          // la copertura si legge solo per competizioni non giovanili/femminili/riserve
+  for (const r of missing) r.skipped = SKIP_RE.test(r.name ?? "");
+  const worth = missing.filter((r) => !r.skipped);          // la copertura si legge solo per competizioni non giovanili/femminili/riserve
   const t0 = Date.now(); let done = 0;
-  for (const r of worth.slice(0, 200)) {
-    if (Date.now() - t0 > COVERAGE_BUDGET_MS) { console.log(`Tempo limite della lettura copertura: lette ${done} competizioni su ${Math.min(worth.length, 200)}.`); break; }
+  for (const r of worth.slice(0, 450)) {
+    if (Date.now() - t0 > COVERAGE_BUDGET_MS) { console.log(`Tempo limite della lettura copertura: lette ${done} competizioni su ${Math.min(worth.length, 450)}.`); break; }
     try { const c = await af(key, "leagues", { id: r.id, season: r.season }); r.coverage = coverageFlags(c.data, r.season); remaining = c.remaining; } catch (e) { r.coverageError = errorMessage(e).slice(0, 60); }
-    done += 1; if (done % 20 === 0) console.log(`copertura letta: ${done}/${Math.min(worth.length, 200)}`);
+    done += 1; if (done % 20 === 0) console.log(`copertura letta: ${done}/${Math.min(worth.length, 450)}`);
     await sleep(GAP_MS);
   }
   const mark = (v) => (v === true ? "sì" : v === false ? "no" : "?");
   const lines = [`## Partite dei prossimi ${days} giorni su API-Football`, "", `Totale: ${out.flat().length} partite in ${rows.length} competizioni · già in Stay Live: ${rows.length - missing.length} · NON configurate: ${missing.length} · richieste restanti oggi: ${remaining}`, "",
     "### Non ancora in Stay Live (id · paese · competizione · partite · pronostici/quote/statistiche)"];
-  for (const r of missing) lines.push(`- ${r.national ? "🌍 " : ""}**${r.id}** · ${r.country} · ${r.name} · ${r.matches} partite (${String(r.first).slice(5, 10)} → ${String(r.last).slice(5, 10)}) · stagione ${r.season} · ${r.coverage ? `pron ${mark(r.coverage.predictions)} / quote ${mark(r.coverage.odds)} / stat ${mark(r.coverage.statistics)}` : "copertura non letta (giovanili/femminili/riserve)"}`);
+  for (const r of missing) lines.push(`- ${r.national ? "🌍 " : ""}**${r.id}** · ${r.country} · ${r.name} · ${r.matches} partite (${String(r.first).slice(5, 10)} → ${String(r.last).slice(5, 10)}) · stagione ${r.season} · ${r.skipped ? "giovanili/femminili/riserve: non letta" : r.coverage ? `pron ${mark(r.coverage.predictions)} / quote ${mark(r.coverage.odds)} / stat ${mark(r.coverage.statistics)}` : "copertura non letta"}`);
   lines.push("", "### Già configurate");
   for (const r of rows.filter((x) => x.configured)) lines.push(`- ${r.id} · ${r.country} · ${r.name} · ${r.matches} partite`);
   console.log(lines.join("\n"));
