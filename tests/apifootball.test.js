@@ -189,3 +189,15 @@ test("sincronizzazione: nessuna partita restituita = errore esplicito (stagione 
     await assert.rejects(fetchAfSeason({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE_KEY: "sr", API_FOOTBALL_KEY: "k", API_FOOTBALL_MIN_GAP_MS: "0" }, cfg, Date.parse("2026-11-10T10:00:00Z")), /stagione o id da verificare/);
   } finally { globalThis.fetch = real; }
 });
+
+test("stagione API-Football fissata a mano (afSeason): richieste con la stagione del provider, nell'app la stagione corrente", async () => {
+  const { AF_SEASON } = await import("../functions/api/_apifootball.js");
+  const { SEASON } = await import("../functions/api/_lib.js");
+  assert.equal(AF_SEASON.get("j1"), 2027); assert.equal(AF_SEASON.get("afcon_q"), 2027); assert.equal(AF_SEASON.get("concacaf_nl"), 2025);
+  for (const id of ["j1", "afcon_q", "concacaf_nl"]) assert.equal(seasonFor(id, "2026-11-20T10:00:00Z"), AF_SEASON.get(id), `${id}: stagione del provider`);
+  assert.equal(seasonFor("seriea", "2026-11-20T10:00:00Z"), 2026, "le altre seguono la regola normale");
+  const cfg = LEAGUES.find((l) => l.id === "j1");
+  const row = normalizeAfFixture({ fixture: { id: 9, date: "2026-11-20T10:00:00Z", status: { short: "NS" } }, league: { id: 98, name: "J1 League", country: "Japan", round: "Regular Season - 38" }, teams: { home: { id: 1, name: "A" }, away: { id: 2, name: "B" } }, goals: {}, score: {} }, cfg, 2027);
+  assert.equal(row.season, SEASON, "la riga resta nella stagione corrente dell'app, altrimenti sparirebbe dall'elenco");
+  assert.equal(directMap({ game_id: "af-9", league: "j1", season: SEASON, kickoff_at: "2026-11-20T10:00:00Z", home_id: "af-1", away_id: "af-2" }).season, 2027, "gli endpoint di API-Football ricevono la sua stagione");
+});
