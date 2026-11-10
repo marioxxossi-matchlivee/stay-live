@@ -14,7 +14,7 @@ test("scudetto: indirizzo fisso dall'id API-Football", () => {
   assert.equal(afTeamId("Inter"), null);
 });
 
-test("partite API-Football: logo dall'id; API Ninjas: dal nome nell'elenco squadre", () => {
+test("partite API-Football: logo dall'id; righe storiche con id non API-Football: dal nome nell'elenco squadre", () => {
   const index = buildLogoIndex(rows);
   assert.equal(logoFor("serieb", "af-777", "Qualcuno", index), crestUrl(777));
   assert.equal(logoFor("seriea", "ninjas-1", "AC Milan", index), crestUrl(489));
@@ -24,8 +24,8 @@ test("partite API-Football: logo dall'id; API Ninjas: dal nome nell'elenco squad
   assert.deepEqual(withLogos({ league: "seriea", home_id: "n1", home_name: "AC Milan", away_id: "af-5", away_name: "X" }, buildLogoIndex(rows)), { homeLogo: crestUrl(489), awayLogo: crestUrl(5) });
 });
 
-test("elenco squadre solo per i campionati di API Ninjas che hanno un id API-Football", () => {
-  assert.equal(needsTeamList("seriea"), true);
-  assert.equal(needsTeamList("serieb"), false);   // le sue partite arrivano da API-Football: id nelle squadre
+test("con la sola API-Football non serve più nessun elenco squadre", () => {
+  assert.equal(needsTeamList("seriea"), false);
+  assert.equal(needsTeamList("serieb"), false);
   assert.equal(needsTeamList("nope"), false);
 });

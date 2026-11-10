@@ -21,25 +21,27 @@ test("conteggio degli stati", () => {
   assert.deepEqual(tally(st, ["a", "b", "c", "d"]), { used: 1, none: 1, waiting: 1, missing: 1 });
 });
 
-const base = () => ({ error: null, pending: 0, budgetStop: false, leagues: { total: 30, ok: 30, failed: [] }, matches: { window: 200, eligible: 100 },
-  prediction: { used: 98, waiting: 0, missing: 2, none: 0 }, market: { used: 95, waiting: 0, missing: 5, none: 0 }, corners: { used: 80, none: 15, waiting: 0, missing: 5 },
-  details: { matches: 40, sections: 500, skipped: false }, credits: { used: 3000, remaining: 4500, limit: 7500 }, notes: [], durationSec: 600 });
+const base = () => ({ error: null, budgetStop: false, verify: { ok: true }, leagues: { total: 32, ok: 32, failed: [] }, matches: { window: 200, eligible: 100, processed: 100, waiting: 0 },
+  components: { prediction: { ok: 90, not_yet: 8, not_covered: 2, temporary: 0, error: 0 }, market: { ok: 60, not_yet: 30, not_covered: 10, temporary: 0, error: 0 }, corners: { ok: 40, not_yet: 30, not_covered: 30, temporary: 0, error: 0 } },
+  details: { matches: 40, sections: 500, skipped: false }, requests: { thisRun: 900, today: 3000, remaining: 4500, limit: 7500 }, pending: [], notes: [], durationSec: 600, mode: "full" });
 
-test("esito del giro: ok, parziale, fallito", () => {
-  assert.equal(statusOf(base()), "ok");
-  assert.equal(statusOf({ ...base(), leagues: { total: 30, ok: 29, failed: [{ id: "x", error: "e" }] } }), "partial");
-  assert.equal(statusOf({ ...base(), prediction: { used: 50, waiting: 0, missing: 50, none: 0 } }), "partial");
-  assert.equal(statusOf({ ...base(), corners: { used: 10, none: 10, waiting: 0, missing: 80 } }), "partial");
+test("esito del giro: i dati non forniti dal provider NON rendono il giro parziale", () => {
+  assert.equal(statusOf(base()), "ok", "non ancora disponibili / non previsti = situazione normale");
+  assert.equal(statusOf({ ...base(), leagues: { total: 32, ok: 31, failed: [{ id: "x", error: "e" }] } }), "partial");
+  assert.equal(statusOf({ ...base(), components: { ...base().components, prediction: { ok: 50, not_yet: 0, not_covered: 0, temporary: 10, error: 0 } } }), "partial");
+  assert.equal(statusOf({ ...base(), components: { ...base().components, corners: { ok: 1, not_yet: 0, not_covered: 0, temporary: 0, error: 3 } } }), "partial");
   assert.equal(statusOf({ ...base(), budgetStop: true }), "partial");
+  assert.equal(statusOf({ ...base(), verify: { ok: false } }), "partial");
+  assert.equal(statusOf({ ...base(), leagues: { total: 32, ok: 0, failed: [{ id: "x" }] } }), "failed");
   assert.equal(statusOf({ ...base(), error: "boom" }), "failed");
 });
 
 test("riassunto leggibile", () => {
-  const md = summaryMarkdown({ ...base(), status: "partial", leagues: { total: 30, ok: 29, failed: [{ id: "serieb", error: "Too many requests" }] } });
-  assert.match(md, /parziale/); assert.match(md, /29\/30/); assert.match(md, /serieb \(Too many requests\)/); assert.match(md, /4500 restanti su 7500/);
+  const md = summaryMarkdown({ ...base(), status: "partial", leagues: { total: 32, ok: 31, failed: [{ id: "serieb", error: "Too many requests" }] }, pending: [{ component: "prediction", count: 4, nextTryAt: "2026-11-09T12:40:00Z" }] });
+  assert.match(md, /parziale/); assert.match(md, /31\/32/); assert.match(md, /serieb \(Too many requests\)/); assert.match(md, /4500 restanti su 7500/); assert.match(md, /Da completare: Pronostici API-Football \(4\)/);
 });
 
-test("campionati: riprova dopo il limite di richieste e segnala gli errori veri", async () => {
+test("campionati: riprova dopo il limite di richieste, segnala gli errori veri, solo API-Football", async () => {
   const calls = {}, waits = [];
   const call = async ({ request }) => {
     const id = new URL(request.url).searchParams.get("league"); calls[id] = (calls[id] ?? 0) + 1;
@@ -50,6 +52,8 @@ test("campionati: riprova dopo il limite di richieste e segnala gli errori veri"
   const res = await syncAll({ SYNC_SECRET: "s" }, { call, wait: async (ms) => { waits.push(ms); } });
   assert.equal(calls.epl, 2); assert.ok(waits.includes(20000));
   assert.equal(calls.serieb, 1, "un errore non legato al limite non si ripete");
-  const failed = res.filter((r) => !r.ok); assert.deepEqual(failed.map((r) => r.id), ["serieb"]);
-  assert.ok(res.length >= 30);
+  assert.deepEqual(res.filter((r) => !r.ok).map((r) => r.id), ["serieb"]);
+  assert.equal(res.length, 32, "tutti i 32 campionati passano da API-Football");
+  const only = await syncAll({ SYNC_SECRET: "s" }, { call, wait: async () => {}, only: ["seriea", "ucl"] });
+  assert.deepEqual(only.map((r) => r.id), ["seriea", "ucl"]);
 });

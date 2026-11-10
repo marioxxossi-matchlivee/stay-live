@@ -56,3 +56,13 @@ test("giocate: i corner reali si copiano solo nelle gambe già finite e restano"
   assert.equal(absorbCorners(plays, { a: { home: 1, away: 1 } }), false);
   assert.deepEqual(pendingCornerIds(plays), []);
 });
+
+test("scheda corner: il modello Stay Live è distinto dalle quote dei bookmaker", () => {
+  const model = { ok: true, lambda: { home: 6.2, away: 3.9, total: 10.1 }, moreCorners: { home: 0.71, away: 0.2, even: 0.09, side: "home", gap: 0.51 }, mainLine: 9.5, lines: [{ line: 9.5, over: 0.54, under: 0.46 }], sample: { home: 12, away: 11, league: 300 } };
+  const html = cornerHtml({ ...item, cornerModel: model });
+  assert.match(html, /Modello Stay Live/); assert.match(html, /Quote dei bookmaker/);
+  assert.match(html, /Più corner: <b>Inter<\/b> 71%/); assert.match(html, /non quote/); assert.match(html, /non ancora tarato/);
+  const only = cornerHtml({ home: "Inter", away: "Roma", status: "scheduled", cornerModel: model });
+  assert.match(only, /Modello Stay Live/); assert.doesNotMatch(only, /Quote dei bookmaker/, "senza quote nessuna sezione bookmaker");
+  assert.equal(cornerHtml({ home: "A", away: "B", cornerModel: { ok: false, reason: "dati insufficienti" } }), "", "modello senza dati: niente scheda inventata");
+});

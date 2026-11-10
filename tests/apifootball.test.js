@@ -96,7 +96,7 @@ const AF_FX = (over = {}) => ({
   ...over,
 });
 
-test("partita API-Football -> riga matches (stessa forma di API Ninjas)", () => {
+test("partita API-Football -> riga matches", () => {
   const cfg = LEAGUES.find((l) => l.id === "eredivisie");
   const now = Date.parse("2026-11-03T10:00:00Z");
   const next = normalizeAfFixture(AF_FX(), cfg, 2026, now);
@@ -126,7 +126,7 @@ test("controllo anti-errore sull'id campionato", () => {
 test("partite API-Football: collegamento diretto dal game_id", () => {
   const m = { game_id: "af-1234", league: "eredivisie", season: 2026, kickoff_at: "2026-11-07T15:00:00+00:00", home_id: "af-194", away_id: "af-197", home_name: "Ajax", away_name: "PSV" };
   assert.deepEqual([directMap(m).fixture_id, directMap(m).league_id, directMap(m).season, directMap(m).home_team_id, directMap(m).away_team_id], [1234, 88, 2026, 194, 197]);
-  assert.equal(directMap({ ...m, game_id: "seriea-20261031-int-mil", league: "seriea" }), null);   // partite API Ninjas: si cerca per orario e nomi
+  assert.equal(directMap({ ...m, game_id: "seriea-20261031-int-mil", league: "seriea" }), null);   // id storico non API-Football: si cerca per orario e nomi (poi lo riallinea scripts/migrate-ninjas-ids.js)
 });
 
 test("configurazione campionati: 32 voci coerenti", () => {
@@ -136,9 +136,10 @@ test("configurazione campionati: 32 voci coerenti", () => {
   for (const l of LEAGUES) {
     assert.ok(l.afId > 0 && l.name && l.short && l.continent && l.country && l.nation && Number.isInteger(l.tier), l.id);
     assert.ok(!("oddsKey" in l), `${l.id}: The Odds API non è più usata`);
-    if (l.provider === "apifootball") assert.ok(l.afCountry, l.id);
+    assert.equal(l.provider, "apifootball", `${l.id}: tutti i campionati arrivano da API-Football`);
+    assert.ok(l.afCountry, l.id);
   }
-  assert.equal(LEAGUES.filter((l) => l.provider === "apifootball").length, 24);
+  assert.equal(LEAGUES.filter((l) => l.provider === "apifootball").length, 32);
   assert.equal(seasonFor("eliteserien", "2026-11-03T10:00:00Z"), 2026);
   assert.equal(seasonFor("eliteserien", "2027-04-03T10:00:00Z"), 2027);                         // stagione solare
   assert.equal(seasonFor("eredivisie", "2027-04-03T10:00:00Z"), 2026);
