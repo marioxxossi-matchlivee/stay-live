@@ -53,7 +53,7 @@ export async function buildFixtures(env) {
     const from = new Date(now - 36 * 3600e3).toISOString();
     const to = new Date(now + days * 86400e3).toISOString();
     const [window, finals, states, logos] = await Promise.all([
-      supabaseGetAll(env, "matches", { select: COLUMNS, season: `eq.${SEASON}`, and: `(kickoff_at.gte.${from},kickoff_at.lte.${to})`, order: "kickoff_at.asc,game_id.asc" }),
+      supabaseGetAll(env, "matches", { select: COLUMNS, season: `eq.${SEASON}`, status: "neq.superseded", and: `(kickoff_at.gte.${from},kickoff_at.lte.${to})`, order: "kickoff_at.asc,game_id.asc" }),
       loadFinals(env),
       supabaseGet(env, "sync_state", { select: "*" }),
       loadLogoIndex(env),
