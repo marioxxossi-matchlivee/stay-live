@@ -1,4 +1,4 @@
--- Stay Live v2: cache delle partite API Ninjas (tutti i campionati) in Supabase.
+-- Stay Live v2: cache delle partite (tutti i campionati, oggi solo da API-Football) in Supabase.
 -- Additiva: non tocca le tabelle create dalla migrazione precedente.
 
 create table if not exists public.matches (
