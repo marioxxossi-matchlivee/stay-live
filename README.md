@@ -2,16 +2,18 @@
 
 Analisi pre-partita per **Serie A, Premier League, LaLiga, Bundesliga, Ligue 1, MLS, Champions League ed Europa League**: probabilità per 1X2, doppia chance, Over/Under 1,5·2,5·3,5 ed entrambe segnano, verdetto **BET / EVITA** con la quota minima da cercare, e **preview di giornata** sulle partite che scegli.
 
-Stack: Vite (JS vanilla) · Cloudflare Pages Functions · Supabase · API Ninjas (calendario) · API-Football (pronostici, quote, infortuni).
+Stack: Vite (JS vanilla) · Cloudflare Pages Functions · Supabase · **API-Football come unico provider di dati calcistici** (calendario, risultati, pronostici, quote, infortuni, statistiche, corner).
 
 > Le stime sono sperimentali e usano solo i gol: non sono garanzie né consigli finanziari.
 
 ## Messa in funzione
 
 1. **Supabase → SQL Editor**: esegui `supabase/migrations/202610290002_matches_cache.sql` (additiva, crea `matches` e `sync_state`; la migrazione precedente resta valida ma non è più usata).
-2. **Cloudflare Pages → Settings → Variables and Secrets**: `API_NINJAS_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (secret). Opzionale `SYNC_SECRET`.
+2. **Cloudflare Pages → Settings → Variables and Secrets**: `API_FOOTBALL_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (secret). Opzionali: `SYNC_SECRET`, e per il pulsante «Aggiorna tutto ora» `GH_REPO` + `GH_DISPATCH_TOKEN` (token GitHub fine-grained solo su questo repository, permesso Actions: Read and write). `API_NINJAS_KEY` non serve più.
 3. Build: `npm run build`, output `dist`. Push su GitHub e il deploy parte da solo.
-4. Apri il sito: al primo accesso l'app scarica i campionati da API Ninjas e li salva in Supabase (qualche secondo).
+4. Apri il sito: al primo accesso l'app legge l'ultima istantanea; i campionati li scarica da API-Football il workflow «Aggiornamento completo» (avvialo la prima volta da GitHub → Actions).
+5. **Migrazioni nuove** (Supabase → SQL Editor, in ordine): `202611100001_app_snapshot.sql` se non l'hai già fatta, poi `202611110001_refresh_diagnostics.sql` (compiti di recupero, rapporti, corner storici).
+6. **Una sola volta, dopo il primo giro**: `node scripts/migrate-ninjas-ids.js` (prova, non cambia nulla) e poi `node scripts/migrate-ninjas-ids.js --apply` per riallineare lo storico delle 8 leghe ex-Ninjas agli id di API-Football (variabili SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, API_FOOTBALL_KEY).
 
 ## Menu campionati e PDF
 
@@ -33,7 +35,14 @@ L'app non usa più The Odds API: le quote reali arrivano solo da **API-Football*
 
 ## Come arrivano i dati
 
-`/api/fixtures` legge da Supabase. Se i dati di un campionato sono vecchi, la pagina chiama `/api/sync?league=…`, che interroga API Ninjas **solo se serve**: ogni 6 ore, oppure ogni 15 minuti per i campionati con partite iniziate da meno di 4 ore o in partenza. Un sync costa circa 8 chiamate per campionato; con dati freschi ne costa 0, quindi chiunque apra il sito non può consumare la quota. Errori: nuovo tentativo dopo 2 minuti. Nessun dato demo: se qualcosa manca viene mostrato l'errore reale.
+Tutto arriva da API-Football, lato server (la chiave non compare mai nel frontend). Due workflow GitHub:
+
+- **Aggiornamento completo** (ogni 4 ore, o a mano da GitHub / dall'app): campionati e risultati → copertura del piano → pronostici, quote 1X2 e Over/Under, quote corner → schede dati (prossime 48 ore) → corner storici reali → registro pronostici → istantanea, riletta da Supabase per verificarla (`scripts/full-refresh.js`).
+- **Recupero aggiornamento** (ogni 30 minuti): riprende solo le operazioni rimaste incomplete (`refresh_tasks`), senza ripetere ciò che è completo (cache `af_cache`) e senza consumare crediti se non c'è nulla da fare o sono sotto la riserva.
+
+Ogni dato ha uno di cinque esiti: aggiornato · non ancora disponibile · non previsto dalla copertura del provider · temporaneamente non recuperabile · errore. Solo gli ultimi due rendono l'aggiornamento «parziale». Il dettaglio è in Impostazioni → Stato dei dati.
+
+**Corner**: il modello Stay Live usa i corner reali delle partite finite (`fixtures/statistics` → tabella `match_corners`): corner fatti/subiti, casa/trasferta, ultime 5/10/15, media di campionato, distribuzione binomiale negativa. È mostrato separato dalle quote dei bookmaker e non ancora tarato con un backtest. Senza abbastanza partite (minimo 5 per squadra) non produce nessuna stima.
 
 ## Come sono calcolate le percentuali
 
@@ -81,7 +90,7 @@ Migrazione: `supabase/migrations/202611030001_apifootball.sql` (`af_fixture_map`
 
 ## Campionati (32)
 
-I 8 campionati principali (Serie A, Premier, LaLiga, Bundesliga, Ligue 1, Champions, Europa League, MLS) restano su API Ninjas. Gli altri 24 arrivano da API-Football (`provider: "apifootball"` in `functions/api/_lib.js`): Serie B, Championship, League One, 2. Bundesliga, Ligue 2, Segunda División, Eredivisie, Primeira Liga, Pro League, Scottish Premiership, Süper Lig, Super League greca e svizzera, Bundesliga austriaca, Superliga danese, Ekstraklasa, prima lega ceca, HNL, Liga 1 romena, SuperLiga serba, NB I, Eliteserien, Allsvenskan, Conference League. Una richiesta scarica l'intera stagione di un campionato; si ripete ogni 6 ore (15 minuti con partite in corso). Prima di scrivere, `afCountry`/`afName` verificano che l'id API-Football sia davvero il campionato previsto. Per aggiungerne un altro basta una riga in `LEAGUES`. Se `/api/fixtures` va in errore per il tempo di calcolo (Cloudflare 1102) imposta `FIXTURES_DAYS` (es. 10) o passa a Workers Paid.
+Tutti i 32 campionati arrivano da API-Football (`provider: "apifootball"` in `functions/api/_lib.js`): Serie B, Championship, League One, 2. Bundesliga, Ligue 2, Segunda División, Eredivisie, Primeira Liga, Pro League, Scottish Premiership, Süper Lig, Super League greca e svizzera, Bundesliga austriaca, Superliga danese, Ekstraklasa, prima lega ceca, HNL, Liga 1 romena, SuperLiga serba, NB I, Eliteserien, Allsvenskan, Conference League. Una richiesta scarica l'intera stagione di un campionato; si ripete ogni 6 ore (15 minuti con partite in corso). Prima di scrivere, `afCountry`/`afName` verificano che l'id API-Football sia davvero il campionato previsto. Per aggiungerne un altro basta una riga in `LEAGUES`. Se `/api/fixtures` va in errore per il tempo di calcolo (Cloudflare 1102) imposta `FIXTURES_DAYS` (es. 10) o passa a Workers Paid.
 
 ## Sviluppo
 
