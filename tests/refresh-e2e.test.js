@@ -108,14 +108,14 @@ test("giro completo + recupero automatico, con API-Football come unica fonte", a
     /* ---- 1 · giro completo ---- */
     const m1 = await runRefresh(env, { mode: "full", wait, log: () => {} });
     assert.equal(m1.error, null, m1.error);
-    assert.equal(m1.leagues.total, 32); assert.equal(m1.leagues.ok, 32, JSON.stringify(m1.leagues.failed));
-    assert.equal(w.db.sync_state.length, 32, "ogni campionato ha lo stato di sincronizzazione");
-    assert.equal(w.db.matches.length, 32 * 5, "5 partite per campionato, tutte con id API-Football");
+    assert.equal(m1.leagues.total, LEAGUES.length); assert.equal(m1.leagues.ok, LEAGUES.length, JSON.stringify(m1.leagues.failed));
+    assert.equal(w.db.sync_state.length, LEAGUES.length, "ogni campionato ha lo stato di sincronizzazione");
+    assert.equal(w.db.matches.length, LEAGUES.length * 5, "5 partite per campionato, tutte con id API-Football");
     assert.ok(w.db.matches.every((m) => /^af-\d+$/.test(m.game_id) && /^af-\d+$/.test(m.home_id)));
     assert.equal(w.log.urls.filter((u) => /ninja/i.test(u)).length, 0, "nessuna richiesta ad API Ninjas");
     assert.ok(w.log.af.some((c) => c.startsWith("fixtures?league=135")), "la Serie A (ex Ninjas) arriva da API-Football");
     assert.ok(w.log.af.some((c) => c.startsWith("fixtures?league=2&")), "anche la Champions League");
-    assert.equal(m1.matches.eligible, 64, "partite aperte nei prossimi 7 giorni: 2 per campionato");
+    assert.equal(m1.matches.eligible, LEAGUES.length * 2, "partite aperte nei prossimi 7 giorni: 2 per campionato");
     // pronostico in errore temporaneo => parziale, con diagnostica precisa
     assert.equal(m1.status, "partial", JSON.stringify({ c: m1.components, e: m1.errors, p: m1.pending, n: m1.notes }));
     assert.equal(m1.components.prediction.temporary, 1);
@@ -131,7 +131,7 @@ test("giro completo + recupero automatico, con API-Football come unica fonte", a
     // istantanea scritta E riletta
     assert.equal(w.db.app_snapshot.length, 1); assert.equal(m1.verify.ok, true);
     const snap = w.db.app_snapshot[0];
-    assert.ok(snap.payload.matches.length >= 64 && snap.meta.v === 2 && snap.meta.status === "partial");
+    assert.ok(snap.payload.matches.length >= LEAGUES.length * 2 && snap.meta.v === 2 && snap.meta.status === "partial");
     assert.ok(snap.payload.matches.some((m) => m.pick), "i pronostici del modello sono calcolati");
     // corner storici reali scaricati e salvati (con le sole partite finite delle squadre in campo)
     assert.ok(w.db.match_corners.length > 0 && w.db.match_corners.every((r) => r.available && r.home_corners === 6 && r.away_corners === 4));
@@ -173,7 +173,7 @@ test("errori veri: un campionato che fallisce non ferma gli altri e resta da rec
   };
   try {
     const m = await runRefresh(env, { mode: "full", wait: async () => {}, log: () => {} });
-    assert.equal(m.leagues.ok, 31); assert.equal(m.leagues.failed[0].id, "seriea");
+    assert.equal(m.leagues.ok, LEAGUES.length - 1); assert.equal(m.leagues.failed[0].id, "seriea");
     assert.match(m.leagues.failed[0].error, /application key/);
     assert.equal(m.status, "partial");
     assert.ok(w.db.refresh_tasks.some((t) => t.task_key === "league:seriea" && t.state === "error"));

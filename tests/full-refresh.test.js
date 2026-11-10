@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { FRESH_FAR, FRESH_NEAR, eligibleOpen, freshForAt, statusOf, summaryMarkdown, syncAll, tally } from "../scripts/full-refresh.js";
+import { LEAGUES } from "../functions/api/_lib.js";
 
 const H = 3600e3, now = Date.parse("2026-11-09T12:00:00Z");
 const m = (id, h, status = "scheduled", league = "seriea") => ({ game_id: id, league, status, kickoff_at: new Date(now + h * H).toISOString() });
@@ -53,7 +54,7 @@ test("campionati: riprova dopo il limite di richieste, segnala gli errori veri, 
   assert.equal(calls.epl, 2); assert.ok(waits.includes(20000));
   assert.equal(calls.serieb, 1, "un errore non legato al limite non si ripete");
   assert.deepEqual(res.filter((r) => !r.ok).map((r) => r.id), ["serieb"]);
-  assert.equal(res.length, 32, "tutti i 32 campionati passano da API-Football");
+  assert.equal(res.length, LEAGUES.length, "tutti i campionati passano da API-Football");
   const only = await syncAll({ SYNC_SECRET: "s" }, { call, wait: async () => {}, only: ["seriea", "ucl"] });
   assert.deepEqual(only.map((r) => r.id), ["seriea", "ucl"]);
 });

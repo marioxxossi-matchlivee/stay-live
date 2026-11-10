@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AF_LEAGUES, afFetch, rateGate, betIdsFrom, pickCoach, cacheKey, directMap, leagueCheck, normalizeAfFixture, pickFixture, planFor, seasonFor, summarizeOdds, ttlFor } from "../functions/api/_apifootball.js";
+import { AF_LEAGUES, afFetch, rateGate, betIdsFrom, pickCoach, cacheKey, directMap, fetchAfSeason, leagueCheck, normalizeAfFixture, pickFixture, planFor, seasonFor, summarizeOdds, ttlFor } from "../functions/api/_apifootball.js";
 import { LEAGUES } from "../functions/api/_lib.js";
 
 test("stagione: Europa dall'anno d'inizio (da luglio), MLS anno solare", () => {
@@ -129,8 +129,10 @@ test("partite API-Football: collegamento diretto dal game_id", () => {
   assert.equal(directMap({ ...m, game_id: "seriea-20261031-int-mil", league: "seriea" }), null);   // id storico non API-Football: si cerca per orario e nomi (poi lo riallinea scripts/migrate-ninjas-ids.js)
 });
 
-test("configurazione campionati: 32 voci coerenti", () => {
-  assert.equal(LEAGUES.length, 32);
+test("configurazione campionati: tutte le voci coerenti", () => {
+  assert.ok(LEAGUES.length >= 48, "32 campionati originali + 16 aggiunti dopo la scoperta delle partite");
+  assert.equal(new Set(LEAGUES.map((l) => l.id)).size, LEAGUES.length, "id app unici");
+  assert.equal(new Set(LEAGUES.map((l) => l.afId)).size, LEAGUES.length, "ogni id API-Football una sola volta (niente partite doppie)");
   assert.equal(new Set(LEAGUES.map((l) => l.id)).size, LEAGUES.length);
   assert.equal(new Set(LEAGUES.map((l) => l.afId)).size, LEAGUES.length);                       // nessun id API-Football ripetuto
   for (const l of LEAGUES) {
@@ -139,7 +141,7 @@ test("configurazione campionati: 32 voci coerenti", () => {
     assert.equal(l.provider, "apifootball", `${l.id}: tutti i campionati arrivano da API-Football`);
     assert.ok(l.afCountry, l.id);
   }
-  assert.equal(LEAGUES.filter((l) => l.provider === "apifootball").length, 32);
+  assert.equal(LEAGUES.filter((l) => l.provider === "apifootball").length, LEAGUES.length);
   assert.equal(seasonFor("eliteserien", "2026-11-03T10:00:00Z"), 2026);
   assert.equal(seasonFor("eliteserien", "2027-04-03T10:00:00Z"), 2027);                         // stagione solare
   assert.equal(seasonFor("eredivisie", "2027-04-03T10:00:00Z"), 2026);
@@ -177,5 +179,13 @@ test("afFetch: riprova dopo 'Too many requests' e poi riesce", async () => {
     assert.deepEqual(r.response, [{ ok: 1 }]);
     calls = -10;   // sempre limitato: senza retries l'errore arriva subito, marcato come rateLimited
     await assert.rejects(afFetch({ API_FOOTBALL_KEY: "k", API_FOOTBALL_MIN_GAP_MS: "0" }, "fixtures", { id: 1 }), (e) => e.rateLimited === true);
+  } finally { globalThis.fetch = real; }
+});
+
+test("sincronizzazione: nessuna partita restituita = errore esplicito (stagione o id sbagliati), non '0 partite' in silenzio", async () => {
+  const real = globalThis.fetch, cfg = LEAGUES.find((l) => l.id === "nations");
+  globalThis.fetch = async (url) => (String(url).includes("/rest/v1/") ? new Response("[]", { headers: { "content-type": "application/json" } }) : new Response(JSON.stringify({ errors: [], results: 0, response: [] }), { headers: { "content-type": "application/json" } }));
+  try {
+    await assert.rejects(fetchAfSeason({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE_KEY: "sr", API_FOOTBALL_KEY: "k", API_FOOTBALL_MIN_GAP_MS: "0" }, cfg, Date.parse("2026-11-10T10:00:00Z")), /stagione o id da verificare/);
   } finally { globalThis.fetch = real; }
 });
