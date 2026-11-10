@@ -6,6 +6,7 @@ import { loadCornerOdds } from "./_corners.js";
 import { loadLogoIndex, needsTeamList, withLogos } from "./_crests.js";
 import { loadBrainInputs } from "./_brain.js";
 import { edgeCached } from "./_edgecache.js";
+import { buildCornerContext, cornerModel, loadCornerRows } from "./_cornerstats.js";
 
 /**
  * Memoria dell'isolate Cloudflare: il consiglio rapido di una partita dipende solo da storico, dati API-Football e dalla partita stessa.
@@ -66,6 +67,8 @@ export async function buildFixtures(env) {
     // Corner: quelli cercati ogni notte per tutte le partite della settimana, già in cache (nessuna richiesta al provider da qui).
     const week = window.filter((m) => (m.status === "scheduled" || m.status === "in_progress") && Date.parse(m.kickoff_at) < now + 7 * 86400e3);
     const cr = env.API_FOOTBALL_KEY && week.length ? await loadCornerOdds(env, week, now, { live: false, maps: br?.maps }).catch(() => null) : null;
+    // Modello statistico dei corner (corner reali storici in match_corners): se la tabella manca o è vuota, nessun modello (mai dati inventati).
+    const cctx = await loadCornerRows(env).then(buildCornerContext).catch(() => null);
     const byLeague = Object.fromEntries(states.map((s) => [s.league, s]));
     const matches = window.map((m) => {
       const open = m.status === "scheduled" || m.status === "in_progress";
@@ -83,6 +86,7 @@ export async function buildFixtures(env) {
         pick,
         ou,                                                                       // modalità personalizzata: Over/Under 2,5
         corner: cr?.byGame.get(m.game_id) ?? null,                                // corner (quote di API-Football), solo se già scaricati
+        cornerModel: open && cctx && Date.parse(m.kickoff_at) < now + 7 * 86400e3 ? cornerModel(cctx, { league: m.league, kickoff_at: m.kickoff_at, home_id: m.home_id, away_id: m.away_id }) : null,   // modello Stay Live sui corner storici reali (distinto dalle quote)
       };
     });
     return { ok: true, payload: {

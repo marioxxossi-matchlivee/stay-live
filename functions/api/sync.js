@@ -1,32 +1,12 @@
 import { fetchAfSeason } from "./_apifootball.js";
 import {
-  LEAGUES, LEAGUE_IDS, TTL, errorMessage, isActiveLeague, json, missingConfig, ninjasPage, normalizeNinjas,
+  LEAGUES, LEAGUE_IDS, TTL, errorMessage, isActiveLeague, json, missingConfig,
   supabaseGet, supabaseUpsert, syncDue,
 } from "./_lib.js";
 
-const MAX_PAGES = 12;
-
-async function fetchSeason(env, league) {
-  const seen = new Map();
-  let offset = 0;
-  let firstSize = 0;
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const rows = await ninjasPage(env, league, offset);
-    if (!rows.length) break;
-    if (!page) firstSize = rows.length;
-    let added = 0;
-    for (const item of rows) {
-      if (item.game_id && !seen.has(item.game_id)) { seen.set(item.game_id, normalizeNinjas(item, league)); added += 1; }
-    }
-    if (!added || rows.length < firstSize) break;
-    offset += rows.length;
-  }
-  return [...seen.values()];
-}
-
 /**
  * GET|POST /api/sync?league=seriea
- * Le partite arrivano da API Ninjas (campionati principali) o da API-Football (gli altri, `provider` in LEAGUES).
+ * Le partite arrivano solo da API-Football (una richiesta per campionato e stagione).
  * Pubblico ma "a prova di abuso": non chiama il provider se i dati sono ancora freschi
  * (15 min con partite in corso, 6 ore altrimenti). Con header x-sync-secret + force=1 si forza.
  */
@@ -35,8 +15,7 @@ export async function onRequest({ request, env }) {
   const league = url.searchParams.get("league") ?? "";
   if (!LEAGUE_IDS.has(league)) return json({ error: "Parametro league non valido." }, 400);
   const cfg = LEAGUES.find((l) => l.id === league);
-  const viaAf = cfg.provider === "apifootball";
-  const missing = missingConfig(env, { ninjas: !viaAf, apifootball: viaAf });
+  const missing = missingConfig(env, { apifootball: true });
   if (missing.length) return json({ error: `Variabili mancanti su Cloudflare: ${missing.join(", ")}` }, 503);
 
   const now = Date.now();
@@ -54,7 +33,7 @@ export async function onRequest({ request, env }) {
     await supabaseUpsert(env, "sync_state", [{ league, attempted_at: new Date(now).toISOString(), last_error: state?.last_error ?? null, synced_at: state?.synced_at ?? null, matches_count: state?.matches_count ?? 0 }], "league");
     let rows;
     try {
-      rows = viaAf ? await fetchAfSeason(env, cfg, now) : await fetchSeason(env, league);
+      rows = await fetchAfSeason(env, cfg, now);
       await supabaseUpsert(env, "matches", rows, "game_id");
     } catch (error) {
       await supabaseUpsert(env, "sync_state", [{ league, attempted_at: new Date().toISOString(), last_error: errorMessage(error).slice(0, 300), synced_at: state?.synced_at ?? null, matches_count: state?.matches_count ?? 0 }], "league");

@@ -27,10 +27,10 @@ export function countAbsent(list, map) {
  *               marketState: Map(game_id -> "used"|"waiting"|"missing"), maps, retry: { pending, afterMs } }.
  */
 export async function loadBrainInputs(env, matches, now = Date.now(), { live = true, maxMap = 6, maxLive = 12, market = true, maps: known = null, freshFor = null } = {}) {
-  const byGame = new Map(), state = new Map(), marketState = new Map();
+  const byGame = new Map(), state = new Map(), marketState = new Map(), errors = new Map();
   const open = matches.filter((m) => AF_LEAGUES[m.league] && m.status !== "canceled");
   for (const m of matches) if (!open.includes(m)) { state.set(m.game_id, "missing"); marketState.set(m.game_id, "missing"); }
-  if (!open.length) return { byGame, state, marketState, maps: new Map(), retry: { pending: 0, afterMs: 0 } };
+  if (!open.length) return { byGame, state, marketState, errors, maps: new Map(), retry: { pending: 0, afterMs: 0 } };
 
   let afterMs = 0;
   const { maps, waiting, afterMs: mapWait } = await resolveMaps(env, open, now, { live, maxMap, maps: known });
@@ -78,12 +78,14 @@ export async function loadBrainInputs(env, matches, now = Date.now(), { live = t
     const mk = market && (sg?.data || sx?.data) ? marketFrom(sg?.data, sx?.data) : null;
     const inj = si?.data ? countAbsent(si.data, maps.get(id)) : null;
     byGame.set(id, { af, market: mk, inj });
+    if (!af && sp?.error && !sp.deferred) errors.set(`${id}|pred`, sp.error);
+    if (market && !mk && !(sg?.deferred || sx?.deferred) && (sg?.error || sx?.error)) errors.set(`${id}|market`, sg?.error ?? sx?.error);
     state.set(id, af ? "used" : sp?.deferred ? "waiting" : "missing");
     marketState.set(id, !market ? "missing" : mk ? "used" : (sg?.deferred || sx?.deferred) ? "waiting" : "missing");
   }
   for (const m of open) { if (!state.has(m.game_id)) state.set(m.game_id, "missing"); if (!marketState.has(m.game_id)) marketState.set(m.game_id, "missing"); }
   const pending = live ? open.filter((m) => state.get(m.game_id) === "waiting" || marketState.get(m.game_id) === "waiting").length : 0;
-  return { byGame, state, marketState, maps, retry: { pending, afterMs: pending ? afterMs || RETRY_HINT.batch : 0 } };
+  return { byGame, state, marketState, errors, maps, retry: { pending, afterMs: pending ? afterMs || RETRY_HINT.batch : 0 } };
 }
 
 /** Riassunto per le risposte delle API: quante partite hanno pronostico e quote, e se serve riprovare. */

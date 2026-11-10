@@ -1,11 +1,10 @@
 export const SEASON = 2026;
-export const NINJAS_URL = "https://api.api-ninjas.com/v1/soccermatches";
 
 /**
  * Campionati disponibili. `continent` e `country`/`nation` alimentano il menu ad accordion:
  * continente > nazione > campionati. Le coppe internazionali stanno nel continente con un
  * gruppo proprio (international: true). `tier` = categoria (1 = massima serie).
- * Per aggiungere un campionato basta una riga qui. Senza `provider` le partite arrivano da API Ninjas (solo gli 8 campionati principali); con `provider: "apifootball"` arrivano da API-Football (`afId` = id campionato, `afCountry`/`afName` = controllo anti-errore sull'id, `calendarYear` = stagione che coincide con l'anno solare). `oddsKey` = chiave sport di The Odds API per le quote.
+ * Per aggiungere un campionato basta una riga qui. Tutte le partite arrivano da API-Football, unico provider (`afId` = id campionato, `afCountry`/`afName` = controllo anti-errore sull'id, `calendarYear` = stagione che coincide con l'anno solare).
  */
 export const CONTINENTS = [
   { id: "europa", name: "Europa" },
@@ -17,14 +16,14 @@ export const CONTINENTS = [
 ];
 
 export const LEAGUES = [
-  { id: "seriea", afId: 135, name: "Serie A", short: "Serie A", continent: "europa", country: "IT", nation: "Italia", tier: 1 },
-  { id: "epl", afId: 39, name: "Premier League", short: "Premier", continent: "europa", country: "GB", nation: "Inghilterra", tier: 1 },
-  { id: "laliga", afId: 140, name: "LaLiga", short: "LaLiga", continent: "europa", country: "ES", nation: "Spagna", tier: 1 },
-  { id: "bundesliga", afId: 78, name: "Bundesliga", short: "Bundesliga", continent: "europa", country: "DE", nation: "Germania", tier: 1 },
-  { id: "ligue1", afId: 61, name: "Ligue 1", short: "Ligue 1", continent: "europa", country: "FR", nation: "Francia", tier: 1 },
-  { id: "ucl", afId: 2, name: "Champions League", short: "Champions", continent: "europa", country: "UEFA-C", nation: "Coppe europee", international: true, tier: 0 },
-  { id: "uel", afId: 3, name: "Europa League", short: "Europa League", continent: "europa", country: "UEFA-C", nation: "Coppe europee", international: true, tier: 0 },
-  { id: "mls", afId: 253, calendarYear: true, name: "MLS", short: "MLS", continent: "nord-america", country: "US", nation: "Stati Uniti", tier: 1 },
+  { id: "seriea", afId: 135, name: "Serie A", short: "Serie A", continent: "europa", country: "IT", nation: "Italia", tier: 1, provider: "apifootball", afCountry: "Italy", afName: "Serie A" },
+  { id: "epl", afId: 39, name: "Premier League", short: "Premier", continent: "europa", country: "GB", nation: "Inghilterra", tier: 1, provider: "apifootball", afCountry: "England", afName: "Premier League" },
+  { id: "laliga", afId: 140, name: "LaLiga", short: "LaLiga", continent: "europa", country: "ES", nation: "Spagna", tier: 1, provider: "apifootball", afCountry: "Spain", afName: "La Liga" },
+  { id: "bundesliga", afId: 78, name: "Bundesliga", short: "Bundesliga", continent: "europa", country: "DE", nation: "Germania", tier: 1, provider: "apifootball", afCountry: "Germany", afName: "Bundesliga" },
+  { id: "ligue1", afId: 61, name: "Ligue 1", short: "Ligue 1", continent: "europa", country: "FR", nation: "Francia", tier: 1, provider: "apifootball", afCountry: "France", afName: "Ligue 1" },
+  { id: "ucl", afId: 2, name: "Champions League", short: "Champions", continent: "europa", country: "UEFA-C", nation: "Coppe europee", international: true, tier: 0, provider: "apifootball", afCountry: "World", afName: "Champions League" },
+  { id: "uel", afId: 3, name: "Europa League", short: "Europa League", continent: "europa", country: "UEFA-C", nation: "Coppe europee", international: true, tier: 0, provider: "apifootball", afCountry: "World", afName: "Europa League" },
+  { id: "mls", afId: 253, calendarYear: true, name: "MLS", short: "MLS", continent: "nord-america", country: "US", nation: "Stati Uniti", tier: 1, provider: "apifootball", afCountry: "USA", afName: "Major League Soccer" },
   { id: "serieb", name: "Serie B", short: "Serie B", continent: "europa", country: "IT", nation: "Italia", tier: 2, provider: "apifootball", afId: 136, afCountry: "Italy", afName: "Serie B" },
   { id: "championship", name: "Championship", short: "Championship", continent: "europa", country: "GB", nation: "Inghilterra", tier: 2, provider: "apifootball", afId: 40, afCountry: "England", afName: "Championship" },
   { id: "league1", name: "League One", short: "League One", continent: "europa", country: "GB", nation: "Inghilterra", tier: 3, provider: "apifootball", afId: 41, afCountry: "England", afName: "League One" },
@@ -66,11 +65,10 @@ export function json(data, status = 200, extraHeaders = {}) {
 
 export const errorMessage = (e) => (e instanceof Error ? e.message : "Errore inatteso");
 
-export function missingConfig(env, { ninjas = false, apifootball = false } = {}) {
+export function missingConfig(env, { apifootball = false } = {}) {
   const missing = [];
   if (!env.SUPABASE_URL) missing.push("SUPABASE_URL");
   if (!env.SUPABASE_SERVICE_ROLE_KEY) missing.push("SUPABASE_SERVICE_ROLE_KEY");
-  if (ninjas && !env.API_NINJAS_KEY) missing.push("API_NINJAS_KEY");
   if (apifootball && !env.API_FOOTBALL_KEY) missing.push("API_FOOTBALL_KEY");
   return missing;
 }
@@ -102,6 +100,25 @@ export async function supabaseGetAll(env, table, query = {}, pageSize = 1000, ma
     if (rows.length < pageSize) break;
   }
   return out;
+}
+
+/** PATCH con filtro PostgREST (es. { game_id: "eq.x" }). Restituisce il numero di righe cambiate. */
+export async function supabasePatch(env, table, filter, body) {
+  const url = new URL(`/rest/v1/${table}`, env.SUPABASE_URL);
+  for (const [k, v] of Object.entries(filter)) url.searchParams.set(k, String(v));
+  const res = await fetch(url, { method: "PATCH", headers: sbHeaders(env, "return=representation"), body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`Supabase patch ${table}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  return (await res.json().catch(() => [])).length;
+}
+
+/** DELETE con filtro PostgREST obbligatorio (mai una cancellazione senza filtro). */
+export async function supabaseDelete(env, table, filter) {
+  if (!Object.keys(filter ?? {}).length) throw new Error("supabaseDelete richiede un filtro.");
+  const url = new URL(`/rest/v1/${table}`, env.SUPABASE_URL);
+  for (const [k, v] of Object.entries(filter)) url.searchParams.set(k, String(v));
+  const res = await fetch(url, { method: "DELETE", headers: sbHeaders(env, "return=representation") });
+  if (!res.ok) throw new Error(`Supabase delete ${table}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  return (await res.json().catch(() => [])).length;
 }
 
 export async function supabaseUpsert(env, table, rows, conflict) {
@@ -138,48 +155,6 @@ export function loadFinals(env, now = Date.now()) {
   return promise;
 }
 export const clearFinalsMemo = () => finalsMemo.clear();
-
-/* ---------- API Ninjas ---------- */
-export async function ninjasPage(env, league, offset) {
-  const url = new URL(NINJAS_URL);
-  url.searchParams.set("league", league);
-  url.searchParams.set("season", String(SEASON));
-  url.searchParams.set("offset", String(offset));
-  const res = await fetch(url, { headers: { "X-Api-Key": env.API_NINJAS_KEY, accept: "application/json" } });
-  const text = await res.text();
-  let data;
-  try { data = JSON.parse(text); } catch { throw new Error(`API Ninjas: risposta non JSON (HTTP ${res.status})`); }
-  if (!res.ok) throw new Error(`API Ninjas HTTP ${res.status}: ${String(data?.error ?? text).slice(0, 200)}`);
-  if (!Array.isArray(data)) throw new Error("API Ninjas: formato inatteso");
-  return data;
-}
-
-export function normalizeNinjas(item, league) {
-  const home = item.home_team ?? {};
-  const away = item.away_team ?? {};
-  const score = (v) => (Number.isFinite(v) ? v : null);
-  return {
-    game_id: String(item.game_id),
-    league,
-    season: Number(item.season ?? SEASON),
-    season_type: item.season_type ?? null,
-    round: item.round == null ? null : String(item.round),
-    match_date: item.date ?? null,
-    kickoff_at: item.start_time ?? (item.date ? `${item.date}T12:00:00Z` : null),
-    status: String(item.status ?? "scheduled").toLowerCase(),
-    home_id: String(home.team_id ?? home.name ?? "home"),
-    home_name: home.name ?? "Casa",
-    home_abbr: home.abbreviation ?? null,
-    away_id: String(away.team_id ?? away.name ?? "away"),
-    away_name: away.name ?? "Trasferta",
-    away_abbr: away.abbreviation ?? null,
-    home_score: score(item.home_score),
-    away_score: score(item.away_score),
-    decided_in: item.decided_in ?? null,
-    neutral_site: Boolean(item.neutral_site),
-    synced_at: new Date().toISOString(),
-  };
-}
 
 /* ---------- Politica di aggiornamento (risparmia chiamate API) ---------- */
 export const TTL = { idle: 6 * 3600e3, active: 15 * 60e3, retry: 2 * 60e3 };

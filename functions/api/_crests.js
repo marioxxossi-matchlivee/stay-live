@@ -1,8 +1,8 @@
 /**
  * Scudetti delle squadre (logo di API-Football).
  * - Partite sincronizzate da API-Football: l'id squadra e' nell'id dell'app ("af-<team>") e il logo ha un indirizzo fisso.
- * - Partite di API Ninjas (campionati principali): le squadre si abbinano per nome all'elenco squadre del campionato
- *   (endpoint `teams`, 1 richiesta per campionato, tenuta in cache 30 giorni) con lo stesso abbinamento usato per le partite.
+ * - Righe storiche con id squadra non API-Football (residuo, prima della migrazione degli id): abbinate per nome all'elenco squadre
+ *   in cache (endpoint `teams`), se presente. Dopo `scripts/migrate-ninjas-ids.js` non ce ne sono più.
  * Funzioni pure e testabili; l'unico I/O e' la lettura della cache di Supabase (nessuna richiesta ad API-Football qui).
  */
 import { LEAGUES, supabaseGet } from "./_lib.js";
@@ -17,8 +17,8 @@ export const crestUrl = (teamId) => (Number.isInteger(Number(teamId)) && Number(
 /** "af-123" -> 123; qualsiasi altro id -> null. */
 export const afTeamId = (id) => { const m = /^af-(\d+)$/.exec(String(id ?? "")); return m ? Number(m[1]) : null; };
 
-/** Campionati con partite da API Ninjas che hanno bisogno dell'elenco squadre per gli scudetti. */
-export const needsTeamList = (leagueId) => { const l = LEAGUES.find((x) => x.id === leagueId); return Boolean(l?.afId && l.provider !== "apifootball"); };
+/** Con la sola API-Football gli id squadra sono sempre "af-<id>": nessun elenco squadre da scaricare per gli scudetti. */
+export const needsTeamList = () => false;
 
 /** Righe af_cache (endpoint `teams`) -> mappa id API-Football del campionato -> [{ id, name, logo }]. */
 export function buildLogoIndex(rows) {

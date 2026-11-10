@@ -82,10 +82,10 @@ export function cornerPick(corners, minOdd = MIN_CORNER_ODD, winner = null) {
  * live=false = solo cache. Restituisce { byGame: Map(game_id -> pick|null), state: Map(game_id -> "used"|"none"|"waiting"|"missing"), maps, retry }.
  */
 export async function loadCornerOdds(env, matches, now = Date.now(), { live = true, maxMap = 4, maxLive = 6, maps: known = null, refreshMs = null, freshFor = null } = {}) {
-  const byGame = new Map(), state = new Map();
+  const byGame = new Map(), state = new Map(), errors = new Map();
   const open = matches.filter((m) => AF_LEAGUES[m.league] && m.status !== "canceled");
   for (const m of matches) if (!open.includes(m)) state.set(m.game_id, "missing");
-  if (!open.length) return { byGame, state, maps: new Map(), retry: { pending: 0, afterMs: 0 } };
+  if (!open.length) return { byGame, state, errors, maps: new Map(), retry: { pending: 0, afterMs: 0 } };
   let afterMs = 0;
   const { maps, waiting, afterMs: mapWait } = await resolveMaps(env, open, now, { live, maxMap, maps: known });
   for (const id of waiting) state.set(id, "waiting");
@@ -107,12 +107,15 @@ export async function loadCornerOdds(env, matches, now = Date.now(), { live = tr
       const winner = cw?.data ? summarizeMatchWinner(cw.data, CORNER_WINNER_RE) : null;
       const pick = sec?.data || winner ? cornerPick(sec?.data ? summarizeOdds(null, sec.data).corners : null, MIN_CORNER_ODD, winner) : null;
       if (pick) { byGame.set(m.game_id, pick); state.set(m.game_id, sec?.deferred || cw?.deferred ? "waiting" : "used"); }
-      else state.set(m.game_id, sec?.deferred || cw?.deferred ? "waiting" : sec?.data || cw?.data ? "none" : "missing");
+      else {
+        state.set(m.game_id, sec?.deferred || cw?.deferred ? "waiting" : sec?.data || cw?.data ? "none" : "missing");
+        if (!(sec?.data || cw?.data) && !(sec?.deferred || cw?.deferred) && (sec?.error || cw?.error)) errors.set(m.game_id, sec?.error ?? cw?.error);
+      }
     }
   }
   for (const m of open) if (!state.has(m.game_id)) state.set(m.game_id, "missing");
   const pending = live ? [...state.values()].filter((v) => v === "waiting").length : 0;
-  return { byGame, state, maps, retry: { pending, afterMs: pending ? afterMs || RETRY_HINT.batch : 0 } };
+  return { byGame, state, errors, maps, retry: { pending, afterMs: pending ? afterMs || RETRY_HINT.batch : 0 } };
 }
 
 /**
