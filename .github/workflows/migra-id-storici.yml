@@ -1,0 +1,36 @@
+name: Migra id storici (una tantum)
+
+# Riallinea lo storico delle 8 leghe ex-API Ninjas agli id di API-Football (scripts/migrate-ninjas-ids.js).
+# Si avvia SOLO a mano: Actions → "Migra id storici" → Run workflow.
+#  - "applica" spento (predefinito): PROVA, non cambia nulla, scrive il rapporto nel riepilogo.
+#  - "applica" acceso: esegue la migrazione. Va fatto PRIMA del primo "Aggiornamento completo".
+# Usa gli stessi secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, API_FOOTBALL_KEY.
+on:
+  workflow_dispatch:
+    inputs:
+      applica:
+        description: "Applica davvero la migrazione (spento = solo prova)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: aggiornamento-stay-live
+  cancel-in-progress: false
+
+jobs:
+  migra:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Migrazione id
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          APPLICA: ${{ inputs.applica }}
+        run: |
+          if [ "$APPLICA" = "true" ]; then node scripts/migrate-ninjas-ids.js --apply | tee -a "$GITHUB_STEP_SUMMARY"; else node scripts/migrate-ninjas-ids.js | tee -a "$GITHUB_STEP_SUMMARY"; fi
