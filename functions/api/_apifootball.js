@@ -4,12 +4,14 @@
  * Parte con I/O: afFetch (una richiesta), loadSections (cache -> richieste solo se scadute), resolveFixture (abbinamento).
  * Ogni errore diventa un campo `error` nella sezione: il chiamante non riceve mai eccezioni per colpa del provider.
  */
-import { LEAGUES, supabaseGet, supabaseUpsert } from "./_lib.js";
+import { LEAGUES, SEASON, supabaseGet, supabaseUpsert } from "./_lib.js";
 import { bestTeam } from "./_scrape.js";
 
 /** id campionato di Stay Live -> id campionato di API-Football (si definisce in LEAGUES, _lib.js). */
 export const AF_LEAGUES = Object.fromEntries(LEAGUES.filter((l) => l.afId).map((l) => [l.id, l.afId]));
 const CALENDAR_YEAR = new Set(LEAGUES.filter((l) => l.calendarYear).map((l) => l.id));
+/** Competizioni la cui stagione su API-Football non segue la regola dell'app (es. qualificazioni "2027", Nations League CONCACAF "2025"): `afSeason` in LEAGUES. */
+export const AF_SEASON = new Map(LEAGUES.filter((l) => l.afSeason).map((l) => [l.id, l.afSeason]));
 const MIN = 60e3, H = 3600e3, D = 24 * H;
 
 export class AfError extends Error {
@@ -22,6 +24,7 @@ export const dayKey = (ms) => iso(ms).slice(0, 10);
 
 /** Stagione di API-Football: l'anno di inizio (da luglio in poi) per l'Europa, l'anno solare per la MLS. */
 export function seasonFor(league, kickoffIso) {
+  if (AF_SEASON.has(league)) return AF_SEASON.get(league);          // stagione API-Football fissata a mano
   const d = new Date(kickoffIso);
   const y = d.getUTCFullYear();
   return CALENDAR_YEAR.has(league) ? y : d.getUTCMonth() >= 6 ? y : y - 1;
@@ -305,7 +308,7 @@ export function directMap(match) {
   const team = (id) => { const m = /^af-(\d+)$/.exec(String(id ?? "")); return m ? Number(m[1]) : null; };
   const leagueId = AF_LEAGUES[match.league];
   if (!fx || !leagueId) return null;
-  return { game_id: match.game_id, fixture_id: Number(fx[1]), league_id: leagueId, season: Number(match.season) || seasonFor(match.league, match.kickoff_at), home_team_id: team(match.home_id), away_team_id: team(match.away_id), home_name: match.home_name, away_name: match.away_name };
+  return { game_id: match.game_id, fixture_id: Number(fx[1]), league_id: leagueId, season: AF_SEASON.get(match.league) ?? (Number(match.season) || seasonFor(match.league, match.kickoff_at)), home_team_id: team(match.home_id), away_team_id: team(match.away_id), home_name: match.home_name, away_name: match.away_name };
 }
 
 /** Collegamento partita dell'app -> partita API-Football (cercata per campionato, stagione e data; poi salvata). */
@@ -346,7 +349,7 @@ export function normalizeAfFixture(f, cfg, season, now = Date.now()) {
   return {
     game_id: `af-${f.fixture.id}`,
     league: cfg.id,
-    season,
+    season: AF_SEASON.has(cfg.id) ? SEASON : season,       // nell'app la stagione è sempre quella corrente (SEASON); quella di API-Football resta in `afSeason`
     season_type: cfg.international ? roundType(f.league?.round) : "regular",
     round: roundText(f.league?.round),
     match_date: date ? date.slice(0, 10) : null,
