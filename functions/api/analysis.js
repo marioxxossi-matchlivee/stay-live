@@ -25,7 +25,8 @@ export async function onRequest({ request, env, waitUntil }) {
     const br = env.API_FOOTBALL_KEY ? await loadBrainInputs(env, [match], Date.now(), { maxMap: 2, maxLive: 4 }).catch((e) => { console.error("Stay Live brain:", errorMessage(e)); return none; }) : none;
     const mo = minOddsParam(url), custom = mo != null && mo !== MODEL.minPlayOdds;      // quota minima scelta dall'utente nelle Impostazioni
     const analysis = withMinOdds(mo, () => analyzeMatch(match, buildContext(finals), { n, ...(br.byGame.get(match.game_id) ?? {}) }));
-    if (n === 8 && !custom) {      // il registro misura il modello con le regole standard, non quelle personali const row = predictionRow(match, analysis); if (row) await recordLater({ env, waitUntil }, [row], legRows(match, analysis)); }
+    // Il registro misura il modello con le regole standard, non con quelle personali.
+    if (n === 8 && !custom) { const row = predictionRow(match, analysis); if (row) await recordLater({ env, waitUntil }, [row], legRows(match, analysis)); }
     const afStatus = { ...brainStatusOf(br, [match.game_id]), off: !env.API_FOOTBALL_KEY };
     return json({
       match: { id: match.game_id, league: match.league, kickoffAt: match.kickoff_at, status: match.status, home: match.home_name, away: match.away_name, ...withLogos(match, logos), homeScore: match.home_score, awayScore: match.away_score, neutral: match.neutral_site },
