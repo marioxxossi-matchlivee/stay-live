@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MODEL, SELECTIONS, analyzeMatch, buildContext, marketsFromMatrix, posteriorLowProbabilities, probabilities, relVar, scoreMatrix, teamForm, verdictFor } from "../functions/api/model.js";
+import { withModel } from "../scripts/backtest.js";
 
 const sum2 = (m) => m.reduce((t, r) => t + r.reduce((u, v) => u + v, 0), 0);
 
@@ -73,7 +74,7 @@ test("EV su quote reali: pLow x quota, quota mancante = nessun EV, verdetto usa 
 });
 
 test("verdetto senza quota: avvisa che il valore non è verificato", () => {
-  const v = verdictFor({ pLow: 0.7, minOdds: 1.47, edge: 0.15 }, 8);
+  const v = withModel({ requireRealOdds: false }, () => verdictFor({ pLow: 0.7, minOdds: 1.47, edge: 0.15 }, 8));    // regola senza quota dei backtest
   assert.equal(v.verdict, "BET");
   assert.match(v.reason, /NON è verificato/);
 });

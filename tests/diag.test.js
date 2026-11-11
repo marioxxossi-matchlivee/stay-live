@@ -21,8 +21,9 @@ test("classificazione: cinque esiti distinti", () => {
   assert.equal(classify("market", { state: "missing", kickoff: h(24 * 6), now, flags: fl }), "not_yet", "quote non ancora pubblicate per una partita lontana");
   assert.equal(classify("corners", { state: "none", kickoff: h(5), now, flags: fl }), "not_covered", "il provider ha risposto senza quote corner");
   assert.equal(classify("corners", { state: "none", kickoff: h(24 * 6), now, flags: fl }), "not_yet");
-  assert.equal(classify("prediction", { state: "missing", kickoff: h(5), now, flags: fl, attempts: 0 }), "temporary", "risposta vuota vicino al fischio: si riprova");
-  assert.equal(classify("prediction", { state: "missing", kickoff: h(5), now, flags: fl, attempts: 4 }), "not_covered", "dopo più tentativi vuoti si accetta");
+  assert.equal(classify("market", { state: "missing", kickoff: h(30), now, flags: fl }), "not_yet", "risposta vuota a più di 3 ore dal fischio: non è un guasto, si ricontrolla al giro successivo");
+  assert.equal(classify("market", { state: "missing", kickoff: h(2), now, flags: fl }), "not_covered", "risposta vuota nelle ultime 3 ore: il dato non c'è");
+  assert.equal(classify("market", { state: "missing", kickoff: h(30), now, flags: fl, error: "HTTP 503" }), "temporary", "un errore vero resta temporaneo");
   assert.deepEqual(countClasses(["ok", "ok", "error", "temporary", "not_yet"]), { ok: 2, not_yet: 1, not_covered: 0, temporary: 1, error: 1 });
 });
 

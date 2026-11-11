@@ -16,16 +16,17 @@ function rows() {
 }
 
 test("regola dell'edge: 'relativa' si comporta come i punti per un esito al 55% e blocca ciò che la regola a punti non vede", () => {
+  MODEL.requireRealOdds = false;          // la regola senza quota è quella dei backtest sul passato
   const sel = (p, base) => ({ key: "k", p, pLow: p, base, edge: +(p - base).toFixed(3), minOdds: 1.3, odds: null });
   assert.equal(verdictFor(sel(0.63, 0.55), 20).verdict, "BET", "X2: +8 punti");
   assert.equal(verdictFor(sel(0.78, 0.70), 20).verdict, "BET", "1X: +8 punti");
-  const saved = { m: MODEL.edgeMode };
+  const saved = { m: MODEL.edgeMode, r: MODEL.requireRealOdds };
   try {
     MODEL.edgeMode = "ratio";
     assert.equal(verdictFor(sel(0.63, 0.55), 20).verdict, "BET");
     assert.equal(verdictFor(sel(0.62, 0.55), 20).verdict, "EVITA", "sotto il +14,5% relativo");
     assert.equal(verdictFor(sel(0.64, 0.63), 20).verdict, "EVITA", "vicino alla media: niente di speciale");
-  } finally { MODEL.edgeMode = saved.m; }
+  } finally { MODEL.edgeMode = saved.m; MODEL.requireRealOdds = saved.r; }
   assert.equal(MODEL.edgeMode, "points", "il modello in produzione resta con la regola attuale");
 });
 

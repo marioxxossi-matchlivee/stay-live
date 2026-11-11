@@ -4,6 +4,7 @@ import {
   MODEL, analyzeMatch, buildMultiples, applyCap, accumulatorPlan, buildContext, estimateOdds, isPreferred, jointProbability, kellyGrowth, planFor, stakePlan, totalsOf, poissonPmf, probabilities, scoreMatrix, stressedProbabilities, verdictFor,
 } from "../functions/api/model.js";
 import { nameSimilarity } from "../functions/api/_names.js";
+import { withModel } from "../scripts/backtest.js";
 import { computePlan } from "../src/plan.js";
 import { CONTINENTS, LEAGUES, syncDue, TTL } from "../functions/api/_lib.js";
 
@@ -64,9 +65,21 @@ test("con quota inserita decide il valore atteso prudente", () => {
   assert.equal(verdictFor(sel, 8, 1.8).verdict, "BET");
   assert.equal(verdictFor(sel, 8, 1.6).verdict, "EVITA");
   assert.equal(verdictFor({ pLow: 0.3, minOdds: 3.4 }, 8, 5).verdict, "EVITA");
-  assert.equal(verdictFor({ pLow: 0.7, minOdds: 1.47, edge: 0.15 }, 8).verdict, "BET");
-  assert.equal(verdictFor({ pLow: 0.7, minOdds: 1.47, edge: 0.03 }, 8).verdict, "EVITA");
-  assert.equal(verdictFor({ pLow: 0.55, minOdds: 1.9, edge: 0.2 }, 8).verdict, "EVITA");
+  withModel({ requireRealOdds: false }, () => {          // regola senza quota (backtest sul passato)
+    assert.equal(verdictFor({ pLow: 0.7, minOdds: 1.47, edge: 0.15 }, 8).verdict, "BET");
+    assert.equal(verdictFor({ pLow: 0.7, minOdds: 1.47, edge: 0.03 }, 8).verdict, "EVITA");
+    assert.equal(verdictFor({ pLow: 0.55, minOdds: 1.9, edge: 0.2 }, 8).verdict, "EVITA");
+  });
+});
+test("quota minima 1,5: sotto non si gioca anche se il valore atteso è positivo; senza quota reale nessun BET", () => {
+  const sel = { pLow: 0.8, minOdds: 1.5, edge: 0.2 };
+  assert.equal(verdictFor(sel, 8, 1.45).verdict, "EVITA");              // 0,8 x 1,45 = 1,16: valore c'è, ma la quota è bassissima
+  assert.match(verdictFor(sel, 8, 1.45).reason, /sotto il minimo/);
+  assert.equal(verdictFor(sel, 8, 1.5).verdict, "BET");
+  const none = verdictFor(sel, 8);                                       // nessuna quota reale: il valore non è verificabile
+  assert.equal(none.verdict, "EVITA");
+  assert.match(none.reason, /Quota reale non disponibile/);
+  assert.ok(MODEL.legMinOdds >= MODEL.minPlayOdds, "le gambe delle multiple rispettano la quota minima");
 });
 
 const leg = (key, p, pLow, odds, src = "mercato") => ({ key, label: key, p, pLow, odds, oddsSource: src, spread: 0, agree: "conferma" });

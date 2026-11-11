@@ -36,10 +36,10 @@ test("mercato: le quote reali di doppia chance e gol/no gol entrano in `odds`, s
 });
 
 test("verdetto con quota reale: la doppia chance 1X può essere BET (valore atteso), senza la soglia 'punti sulla media' che la penalizzava", () => {
-  const sel = { key: "dc1x", p: 0.8, pLow: 0.76, edge: 0.06, minOdds: +(MODEL.edgeMargin / 0.76).toFixed(2), odds: { median: 1.45 } };
+  const sel = { key: "dc1x", p: 0.8, pLow: 0.76, edge: 0.06, minOdds: +(MODEL.edgeMargin / 0.76).toFixed(2), odds: { median: 1.6 } };
   const v = verdictFor(sel, 20);
-  assert.equal(v.verdict, "BET", v.reason);                   // 0,76 x 1,45 = 1,10 >= soglia di valore
+  assert.equal(v.verdict, "BET", v.reason);                   // 0,76 x 1,6 = 1,22 >= soglia di valore e quota >= 1,5
   const same = verdictFor({ ...sel, odds: null }, 20);
-  assert.equal(same.verdict, "EVITA", "senza quota reale resta la regola prudente (+8 punti sulla media)");
+  assert.equal(same.verdict, "EVITA", "senza quota reale non c'è BET");
   assert.equal(verdictFor({ ...sel, odds: { median: 1.2 } }, 20).verdict, "EVITA", "quota troppo bassa");
 });
