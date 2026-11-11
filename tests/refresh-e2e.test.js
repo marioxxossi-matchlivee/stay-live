@@ -116,6 +116,9 @@ test("giro completo + recupero automatico, con API-Football come unica fonte", a
     assert.ok(w.log.af.some((c) => c.startsWith("fixtures?league=135")), "la Serie A (ex Ninjas) arriva da API-Football");
     assert.ok(w.log.af.some((c) => c.startsWith("fixtures?league=2&")), "anche la Champions League");
     assert.equal(m1.matches.eligible, LEAGUES.length * 2, "partite aperte nei prossimi 7 giorni: 2 per campionato");
+    // quote reali di doppia chance (bet 12) e gol/no gol (bet 8): solo per le partite entro 36 ore (una per campionato nel mock), non per le lontane
+    const dcCalls = w.log.af.filter((c) => c.startsWith("odds?") && /bet=12(&|$)/.test(c)).length, bttsCalls = w.log.af.filter((c) => c.startsWith("odds?") && /bet=8(&|$)/.test(c)).length;
+    assert.ok(dcCalls >= LEAGUES.length - 2 && dcCalls <= LEAGUES.length + 2, `doppia chance: ${dcCalls} richieste (una per partita vicina)`); assert.equal(bttsCalls, dcCalls);
     // pronostico in errore temporaneo => parziale, con diagnostica precisa
     assert.equal(m1.status, "partial", JSON.stringify({ c: m1.components, e: m1.errors, p: m1.pending, n: m1.notes }));
     assert.equal(m1.components.prediction.temporary, 1);

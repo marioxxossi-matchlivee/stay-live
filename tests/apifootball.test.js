@@ -60,9 +60,9 @@ test("abbinamento partita: orario e squadre; 'Milan' non diventa 'Inter'", () =>
 
 test("id mercati letti dall'elenco ufficiale, con ripiego sui valori noti", () => {
   const ids = betIdsFrom([{ id: 1, name: "Match Winner" }, { id: 5, name: "Goals Over/Under" }, { id: 45, name: "Corners Over Under" }, { id: 77, name: "Goals Over/Under First Half" }, { id: 56, name: "Corners 1x2" }]);
-  assert.deepEqual(ids, { goals: 5, corners: 45, winner: 1, cornerWinner: 56 });
-  assert.deepEqual(betIdsFrom([{ id: 9, name: "Goals Over/Under" }, { id: 8, name: "Corners Over Under" }]), { goals: 9, corners: 8, winner: 1, cornerWinner: 55 });
-  assert.deepEqual(betIdsFrom(undefined), { goals: 5, corners: 45, winner: 1, cornerWinner: 55 });
+  assert.deepEqual(ids, { goals: 5, corners: 45, winner: 1, doubleChance: 12, btts: 8, cornerWinner: 56 });
+  assert.deepEqual(betIdsFrom([{ id: 9, name: "Goals Over/Under" }, { id: 8, name: "Corners Over Under" }]), { goals: 9, corners: 8, winner: 1, doubleChance: 12, btts: 8, cornerWinner: 55 });
+  assert.deepEqual(betIdsFrom(undefined), { goals: 5, corners: 45, winner: 1, doubleChance: 12, btts: 8, cornerWinner: 55 });
 });
 
 const book = (name, bets) => ({ name, bets });
@@ -130,7 +130,7 @@ test("partite API-Football: collegamento diretto dal game_id", () => {
 });
 
 test("configurazione campionati: tutte le voci coerenti", () => {
-  assert.ok(LEAGUES.length >= 48, "32 campionati originali + 16 aggiunti dopo la scoperta delle partite");
+  assert.ok(LEAGUES.length >= 69, "32 originali + aggiunti dopo la scoperta delle partite");
   assert.equal(new Set(LEAGUES.map((l) => l.id)).size, LEAGUES.length, "id app unici");
   assert.equal(new Set(LEAGUES.map((l) => l.afId)).size, LEAGUES.length, "ogni id API-Football una sola volta (niente partite doppie)");
   assert.equal(new Set(LEAGUES.map((l) => l.id)).size, LEAGUES.length);
@@ -183,7 +183,7 @@ test("afFetch: riprova dopo 'Too many requests' e poi riesce", async () => {
 });
 
 test("sincronizzazione: nessuna partita restituita = errore esplicito (stagione o id sbagliati), non '0 partite' in silenzio", async () => {
-  const real = globalThis.fetch, cfg = LEAGUES.find((l) => l.id === "nations");
+  const real = globalThis.fetch, cfg = LEAGUES.find((l) => l.id === "efl2");
   globalThis.fetch = async (url) => (String(url).includes("/rest/v1/") ? new Response("[]", { headers: { "content-type": "application/json" } }) : new Response(JSON.stringify({ errors: [], results: 0, response: [] }), { headers: { "content-type": "application/json" } }));
   try {
     await assert.rejects(fetchAfSeason({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE_KEY: "sr", API_FOOTBALL_KEY: "k", API_FOOTBALL_MIN_GAP_MS: "0" }, cfg, Date.parse("2026-11-10T10:00:00Z")), /stagione o id da verificare/);
@@ -193,8 +193,8 @@ test("sincronizzazione: nessuna partita restituita = errore esplicito (stagione 
 test("stagione API-Football fissata a mano (afSeason): richieste con la stagione del provider, nell'app la stagione corrente", async () => {
   const { AF_SEASON } = await import("../functions/api/_apifootball.js");
   const { SEASON } = await import("../functions/api/_lib.js");
-  assert.equal(AF_SEASON.get("j1"), 2027); assert.equal(AF_SEASON.get("afcon_q"), 2027); assert.equal(AF_SEASON.get("concacaf_nl"), 2025);
-  for (const id of ["j1", "afcon_q", "concacaf_nl"]) assert.equal(seasonFor(id, "2026-11-20T10:00:00Z"), AF_SEASON.get(id), `${id}: stagione del provider`);
+  assert.equal(AF_SEASON.get("j1"), 2027);
+  for (const id of ["j1"]) assert.equal(seasonFor(id, "2026-11-20T10:00:00Z"), AF_SEASON.get(id), `${id}: stagione del provider`);
   assert.equal(seasonFor("seriea", "2026-11-20T10:00:00Z"), 2026, "le altre seguono la regola normale");
   const cfg = LEAGUES.find((l) => l.id === "j1");
   const row = normalizeAfFixture({ fixture: { id: 9, date: "2026-11-20T10:00:00Z", status: { short: "NS" } }, league: { id: 98, name: "J1 League", country: "Japan", round: "Regular Season - 38" }, teams: { home: { id: 1, name: "A" }, away: { id: 2, name: "B" } }, goals: {}, score: {} }, cfg, 2027);
