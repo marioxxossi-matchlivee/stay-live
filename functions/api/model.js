@@ -25,6 +25,8 @@ export const MODEL = {
   edgeMode: "points",     // "points" (attuale): vantaggio in punti sulla media del campionato; "ratio": vantaggio relativo (solo per il backtest delle regole)
   minEdgeRatio: 0.145,    // con edgeMode "ratio": pLow almeno il 14,5% sopra la media (= +8 punti per un esito al 55%)
   maxUsefulProb: 0.80,    // oltre: quota equa < 1,25, esito non interessante
+  minPlayOdds: 1.5,       // quota reale minima per giocare (singola o gamba di multipla): sotto, il rischio non è ripagato e in multipla le quote basse si compongono male
+  requireRealOdds: true,  // un BET richiede la quota reale di mercato (valore atteso verificato); senza, l'esito resta EVITA e la scheda dice che la quota manca. I backtest sul passato (senza quote) lo disattivano
   edgeMargin: 1.03,       // valore atteso minimo: prob. prudente x quota >= 1,03
   longshotFloor: 0.40,    // con quota inserita non si consiglia sotto questa prob. prudente
   // Mercati preferiti: tra i BET della stessa partita passano davanti a 1X2, doppia chance, gol/no gol.
@@ -45,7 +47,7 @@ export const MODEL = {
   injPenalty: 0.008,      // ogni assente confermato (max 8) toglie 0,8 punti alla probabilità prudente: più incertezza, non una previsione sul singolo giocatore
   // Multiple: una gamba per partita, SOLO con quote reali di mercato e valore atteso prudente non negativo (pLow x quota >= legMinEv).
   // La multipla è proposta solo se anche la probabilità congiunta prudente x quota totale >= edgeMargin. Nessuna quota stimata: mai.
-  legMinP: 0.62, legMinOdds: 1.15, legMinEv: 1.0,
+  legMinP: 0.50, legMinOdds: 1.5, legMinEv: 1.0,   // gambe: quota reale >= 1,5 (come minPlayOdds) e probabilità prudente >= 50% (con quota 2,0 il valore atteso è già >= 1)
   maxLegsPerLeague: 2,    // vincolo di rischio: al massimo 2 gambe dello stesso campionato nella stessa multipla
   maxCandidates: 12,      // partite considerate dalla ricerca esaustiva (ognuna con le sue 2 gambe migliori)
   multiTiers: [
@@ -352,11 +354,13 @@ export function verdictFor(sel, sample, odds = null) {
   if (!(Number.isFinite(odds) && odds > 1) && real) odds = real;
   if (Number.isFinite(odds) && odds > 1) {
     const ev = sel.pLow * odds;
+    if (odds < MODEL.minPlayOdds) return { verdict: "EVITA", reason: `Quota ${odds.toFixed(2).replace(".", ",")} sotto il minimo di ${MODEL.minPlayOdds.toFixed(2).replace(".", ",")}: il rischio non è ripagato.` };
     if (sel.pLow < MODEL.longshotFloor) return { verdict: "EVITA", reason: "Probabilità prudente troppo bassa anche con quota alta." };
     return ev >= MODEL.edgeMargin
       ? { verdict: "BET", reason: `Valore atteso prudente +${((ev - 1) * 100).toFixed(1).replace(".", ",")}%.` }
       : { verdict: "EVITA", reason: `Quota troppo bassa: serve almeno ${sel.minOdds.toFixed(2).replace(".", ",")}.` };
   }
+  if (MODEL.requireRealOdds) return { verdict: "EVITA", reason: `Quota reale non disponibile: senza non si può verificare il valore (si gioca solo da ${MODEL.minPlayOdds.toFixed(2).replace(".", ",")} in su e con valore atteso positivo).` };
   const edgePts = sel.edge == null ? null : `${sel.edge >= 0 ? "+" : "−"}${Math.abs(sel.edge * 100).toFixed(0)}`;
   const edgeText = edgePts == null ? "" : ` (${edgePts} punti sulla media del campionato)`;
   if (sel.pLow < MODEL.betThreshold) return { verdict: "EVITA", reason: `Probabilità prudente ${(sel.pLow * 100).toFixed(0)}% sotto la soglia ${(MODEL.betThreshold * 100).toFixed(0)}%.` };
@@ -414,7 +418,7 @@ export function analyzeMatch(match, ctx, { n = 8, af = null, market = null, inj 
       fairOdds: round(1 / f.p, 2),
       odds: market?.odds?.[s.key] ?? null,                              // quota reale (mediana/migliore) se il mercato quota direttamente questa selezione
     };
-    sel.minOdds = round(MODEL.edgeMargin / sel.pLow, 2);
+    sel.minOdds = round(Math.max(MODEL.edgeMargin / sel.pLow, MODEL.minPlayOdds), 2);
     // Valore atteso solo su quote REALI: ev = p x quota - 1 (centrale), evLow = pLow x quota - 1 (prudente). Senza quota reale: null, mai una stima.
     sel.ev = sel.odds ? round(sel.p * sel.odds.median - 1, 3) : null;
     sel.evLow = sel.odds ? round(sel.pLow * sel.odds.median - 1, 3) : null;

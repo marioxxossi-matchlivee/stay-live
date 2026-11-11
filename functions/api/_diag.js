@@ -10,7 +10,7 @@
  */
 export const CLASSES = ["ok", "not_yet", "not_covered", "temporary", "error"];
 export const TEMP_RE = /limite|too many|rate|timeout|in coda|quasi esaurito|HTTP 5\d\d|fetch failed|network|abort|riprovare|rimandat/i;
-export const MAX_EMPTY_ATTEMPTS = 4;           // dopo tanti tentativi con risposta vuota il dato è considerato non fornito
+export const NEAR_KICKOFF_MS = 3 * 3600e3;    // entro 3 ore dal fischio una risposta vuota del provider è definitiva: quel dato non c'è
 const FAR_MS = 72 * 3600e3;                     // oltre 72 ore dal fischio d'inizio quote e pronostici di norma non esistono ancora
 
 /** Flag di copertura di un campionato dalla risposta `leagues?id=&season=` (null = sconosciuto). */
@@ -29,9 +29,9 @@ const FLAG_OF = { prediction: "predictions", market: "odds", corners: "odds", co
 /**
  * Esito di un componente di una partita.
  * state: "used" | "none" | "waiting" | "missing" (come negli elenchi di _brain.js / _corners.js); error: messaggio del provider, se c'è.
- * attempts: quante volte l'operazione è già stata tentata (da refresh_tasks); flags: copertura del campionato.
+ * flags: copertura del campionato.
  */
-export function classify(component, { state, error = null, kickoff = null, now = Date.now(), flags = null, attempts = 0 } = {}) {
+export function classify(component, { state, error = null, kickoff = null, now = Date.now(), flags = null } = {}) {
   if (state === "used") return "ok";
   if (state === "waiting") return "temporary";
   const flag = FLAG_OF[component];
@@ -40,7 +40,10 @@ export function classify(component, { state, error = null, kickoff = null, now =
   if (state === "none") return far ? "not_yet" : "not_covered";          // il provider ha risposto: nessuna quota/statistica per questa partita
   if (error) return TEMP_RE.test(error) ? "temporary" : "error";
   if (far) return "not_yet";
-  return attempts >= MAX_EMPTY_ATTEMPTS ? "not_covered" : "temporary";    // risposta vuota vicino al fischio: si riprova qualche volta, poi si accetta
+  // Risposta del provider senza errore e senza dati: NON è un guasto e non genera un compito di recupero. Prima era "temporaneo" per 4 tentativi:
+  // al quarto il compito spariva (e con lui il conteggio) e al giro completo successivo ripartiva da zero, quindi l'aggiornamento restava "parziale" per sempre.
+  // Ora è "non ancora disponibile" (si ricontrolla a ogni giro completo, ogni 4 ore) e, nelle ultime 3 ore prima del fischio, "non previsto".
+  return kickoff != null && Date.parse(kickoff) - now <= NEAR_KICKOFF_MS ? "not_covered" : "not_yet";
 }
 
 export const emptyCounts = () => ({ ok: 0, not_yet: 0, not_covered: 0, temporary: 0, error: 0 });
