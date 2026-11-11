@@ -1,0 +1,24 @@
+name: Backtest regole BET
+
+# Confronta le regole di BET senza quota (attuale, edge relativo, soglie più basse) sullo storico reale e scrive la tabella nel riepilogo.
+# Non modifica nulla: serve a decidere se cambiare le soglie. Si avvia a mano: Actions → "Backtest regole BET" → Run workflow.
+# Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (la vista backtest_finals esiste già).
+on:
+  workflow_dispatch:
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Esporta le partite finali
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/export-finals.js finals.json
+      - name: Confronto regole
+        run: node scripts/backtest-rules.js --file finals.json
