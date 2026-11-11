@@ -954,3 +954,16 @@ details.more .mk,details.more .form,details.more .kv div{background:var(--soft)}
 .st-more{margin:8px 0 0}.st-more summary{cursor:pointer;font:700 13px var(--body);padding:6px 0}
 .st-btn{margin-top:12px;width:100%;padding:12px;border:0;border-radius:14px;background:var(--pitch-deep);color:#fff;font:800 14px var(--head)}
 .st-btn:disabled{opacity:.55}
+
+/* Lista partite: in primo piano l'ESITO consigliato; verdetto e quota reale sotto, la probabilità prudente piccola e discreta. */
+.row-main .pick,.row-main .pick.bet,.row-main .pick.skip,.row-main .pick.none{grid-column:1/-1;grid-row:3;justify-items:stretch;text-align:left;min-width:0;max-width:none;width:100%;gap:4px}
+.pick .pk-main{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pick .pk-label{max-width:none;white-space:normal;overflow:visible;font:800 18px/1.2 var(--head);letter-spacing:-.01em;color:var(--ink)}
+.pick.skip .pk-label,.pick.none .pk-label{color:var(--ink-2);font-weight:700}
+.pick .vd-pill{flex:none}
+.pick .pk-sub{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--mute)}
+.pick .pk-q{font-weight:700}
+.pick .pk-q.real{color:var(--pitch-deep)}
+.pick .pk-q.none{font-weight:500;color:var(--mute)}
+.pick .pk-pct,.pick.bet .pk-pct{font:600 12.5px/1.2 var(--body);letter-spacing:0;color:var(--mute);margin-left:auto}
+.api-note.q-none{border:1px solid #f3dcae}

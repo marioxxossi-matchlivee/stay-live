@@ -139,9 +139,11 @@ async function fillCrests(leagueIds) {
 const basisTag = (b) => (!b || b === "storico" ? "" : `<i class="api-tag" title="${b === "mercato" ? "Calcolato con le quote di mercato" : b === "api" ? "Calcolato con il pronostico di API-Football" : "Calcolato con il pronostico di API-Football e le quote di mercato"}">${b === "api+mercato" ? "API+Q" : b === "api" ? "API" : "Q"}</i>`);
 function pickChip(p) {
   if (!p) return "";
-  if (p.confidence === "insufficiente") return `<span class="pick none"><b class="vd-pill">Pochi dati</b><span class="pk-label">${p.sample} gare di storico</span></span>`;
+  if (p.confidence === "insufficiente") return `<span class="pick none"><span class="pk-main"><span class="pk-label">Pochi dati</span></span><span class="pk-sub"><span class="pk-q none">${p.sample} gare di storico</span></span></span>`;
   const bet = p.verdict === "BET";
-  return `<span class="pick ${bet ? "bet" : "skip"}"><b class="vd-pill">${bet ? icon("check") : ""}${p.verdict}</b><span class="pk-label">${esc(p.label)}${basisTag(p.basis)}</span><em class="pk-pct" title="Probabilità prudente">${pct(p.pLow)}</em></span>`;
+  // In primo piano l'esito consigliato; poi verdetto, quota reale (o l'avviso che manca) e, piccola, la probabilità prudente.
+  const q = p.odds?.median > 1 ? `<span class="pk-q real">quota ${num(p.odds.median)}</span>` : `<span class="pk-q none">quota reale non disponibile</span>`;
+  return `<span class="pick ${bet ? "bet" : "skip"}"><span class="pk-main"><span class="pk-label">${esc(p.label)}${basisTag(p.basis)}</span><b class="vd-pill">${bet ? icon("check") : ""}${p.verdict}</b></span><span class="pk-sub">${q}<em class="pk-pct" title="Probabilità prudente">prudente ${pct(p.pLow)}</em></span></span>`;
 }
 function customChips(m) {
   const cm = m.corner ?? cornerCache.get(m.id) ?? null;
@@ -342,6 +344,22 @@ function explain(match, a) {
   return `<ol class="steps">${steps.map(([t, d]) => `<li><b>${t}</b><span>${d}</span></li>`).join("")}</ol>`;
 }
 /** Pronostico di API-Football: cosa dice e quanto pesa nel verdetto (o perché manca). */
+/** Stato delle quote reali di questa partita: lette (quali mercati), in scarico oppure NON disponibili (con il motivo). */
+function quotesBlock(a, match, st) {
+  const priced = a.selections.filter((x) => x.odds);
+  if (priced.length) {
+    const kinds = [...new Set(priced.map((x) => x.market))].join(", ");
+    const books = a.fusion?.books;
+    return `<section class="api-card q-real"><h4>Quote reali</h4><p class="api-note ok">Lette da API-Football${books ? ` (${books} bookmaker)` : ""}: ${priced.length} esiti con quota reale (${esc(kinds)}). Il verdetto usa il valore atteso: probabilità prudente × quota, con quota minima ${num(MODEL.minPlayOdds)}.</p></section>`;
+  }
+  if (st?.marketWaiting) return `<p class="af-warn wait" role="status"><i class="af-spin" aria-hidden="true"></i><span>Scarico le quote reali: il verdetto si aggiorna da solo appena arrivano.</span></p>`;
+  if (st?.off) return `<p class="api-note warn"><b>Quote reali non disponibili:</b> chiave API-Football non configurata.</p>`;
+  const hours = (Date.parse(match.kickoffAt) - Date.now()) / 3600e3;
+  const why = match.homeScore != null || hours <= 0 ? "La partita è già iniziata o finita."
+    : hours > 72 ? "I bookmaker non le hanno ancora pubblicate (partita tra più di 3 giorni): si scaricano da sole più avanti."
+    : "Il provider non ne offre per questa partita al momento: si riprova a ogni aggiornamento (ogni 4 ore).";
+  return `<p class="api-note warn q-none"><b>Quote reali non disponibili.</b> ${why} Senza quota reale il valore non si può verificare: il consiglio resta solo statistico e non diventa BET.</p>`;
+}
 function apiBlock(a, st) {
   const api = a.api;
   if (api?.used) {
@@ -412,6 +430,7 @@ function renderDetail() {
       sub: played ? kick : dayParts(dayKey(match.kickoffAt)).long })}
     <section class="rec-sec"><h4>Cosa giocare <small>affidabilità ${esc(a.confidence)}</small></h4>${recs.length ? recs.map((x, i) => recCard(x, a, match.id, i)).join("") : noPlay}</section>
     <section class="rec-sec" id="detail-corner" hidden></section>
+    ${quotesBlock(a, match, detailState.data.afStatus)}
     ${apiBlock(a, detailState.data.afStatus)}
     <div id="pane-data" class="u-data"><div class="af-loading"><i></i>Scarico i dati da API-Football…</div></div>
     <details class="more"><summary>Tutti i mercati e come è calcolato</summary>
