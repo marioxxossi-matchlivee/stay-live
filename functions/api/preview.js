@@ -1,5 +1,5 @@
 import { errorMessage, json, loadFinals, missingConfig, supabaseGet } from "./_lib.js";
-import { analyzeMatch, buildContext, buildMultiples, compactPick, ou25Of } from "./model.js";
+import { MODEL, analyzeMatch, buildContext, buildMultiples, compactPick, minOddsParam, ou25Of, withMinOdds } from "./model.js";
 import { loadCornerOdds } from "./_corners.js";
 import { loadLogoIndex, withLogos } from "./_crests.js";
 import { brainStatusOf, loadBrainInputs } from "./_brain.js";
@@ -32,9 +32,10 @@ export async function onRequest({ request, env, waitUntil }) {
     const thr = Math.min(0.9, Math.max(0.5, Number(params.get("thr")) || 0.6));
     const cr = custom && env.API_FOOTBALL_KEY ? await loadCornerOdds(env, matches, Date.now(), { live: false, maps: br.maps }).catch(() => null) : null;
     const rec = [], recLegs = [], ver = modelVersion(), nowMs = Date.now();      // registro dei pronostici (prima del calcio d'inizio), per misurare l'affidabilità
-    const items = matches.map((m) => {
+    const mo = minOddsParam(params), personal = mo != null && mo !== MODEL.minPlayOdds;      // quota minima scelta nelle Impostazioni: il registro resta con le regole standard
+    const items = withMinOdds(mo, () => matches.map((m) => {
       let a = analyzeMatch(m, ctx, { n, ...(br.byGame.get(m.game_id) ?? {}) });
-      if (!custom && n === 8) { const row = predictionRow(m, a, { now: nowMs, ver }); if (row) { rec.push(row); recLegs.push(...legRows(m, a, { now: nowMs, ver })); } }
+      if (!custom && n === 8 && !personal) { const row = predictionRow(m, a, { now: nowMs, ver }); if (row) { rec.push(row); recLegs.push(...legRows(m, a, { now: nowMs, ver })); } }
       if (custom) {
         const best = ou25Of(a)?.best;
         const sel = best && a.selections.find((s) => s.key === best.key);
@@ -48,7 +49,7 @@ export async function onRequest({ request, env, waitUntil }) {
         corner: cr?.byGame.get(m.game_id) ?? null,
         af: br.state.get(m.game_id) ?? "missing", afPercent: a.api?.percent ?? null, afAdvice: a.api?.adviceIt?.label ?? null,
       };
-    });
+    }));
     await recordLater({ env, waitUntil }, rec, recLegs);
     return json({
       n, generatedAt: new Date().toISOString(), items, afStatus: { ...brainStatusOf(br, matches.map((m) => m.game_id)), off: !env.API_FOOTBALL_KEY },

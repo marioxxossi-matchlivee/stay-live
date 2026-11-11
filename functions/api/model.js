@@ -25,8 +25,8 @@ export const MODEL = {
   edgeMode: "points",     // "points" (attuale): vantaggio in punti sulla media del campionato; "ratio": vantaggio relativo (solo per il backtest delle regole)
   minEdgeRatio: 0.145,    // con edgeMode "ratio": pLow almeno il 14,5% sopra la media (= +8 punti per un esito al 55%)
   maxUsefulProb: 0.80,    // oltre: quota equa < 1,25, esito non interessante
-  minPlayOdds: 1.5,       // quota reale minima per giocare (singola o gamba di multipla): sotto, il rischio non è ripagato e in multipla le quote basse si compongono male
-  requireRealOdds: true,  // un BET richiede la quota reale di mercato (valore atteso verificato); senza, l'esito resta EVITA e la scheda dice che la quota manca. I backtest sul passato (senza quote) lo disattivano
+  minPlayOdds: 1.3,       // quota minima per giocare (singola o gamba di multipla). Si cambia dalle Impostazioni dell'app; sotto, il rischio non è ripagato
+  requireRealOdds: false, // false = un BET può nascere anche senza quota reale (probabilità + vantaggio sulla media, valore "non verificato"); true = serve la quota di mercato
   edgeMargin: 1.03,       // valore atteso minimo: prob. prudente x quota >= 1,03
   longshotFloor: 0.40,    // con quota inserita non si consiglia sotto questa prob. prudente
   // Mercati preferiti: tra i BET della stessa partita passano davanti a 1X2, doppia chance, gol/no gol.
@@ -47,7 +47,7 @@ export const MODEL = {
   injPenalty: 0.008,      // ogni assente confermato (max 8) toglie 0,8 punti alla probabilità prudente: più incertezza, non una previsione sul singolo giocatore
   // Multiple: una gamba per partita, SOLO con quote reali di mercato e valore atteso prudente non negativo (pLow x quota >= legMinEv).
   // La multipla è proposta solo se anche la probabilità congiunta prudente x quota totale >= edgeMargin. Nessuna quota stimata: mai.
-  legMinP: 0.50, legMinOdds: 1.5, legMinEv: 1.0,   // gambe: quota reale >= 1,5 (come minPlayOdds) e probabilità prudente >= 50% (con quota 2,0 il valore atteso è già >= 1)
+  legMinP: 0.50, legMinOdds: 1.15, legMinEv: 1.0,   // gambe: quota reale >= max(legMinOdds, minPlayOdds) e probabilità prudente >= 50%
   maxLegsPerLeague: 2,    // vincolo di rischio: al massimo 2 gambe dello stesso campionato nella stessa multipla
   maxCandidates: 12,      // partite considerate dalla ricerca esaustiva (ognuna con le sue 2 gambe migliori)
   multiTiers: [
@@ -347,6 +347,15 @@ export function teamForm(teamId, before, ctx, n) {
   };
 }
 
+/** Esegue `fn` (sincrona) con la quota minima scelta dall'utente (1,0-3,0); null = quella del modello. Ripristina sempre il valore. */
+export function withMinOdds(value, fn) {
+  const v = Number(value);
+  if (!(v >= 1 && v <= 3) || v === MODEL.minPlayOdds) return fn();
+  const saved = MODEL.minPlayOdds; MODEL.minPlayOdds = v;
+  try { return fn(); } finally { MODEL.minPlayOdds = saved; }
+}
+export const minOddsParam = (params) => { const v = Number(params.get("minodds")); return v >= 1 && v <= 3 ? Math.round(v * 100) / 100 : null; };
+
 export function verdictFor(sel, sample, odds = null) {
   if (sample < MODEL.betSample) return { verdict: "EVITA", reason: `Campione troppo piccolo (${sample} partite, ne servono ${MODEL.betSample}).` };
   if (sel.agree === "contraddice") return { verdict: "EVITA", reason: `${sel.agreeBy ?? "API-Football"} non è d'accordo: stima ${((sel.pWorst ?? sel.pApi) * 100).toFixed(0)}% per questo esito.` };
@@ -432,7 +441,7 @@ export function analyzeMatch(match, ctx, { n = 8, af = null, market = null, inj 
   // Gambe per le multiple: solo selezioni con quota REALE di mercato e valore atteso prudente non negativo (pLow x quota >= legMinEv).
   // Nessuna quota stimata: una stima non può dimostrare un vantaggio. Ordinate per valore atteso prudente.
   const legs = sample < MODEL.betSample ? [] : selections
-    .filter((x) => x.odds && x.agree !== "contraddice" && x.pLow >= MODEL.legMinP && x.odds.median >= MODEL.legMinOdds && x.pLow * x.odds.median >= MODEL.legMinEv)
+    .filter((x) => x.odds && x.agree !== "contraddice" && x.pLow >= MODEL.legMinP && x.odds.median >= Math.max(MODEL.legMinOdds, MODEL.minPlayOdds) && x.pLow * x.odds.median >= MODEL.legMinEv)
     .map((x) => ({ key: x.key, label: x.label, market: x.market, p: x.p, pLow: x.pLow, spread: x.spread, agree: x.agree, odds: x.odds.median, oddsSource: "mercato", bestOdds: x.odds.best ?? null, book: x.odds.book ?? null,
       edge: round(x.p * x.odds.median - 1, 3), evLow: round(x.pLow * x.odds.median - 1, 3) }))
     .sort((x, y) => y.evLow - x.evLow)
@@ -471,6 +480,7 @@ export function compactPick(analysis) {
   const s = analysis.pick;
   if (!s) return null;
   return { key: s.key, label: s.label, market: s.market, preferred: isPreferred(s), p: s.p, pLow: s.pLow, minOdds: s.minOdds, estOdds: estimateOdds(s.p), verdict: s.verdict,
+    edge: s.edge, agreeBy: s.agreeBy ?? null, pWorst: s.pWorst ?? null,
     reason: s.reason, confidence: analysis.confidence, sample: analysis.sample, expectedGoals: analysis.lambda.total,
     basis: analysis.basis, pApi: s.pApi, pModel: s.pModel, pMarket: s.pMarket, agree: s.agree,
     odds: s.odds ? { median: s.odds.median, best: s.odds.best ?? null, book: s.odds.book ?? null } : null, ev: s.ev, evLow: s.evLow, verified: s.verified };

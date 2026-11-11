@@ -1,5 +1,5 @@
 import { errorMessage, json, loadFinals, missingConfig, supabaseGet } from "./_lib.js";
-import { analyzeMatch, buildContext, MODEL } from "./model.js";
+import { analyzeMatch, buildContext, MODEL, minOddsParam, withMinOdds } from "./model.js";
 import { loadLogoIndex, withLogos } from "./_crests.js";
 import { brainStatusOf, loadBrainInputs } from "./_brain.js";
 import { legRows, predictionRow, recordLater } from "./_predictions.js";
@@ -23,8 +23,9 @@ export async function onRequest({ request, env, waitUntil }) {
     // Senza chiave o con il provider al limite si calcola con ciò che c'è e il browser riprova da solo.
     const none = { byGame: new Map(), state: new Map(), marketState: new Map(), retry: { pending: 0, afterMs: 0 } };
     const br = env.API_FOOTBALL_KEY ? await loadBrainInputs(env, [match], Date.now(), { maxMap: 2, maxLive: 4 }).catch((e) => { console.error("Stay Live brain:", errorMessage(e)); return none; }) : none;
-    const analysis = analyzeMatch(match, buildContext(finals), { n, ...(br.byGame.get(match.game_id) ?? {}) });
-    if (n === 8) { const row = predictionRow(match, analysis); if (row) await recordLater({ env, waitUntil }, [row], legRows(match, analysis)); }
+    const mo = minOddsParam(url), custom = mo != null && mo !== MODEL.minPlayOdds;      // quota minima scelta dall'utente nelle Impostazioni
+    const analysis = withMinOdds(mo, () => analyzeMatch(match, buildContext(finals), { n, ...(br.byGame.get(match.game_id) ?? {}) }));
+    if (n === 8 && !custom) {      // il registro misura il modello con le regole standard, non quelle personali const row = predictionRow(match, analysis); if (row) await recordLater({ env, waitUntil }, [row], legRows(match, analysis)); }
     const afStatus = { ...brainStatusOf(br, [match.game_id]), off: !env.API_FOOTBALL_KEY };
     return json({
       match: { id: match.game_id, league: match.league, kickoffAt: match.kickoff_at, status: match.status, home: match.home_name, away: match.away_name, ...withLogos(match, logos), homeScore: match.home_score, awayScore: match.away_score, neutral: match.neutral_site },
