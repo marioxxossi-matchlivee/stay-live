@@ -1,0 +1,32 @@
+name: Backtest affidabilità (BET + EVITA)
+
+# Analisi di affidabilità totale sullo storico reale: BET ed EVITA per motivo, taratura di tutti gli esiti, affidabilità per livello di fiducia
+# e griglia di soglie (scelta sulla validazione, giudizio sul test). Non modifica nulla: serve a decidere. Il report compare nel riepilogo.
+# Si avvia a mano: Actions → "Backtest affidabilità (BET + EVITA)" → Run workflow. Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
+on:
+  workflow_dispatch:
+    inputs:
+      warmup:
+        description: "Quota iniziale di partite usata solo per il rodaggio (0.1 - 0.7)"
+        default: "0.3"
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Esporta le partite finali
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/export-finals.js finals.json
+      - name: Affidabilità BET + EVITA
+        run: node scripts/backtest-evita.js --file finals.json --warmup "${{ inputs.warmup || '0.3' }}" | tee report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: report-affidabilita
+          path: report.md
