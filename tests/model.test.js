@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  MODEL, analyzeMatch, buildMultiples, applyCap, accumulatorPlan, buildContext, estimateOdds, isPreferred, withMinOdds, jointProbability, kellyGrowth, planFor, stakePlan, totalsOf, poissonPmf, probabilities, scoreMatrix, stressedProbabilities, verdictFor,
+  MODEL, analyzeMatch, buildMultiples, applyCap, accumulatorPlan, buildContext, estimateOdds, isPreferred, minOddsParam, withMinOdds, jointProbability, kellyGrowth, planFor, stakePlan, totalsOf, poissonPmf, probabilities, scoreMatrix, stressedProbabilities, verdictFor,
 } from "../functions/api/model.js";
 import { nameSimilarity } from "../functions/api/_names.js";
 import { withModel } from "../scripts/backtest.js";
@@ -251,3 +251,10 @@ test("piano: multiple dal cervello unico, singole separate, tetto di esposizione
   assert.deepEqual(est.multiples, [], "con quote stimate non si compone nessuna multipla");
 });
 
+
+test("minOddsParam: legge la quota minima da un URL o dai suoi parametri, ignora i valori fuori scala", () => {
+  assert.equal(minOddsParam(new URL("https://x.it/api/analysis?id=1&minodds=1.25")), 1.25);
+  assert.equal(minOddsParam(new URL("https://x.it/api/analysis?minodds=1.25").searchParams), 1.25);
+  assert.equal(minOddsParam(new URL("https://x.it/api/analysis?minodds=9")), null);
+  assert.equal(minOddsParam(new URL("https://x.it/api/analysis")), null);
+});
