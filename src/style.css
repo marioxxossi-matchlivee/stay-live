@@ -967,3 +967,4 @@ details.more .mk,details.more .form,details.more .kv div{background:var(--soft)}
 .pick .pk-q.none{font-weight:500;color:var(--mute)}
 .pick .pk-pct,.pick.bet .pk-pct{font:600 12.5px/1.2 var(--body);letter-spacing:0;color:var(--mute);margin-left:auto}
 .api-note.q-none{border:1px solid #f3dcae}
+.set-row input[type=number]{width:84px;border:0;background:var(--soft);border-radius:12px;padding:9px 12px;font:700 16px var(--body);text-align:center;color:var(--ink)}

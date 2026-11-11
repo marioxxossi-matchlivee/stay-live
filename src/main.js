@@ -1,5 +1,6 @@
 import "./style.css";
 import { MODEL, verdictFor } from "../functions/api/model.js";
+import { MIN_ODDS_DEFAULT, adjustPick, clampMinOdds } from "./rules.js";
 import { computePlan, isBetItem } from "./plan.js";
 import { dayKey, dayParts, eur, esc, fmtTime, num, pct } from "./format.js";
 import { buildPreviewPdf } from "./report.js";
@@ -23,10 +24,11 @@ const openAcc = new Set();
 const reduceMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 const state = {
   matches: [], leagues: [], continents: [], league: "all", navOpen: false, day: null, onlyBet: false, selected: new Set(),
-  n: 8, loading: false, error: null, banner: null, syncTried: false, updatedAt: null,
+  n: 8, minOdds: MIN_ODDS_DEFAULT, loading: false, error: null, banner: null, syncTried: false, updatedAt: null,
 };
 // Modalità personalizzata: solo Over/Under 2,5 o corner sopra una soglia di probabilità.
-const MODE_KEY = "stayLive.customMode", THR_KEY = "stayLive.customThr";
+const MODE_KEY = "stayLive.customMode", THR_KEY = "stayLive.customThr", MINODDS_KEY = "stayLive.minOdds";
+try { const mo = localStorage.getItem(MINODDS_KEY); if (mo != null) state.minOdds = clampMinOdds(mo); } catch { /* quota minima di default */ }
 try { state.mode = localStorage.getItem(MODE_KEY) === "1" ? "custom" : "standard"; const t = Number(localStorage.getItem(THR_KEY)); state.thr = t >= 0.5 && t <= 0.9 ? t : 0.6; } catch { state.mode = "standard"; state.thr = 0.6; }
 const isCustom = () => state.mode === "custom";
 /** In modalità personalizzata una partita passa se Over/Under 2,5 (non contraddetto da API-Football) o un corner ha probabilità >= soglia. */
@@ -137,6 +139,8 @@ async function fillCrests(leagueIds) {
 /* ---------- Lista ---------- */
 /** Etichetta delle fonti usate dal cervello unico: API = pronostico di API-Football, Q = quote di mercato. */
 const basisTag = (b) => (!b || b === "storico" ? "" : `<i class="api-tag" title="${b === "mercato" ? "Calcolato con le quote di mercato" : b === "api" ? "Calcolato con il pronostico di API-Football" : "Calcolato con il pronostico di API-Football e le quote di mercato"}">${b === "api+mercato" ? "API+Q" : b === "api" ? "API" : "Q"}</i>`);
+/** Scelta della partita con la quota minima scelta dall'utente (Impostazioni). */
+const pk = (m) => adjustPick(m.pick, state.minOdds);
 function pickChip(p) {
   if (!p) return "";
   if (p.confidence === "insufficiente") return `<span class="pick none"><span class="pk-main"><span class="pk-label">Pochi dati</span></span><span class="pk-sub"><span class="pk-q none">${p.sample} gare di storico</span></span></span>`;
@@ -159,7 +163,7 @@ function visibleMatches() {
     if (state.day === "results") return m.status === "final";
     if (!isOpen(m) || dayKey(m.kickoffAt) !== state.day) return false;
     if (isCustom()) return qualifies(m);
-    return !state.onlyBet || m.pick?.verdict === "BET";
+    return !state.onlyBet || pk(m)?.verdict === "BET";
   });
 }
 const sideHtml = (name, logo, goals) => `<span class="side">${crest(name, logo)}<b>${esc(name)}</b>${goals != null ? `<span class="score">${goals}</span>` : ""}</span>`;
@@ -180,7 +184,7 @@ function listSel(m) {
       verdict: o.p >= state.thr && o.agree !== "contraddice" ? "BET" : "EVITA", reason: o.agree === "contraddice" ? "API-Football non conferma." : `Probabilità prudente ${pct(o.pLow)}.`,
       confidence: m.ou.confidence, basis: m.ou.basis ?? null, pApi: o.pApi ?? null, agree: o.agree ?? null, odds: null, ev: null };
   }
-  const p = m.pick;
+  const p = pk(m);
   return p && p.confidence !== "insufficiente" ? p : null;
 }
 /** Giocata dalla lista: stessa struttura e stessa fotografia del preview, ma senza puntata né quota (qui non c'è un piano). */
@@ -200,11 +204,11 @@ function rowHtml(m, k = 0) {
   const time = fmtTime.format(new Date(m.kickoffAt));
   const live = m.status === "in_progress" ? `<span class="live-tag">In corso</span>` : "";
   const check = isOpen(m) ? `<label class="chk"><input type="checkbox" data-sel="${esc(m.id)}" ${state.selected.has(m.id) ? "checked" : ""} aria-label="Seleziona ${esc(m.home)} – ${esc(m.away)}" /></label>` : `<span></span>`;
-  return `<div class="row ${state.selected.has(m.id) ? "sel" : ""}${!isCustom() && m.pick?.verdict === "BET" && m.pick.confidence !== "insufficiente" ? " is-bet" : ""}" style="--i:${Math.min(k, 9)}">${check}
+  return `<div class="row ${state.selected.has(m.id) ? "sel" : ""}${!isCustom() && pk(m)?.verdict === "BET" && m.pick.confidence !== "insufficiente" ? " is-bet" : ""}" style="--i:${Math.min(k, 9)}">${check}
     <button class="row-main" type="button" data-open="${esc(m.id)}">
       <span class="meta"><b>${time}</b><span>${esc(leagueName(m.league, true))}</span>${live}</span>
       <span class="fx">${sideHtml(m.home, m.homeLogo, m.homeScore)}${sideHtml(m.away, m.awayLogo, m.awayScore)}</span>
-      ${isCustom() ? customChips(m) : pickChip(m.pick)}
+      ${isCustom() ? customChips(m) : pickChip(pk(m))}
     </button>${rowSaveHtml(m)}</div>`;
 }
 function renderDays() {
@@ -254,7 +258,7 @@ function render() {
   renderLeagueNav();
   renderDays();
   const list = visibleMatches();
-  const bets = list.filter((m) => m.pick?.verdict === "BET").length;
+  const bets = list.filter((m) => pk(m)?.verdict === "BET").length;
   document.body.classList.toggle("mode-custom", isCustom());
   const seg = segValue();
   const segEl = $("#mode-seg");
@@ -303,7 +307,7 @@ async function openDetail(id) {
   $("#detail").showModal();
   $("#detail-body").innerHTML = `<div class="af-loading"><i></i>Calcolo in corso…</div>`;
   try {
-    detailState = { id, af: null, afStarted: false, data: await getJson(`/api/analysis?id=${encodeURIComponent(id)}&n=${state.n}`) };
+    detailState = { id, af: null, afStarted: false, data: await getJson(`/api/analysis?id=${encodeURIComponent(id)}&n=${state.n}&minodds=${state.minOdds}`) };
     renderDetail();
   } catch (e) {
     $("#detail-body").innerHTML = `<h2 class="d-title">Analisi non disponibile</h2><p class="d-sub">${esc(e.message)}</p>`;
@@ -350,7 +354,7 @@ function quotesBlock(a, match, st) {
   if (priced.length) {
     const kinds = [...new Set(priced.map((x) => x.market))].join(", ");
     const books = a.fusion?.books;
-    return `<section class="api-card q-real"><h4>Quote reali</h4><p class="api-note ok">Lette da API-Football${books ? ` (${books} bookmaker)` : ""}: ${priced.length} esiti con quota reale (${esc(kinds)}). Il verdetto usa il valore atteso: probabilità prudente × quota, con quota minima ${num(MODEL.minPlayOdds)}.</p></section>`;
+    return `<section class="api-card q-real"><h4>Quote reali</h4><p class="api-note ok">Lette da API-Football${books ? ` (${books} bookmaker)` : ""}: ${priced.length} esiti con quota reale (${esc(kinds)}). Il verdetto usa il valore atteso: probabilità prudente × quota, con quota minima ${num(state.minOdds)} (modificabile dalle Impostazioni).</p></section>`;
   }
   if (st?.marketWaiting) return `<p class="af-warn wait" role="status"><i class="af-spin" aria-hidden="true"></i><span>Scarico le quote reali: il verdetto si aggiorna da solo appena arrivano.</span></p>`;
   if (st?.off) return `<p class="api-note warn"><b>Quote reali non disponibili:</b> chiave API-Football non configurata.</p>`;
@@ -358,7 +362,7 @@ function quotesBlock(a, match, st) {
   const why = match.homeScore != null || hours <= 0 ? "La partita è già iniziata o finita."
     : hours > 72 ? "I bookmaker non le hanno ancora pubblicate (partita tra più di 3 giorni): si scaricano da sole più avanti."
     : "Il provider non ne offre per questa partita al momento: si riprova a ogni aggiornamento (ogni 4 ore).";
-  return `<p class="api-note warn q-none"><b>Quote reali non disponibili.</b> ${why} Senza quota reale il valore non si può verificare: il consiglio resta solo statistico e non diventa BET.</p>`;
+  return `<p class="api-note warn q-none"><b>Quote reali non disponibili.</b> ${why} Senza quota reale il valore non si può verificare: il consiglio è solo statistico e, se è BET, ${a.pick?.minOdds ? `vale solo con quota almeno ${num(a.pick.minOdds)}` : "controlla la quota prima di giocare"}.</p>`;
 }
 function apiBlock(a, st) {
   const api = a.api;
@@ -383,7 +387,7 @@ function scheduleAnalysisRetry() {
   anTimer = setTimeout(async () => {
     if (detailState?.id !== id) return;
     try {
-      const data = await getJson(`/api/analysis?id=${encodeURIComponent(id)}&n=${state.n}`);
+      const data = await getJson(`/api/analysis?id=${encodeURIComponent(id)}&n=${state.n}&minodds=${state.minOdds}`);
       if (detailState?.id !== id) return;
       const box = $("#detail"), y = box.scrollTop;
       detailState.data = data; detailState.anTries = tries + 1; renderDetail(); box.scrollTop = y;
@@ -550,7 +554,7 @@ const pvOdds = new Map(); // quote inserite a mano nel resoconto: id partita -> 
 const BANK_KEY = "stayLive.bankroll";
 let bankroll = (() => { try { const v = Number(localStorage.getItem(BANK_KEY)); return v > 0 ? v : 100; } catch { return 100; } })();
 const parsePos = (v) => { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) && n > 0 ? n : null; };
-const previewUrl = (ids) => `/api/preview?ids=${ids.map(encodeURIComponent).join(",")}&n=${state.n}${isCustom() ? `&mode=ou25&thr=${state.thr}` : ""}`;
+const previewUrl = (ids) => `/api/preview?ids=${ids.map(encodeURIComponent).join(",")}&n=${state.n}&minodds=${state.minOdds}${isCustom() ? `&mode=ou25&thr=${state.thr}` : ""}`;
 async function makePreview() {
   const ids = [...state.selected];
   if (!ids.length) return;
@@ -958,6 +962,7 @@ document.addEventListener("click", (e) => {
 document.addEventListener("change", (e) => {
   const t = e.target;
   if (t.matches("[data-sel]")) { t.checked ? state.selected.add(t.dataset.sel) : state.selected.delete(t.dataset.sel); t.closest(".row")?.classList.toggle("sel", t.checked); syncSelbar(); }   // niente ridisegno della lista: aggiorna solo la riga toccata
+  if (t.id === "min-odds") { state.minOdds = clampMinOdds(t.value); t.value = String(state.minOdds); try { localStorage.setItem(MINODDS_KEY, String(state.minOdds)); } catch { /* preferenza non salvata */ } render(); showToast(`Quota minima ${num(state.minOdds)}`); if (detailState?.id) openDetailKeep(); return; }
   if (t.id === "history-count") { state.n = Number(t.value); load({ sync: false }); }
   if (t.id === "detail-n") { state.n = Number(t.value); $("#history-count").value = String(state.n); openDetailKeep(); }
 });
@@ -971,7 +976,7 @@ document.addEventListener("input", (e) => {
 });
 async function openDetailKeep() {
   const id = detailState.id;
-  detailState = { ...detailState, id, data: await getJson(`/api/analysis?id=${encodeURIComponent(id)}&n=${state.n}`) };
+  detailState = { ...detailState, id, data: await getJson(`/api/analysis?id=${encodeURIComponent(id)}&n=${state.n}&minodds=${state.minOdds}`) };
   renderDetail();
 }
 /* Fogli: chiusura animata, Esc e sfondo passano da qui; sul telefono si chiudono anche trascinando la maniglia verso il basso (solo la maniglia: lo scroll del contenuto non c'entra). */
@@ -1167,6 +1172,7 @@ async function autoCorners({ force = false } = {}) {
     }
   } finally { cornerBusy = false; state.cornerNote = ""; render(); }
 }
+{ const mi = $("#min-odds"); if (mi) mi.value = String(state.minOdds); }
 $("#thr").addEventListener("change", (e) => { state.thr = Number(e.target.value); try { localStorage.setItem(THR_KEY, String(state.thr)); } catch { /* preferenza non salvata */ } render(); });
 /* Swipe a destra su una partita = la seleziona, a sinistra = la deseleziona (solo touch; col mouse resta la casella). */
 enableSwipe($("#list"), {
@@ -1174,7 +1180,7 @@ enableSwipe($("#list"), {
   onSwipe: (row, dir) => { const id = row.querySelector("[data-sel]").dataset.sel; if (dir === "right") state.selected.add(id); else state.selected.delete(id); navigator.vibrate?.(12); render(); },
 });
 $("#select-bets").addEventListener("click", () => {
-  visibleMatches().filter((m) => isOpen(m) && (isCustom() || m.pick?.verdict === "BET")).forEach((m) => state.selected.add(m.id));
+  visibleMatches().filter((m) => isOpen(m) && (isCustom() || pk(m)?.verdict === "BET")).forEach((m) => state.selected.add(m.id));
   closeSelMenu(); render();
 });
 $("#sel-clear").addEventListener("click", () => { state.selected.clear(); render(); });
