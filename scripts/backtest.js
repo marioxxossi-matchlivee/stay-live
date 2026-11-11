@@ -50,7 +50,7 @@ export function predict(rows, { n = 8, trainFrac = 0.6, valFrac = 0.2 } = {}) {
     const d = r.kickoff_at.slice(0, 10);
     if (d !== day) { day = d; const cut = Date.parse(`${d}T00:00:00Z`); hist = rows.filter((x) => Date.parse(x.kickoff_at) < cut).length; ctx = buildContext(rows.slice(0, hist)); }
     const market = Object.keys(r.odds).length ? { odds: Object.fromEntries(Object.entries(r.odds).map(([k, v]) => [k, { median: v, best: v, book: "storico", n: 1 }])) } : null;
-    const a = analyzeMatch(r, ctx, { n, market });
+    const a = withModel({ requireRealOdds: false }, () => analyzeMatch(r, ctx, { n, market }));   // nel passato non ci sono quote: si misura la componente statistica
     if (a.sample < MODEL.betSample) return;                       // la partita che l'app non giocherebbe mai
     out.push({ id: `${idx}`, split: idx < i2 ? "val" : "test", league: r.league, day: d, kickoffAt: r.kickoff_at, y: outcomes(r.home_score, r.away_score), a });
   });

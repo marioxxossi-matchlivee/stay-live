@@ -39,7 +39,7 @@ export const REASON_LABEL = { soglia: "Probabilità prudente sotto la soglia", e
 
 /** Scelta principale di una partita con parametri diversi: stessa classifica di analyzeMatch senza quote (BET, poi vantaggio, poi probabilità prudente). */
 export function pickFor(a, overrides = {}) {
-  return withModel(overrides, () => {
+  return withModel({ requireRealOdds: false, ...overrides }, () => {
     const cand = a.selections.filter((s) => s.p <= MODEL.maxUsefulProb).map((s) => ({ s, v: verdictFor(s, a.sample).verdict }));
     cand.sort((x, y) => (y.v === "BET") - (x.v === "BET") || (y.s.edge ?? -1) - (x.s.edge ?? -1) || y.s.pLow - x.s.pLow);
     const top = cand[0];

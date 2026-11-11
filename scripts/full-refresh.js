@@ -206,7 +206,7 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
       const at = (c) => attemptsOf.get(`${c}:${id}`) ?? 0;
       const rows = [["prediction", sPred(id), eOf(id, "pred")], ["market", sMkt(id), eOf(id, "market")], ["corners", sCor(id), eCor(id)]];
       for (const [comp, state, error] of rows) {
-        const cls = classify(comp, { state, error, kickoff: m.kickoff_at, now, flags: fl, attempts: at(comp) });
+        const cls = classify(comp, { state, error, kickoff: m.kickoff_at, now, flags: fl });
         meta.components[comp][cls] += 1;
         (per.get(id) ?? per.set(id, []).get(id)).push(cls);
         items.push({ component: comp, scope: id, league: m.league, cls, error, carry: !targetSet.has(id) });   // non ritentata in questo giro: i tentativi non aumentano
