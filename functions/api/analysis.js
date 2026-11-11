@@ -23,7 +23,7 @@ export async function onRequest({ request, env, waitUntil }) {
     // Senza chiave o con il provider al limite si calcola con ciò che c'è e il browser riprova da solo.
     const none = { byGame: new Map(), state: new Map(), marketState: new Map(), retry: { pending: 0, afterMs: 0 } };
     const br = env.API_FOOTBALL_KEY ? await loadBrainInputs(env, [match], Date.now(), { maxMap: 2, maxLive: 4 }).catch((e) => { console.error("Stay Live brain:", errorMessage(e)); return none; }) : none;
-    const mo = minOddsParam(url), custom = mo != null && mo !== MODEL.minPlayOdds;      // quota minima scelta dall'utente nelle Impostazioni
+    const mo = minOddsParam(url.searchParams), custom = mo != null && mo !== MODEL.minPlayOdds;      // quota minima scelta dall'utente nelle Impostazioni
     const analysis = withMinOdds(mo, () => analyzeMatch(match, buildContext(finals), { n, ...(br.byGame.get(match.game_id) ?? {}) }));
     // Il registro misura il modello con le regole standard, non con quelle personali.
     if (n === 8 && !custom) { const row = predictionRow(match, analysis); if (row) await recordLater({ env, waitUntil }, [row], legRows(match, analysis)); }

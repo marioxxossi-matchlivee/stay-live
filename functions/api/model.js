@@ -354,7 +354,8 @@ export function withMinOdds(value, fn) {
   const saved = MODEL.minPlayOdds; MODEL.minPlayOdds = v;
   try { return fn(); } finally { MODEL.minPlayOdds = saved; }
 }
-export const minOddsParam = (params) => { const v = Number(params.get("minodds")); return v >= 1 && v <= 3 ? Math.round(v * 100) / 100 : null; };
+// Quota minima scelta dall'utente (?minodds=): accetta sia un URL sia i suoi parametri; fuori dalla scala 1,0-3,0 vale null.
+export const minOddsParam = (src) => { const v = Number((src?.searchParams ?? src)?.get?.("minodds")); return v >= 1 && v <= 3 ? Math.round(v * 100) / 100 : null; };
 
 export function verdictFor(sel, sample, odds = null) {
   if (sample < MODEL.betSample) return { verdict: "EVITA", reason: `Campione troppo piccolo (${sample} partite, ne servono ${MODEL.betSample}).` };
