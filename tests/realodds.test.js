@@ -40,6 +40,6 @@ test("verdetto con quota reale: la doppia chance 1X può essere BET (valore atte
   const v = verdictFor(sel, 20);
   assert.equal(v.verdict, "BET", v.reason);                   // 0,76 x 1,6 = 1,22 >= soglia di valore e quota >= 1,5
   const same = verdictFor({ ...sel, odds: null }, 20);
-  assert.equal(same.verdict, "EVITA", "senza quota reale non c'è BET");
+  assert.equal(same.verdict, "EVITA", "senza quota reale resta la regola prudente (+8 punti sulla media)");
   assert.equal(verdictFor({ ...sel, odds: { median: 1.2 } }, 20).verdict, "EVITA", "quota troppo bassa");
 });
