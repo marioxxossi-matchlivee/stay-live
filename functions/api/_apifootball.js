@@ -107,7 +107,7 @@ export function pickFixture(match, fixtures) {
 /** Id dei mercati: letti dall'elenco ufficiale (odds/bets) per nome, con valori noti come ripiego. */
 export function betIdsFrom(resp) {
   const find = (re) => (resp ?? []).find((b) => re.test(String(b.name ?? "")))?.id;
-  return { goals: find(/^goals over\/under$/i) ?? 5, corners: find(/^corners over.?under$/i) ?? 45, winner: find(/^match winner$/i) ?? 1, cornerWinner: find(/^corners?\s*1x2$|^corner match bet$/i) ?? 55 };
+  return { goals: find(/^goals over\/under$/i) ?? 5, corners: find(/^corners over.?under$/i) ?? 45, winner: find(/^match winner$/i) ?? 1, doubleChance: find(/^double chance$/i) ?? 12, btts: find(/^both teams score$/i) ?? 8, cornerWinner: find(/^corners?\s*1x2$|^corner match bet$/i) ?? 55 };
 }
 
 const median = (a) => { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length ? (s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2) : null; };
@@ -161,6 +161,37 @@ export function summarizeMatchWinner(resp, nameRe = /^match winner$/i) {
     }
   }
   return out.home.length && out.draw.length && out.away.length ? { home: agg(out.home), draw: agg(out.draw), away: agg(out.away) } : null;
+}
+
+/**
+ * Quote "Double Chance" (Home/Draw, Draw/Away, Home/Away) -> { dc1x, dcx2, dc12 } come summarizeMatchWinner, oppure null.
+ * Tutte e tre servono per essere usabili (una doppia chance con una sola quota non è confrontabile).
+ */
+export function summarizeDoubleChance(resp) {
+  const out = { dc1x: [], dcx2: [], dc12: [] };
+  for (const fx of resp ?? []) for (const bk of fx.bookmakers ?? []) for (const bet of bk.bets ?? []) {
+    if (!/^double chance$/i.test(String(bet.name ?? ""))) continue;
+    for (const v of bet.values ?? []) {
+      const k = { "home/draw": "dc1x", "draw/away": "dcx2", "home/away": "dc12", "1x": "dc1x", x2: "dcx2", 12: "dc12" }[String(v.value).trim().toLowerCase().replace(/\s+/g, "")];
+      const odd = Number(v.odd);
+      if (k && odd > 1) out[k].push({ odd, book: bk.name });
+    }
+  }
+  return out.dc1x.length && out.dcx2.length && out.dc12.length ? { dc1x: agg(out.dc1x), dcx2: agg(out.dcx2), dc12: agg(out.dc12) } : null;
+}
+
+/** Quote "Both Teams Score" (Yes/No) -> { btts, nobtts } oppure null (servono entrambe). */
+export function summarizeBtts(resp) {
+  const out = { btts: [], nobtts: [] };
+  for (const fx of resp ?? []) for (const bk of fx.bookmakers ?? []) for (const bet of bk.bets ?? []) {
+    if (!/^both teams score$/i.test(String(bet.name ?? ""))) continue;
+    for (const v of bet.values ?? []) {
+      const k = { yes: "btts", no: "nobtts" }[String(v.value).trim().toLowerCase()];
+      const odd = Number(v.odd);
+      if (k && odd > 1) out[k].push({ odd, book: bk.name });
+    }
+  }
+  return out.btts.length && out.nobtts.length ? { btts: agg(out.btts), nobtts: agg(out.nobtts) } : null;
 }
 
 /* ---------- Rete ---------- */

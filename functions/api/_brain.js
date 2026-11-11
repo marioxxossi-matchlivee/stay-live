@@ -26,6 +26,8 @@ export function countAbsent(list, map) {
  * Restituisce { byGame: Map(game_id -> { af, market, inj }), state: Map(game_id -> "used"|"waiting"|"missing") (pronostico),
  *               marketState: Map(game_id -> "used"|"waiting"|"missing"), maps, retry: { pending, afterMs } }.
  */
+const EXTRA_ODDS_MS = 36 * 3600e3, EXTRA_FRESH_MS = 6 * 3600e3;     // quote doppia chance / gol-no gol: partite entro 36 ore, rinfrescate al più ogni 6 ore
+
 export async function loadBrainInputs(env, matches, now = Date.now(), { live = true, maxMap = 6, maxLive = 12, market = true, maps: known = null, freshFor = null } = {}) {
   const byGame = new Map(), state = new Map(), marketState = new Map(), errors = new Map();
   const open = matches.filter((m) => AF_LEAGUES[m.league] && m.status !== "canceled");
@@ -41,11 +43,15 @@ export async function loadBrainInputs(env, matches, now = Date.now(), { live = t
   const ttl = (kind, m) => ttlFor(kind, { kickoff: Date.parse(m.kickoff_at), now, finished: m.status === "final" });
   const fresh = (kind, m) => (freshFor ? Math.min(ttl(kind, m), freshFor(m)) : undefined);      // freshFor(m): età massima accettata dal giro completo (ms)
   const fx = (m) => maps.get(m.game_id).fixture_id;
-  let bets = { goals: 5, winner: 1 };
+  let bets = { goals: 5, winner: 1, doubleChance: 12, btts: 8 };
   if (market && mapped.length) {
     const { sections } = await loadSections(env, [{ section: "bets", endpoint: "odds/bets", params: {}, ttl: ttlFor("odds-bets") }], now, { maxLive: live ? 1 : 0 });
     bets = betIdsFrom(sections.bets?.data);
   }
+  // Quote reali di doppia chance e gol/no gol: solo per le partite entro 36 ore (le lontane cambiano e costano richieste inutili). Con una quota
+  // reale il verdetto usa il valore atteso (pLow x quota), non la soglia "punti sulla media del campionato" che favorisce solo gli esiti rari.
+  const extra = market ? mapped.filter((m) => Date.parse(m.kickoff_at) - now <= EXTRA_ODDS_MS) : [];
+  const freshExtra = (m) => (freshFor ? Math.min(ttl("odds", m), EXTRA_FRESH_MS, freshFor(m) * 2) : undefined);
   // Ordine: prima i pronostici di tutte le partite, poi le quote: se il provider limita le richieste, ogni partita ha almeno il pronostico.
   const reqs = [
     ...mapped.map((m) => ({ section: `${m.game_id}|pred`, endpoint: "predictions", params: { fixture: fx(m) }, ttl: ttl("predictions", m), fresh: fresh("predictions", m) })),
@@ -53,6 +59,10 @@ export async function loadBrainInputs(env, matches, now = Date.now(), { live = t
       { section: `${m.game_id}|goals`, endpoint: "odds", params: { fixture: fx(m), bet: bets.goals }, ttl: ttl("odds", m), fresh: fresh("odds", m) },
       { section: `${m.game_id}|x12`, endpoint: "odds", params: { fixture: fx(m), bet: bets.winner }, ttl: ttl("odds", m), fresh: fresh("odds", m) },
     ]) : []),
+    ...extra.flatMap((m) => [
+      { section: `${m.game_id}|dc`, endpoint: "odds", params: { fixture: fx(m), bet: bets.doubleChance }, ttl: ttl("odds", m), fresh: freshExtra(m) },
+      { section: `${m.game_id}|btts`, endpoint: "odds", params: { fixture: fx(m), bet: bets.btts }, ttl: ttl("odds", m), fresh: freshExtra(m) },
+    ]),
   ];
   const sections = {};
   const parts = chunk(reqs, 60);
@@ -73,9 +83,9 @@ export async function loadBrainInputs(env, matches, now = Date.now(), { live = t
 
   for (const m of mapped) {
     const id = m.game_id;
-    const sp = sections[`${id}|pred`], sg = sections[`${id}|goals`], sx = sections[`${id}|x12`], si = sections[`${id}|inj`];
+    const sp = sections[`${id}|pred`], sg = sections[`${id}|goals`], sx = sections[`${id}|x12`], si = sections[`${id}|inj`], sd = sections[`${id}|dc`], sb = sections[`${id}|btts`];
     const af = sp?.data?.[0] ? parseAfPrediction(sp.data[0]) : null;
-    const mk = market && (sg?.data || sx?.data) ? marketFrom(sg?.data, sx?.data) : null;
+    const mk = market && (sg?.data || sx?.data) ? marketFrom(sg?.data, sx?.data, sd?.data, sb?.data) : null;
     const inj = si?.data ? countAbsent(si.data, maps.get(id)) : null;
     byGame.set(id, { af, market: mk, inj });
     if (!af && sp?.error && !sp.deferred) errors.set(`${id}|pred`, sp.error);

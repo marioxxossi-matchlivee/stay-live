@@ -22,6 +22,8 @@ export const MODEL = {
   minSample: 3, betSample: 5,
   betThreshold: 0.60,     // probabilità prudente minima per un BET senza quota
   minEdge: 0.08,          // la prob. prudente deve superare di 8 punti la frequenza storica dell'esito nel campionato
+  edgeMode: "points",     // "points" (attuale): vantaggio in punti sulla media del campionato; "ratio": vantaggio relativo (solo per il backtest delle regole)
+  minEdgeRatio: 0.145,    // con edgeMode "ratio": pLow almeno il 14,5% sopra la media (= +8 punti per un esito al 55%)
   maxUsefulProb: 0.80,    // oltre: quota equa < 1,25, esito non interessante
   edgeMargin: 1.03,       // valore atteso minimo: prob. prudente x quota >= 1,03
   longshotFloor: 0.40,    // con quota inserita non si consiglia sotto questa prob. prudente
@@ -358,7 +360,8 @@ export function verdictFor(sel, sample, odds = null) {
   const edgePts = sel.edge == null ? null : `${sel.edge >= 0 ? "+" : "−"}${Math.abs(sel.edge * 100).toFixed(0)}`;
   const edgeText = edgePts == null ? "" : ` (${edgePts} punti sulla media del campionato)`;
   if (sel.pLow < MODEL.betThreshold) return { verdict: "EVITA", reason: `Probabilità prudente ${(sel.pLow * 100).toFixed(0)}% sotto la soglia ${(MODEL.betThreshold * 100).toFixed(0)}%.` };
-  if (sel.edge == null || sel.edge < MODEL.minEdge) return { verdict: "EVITA", reason: `Esito probabile ma ${edgePts == null ? "in linea con la media del campionato" : `${edgePts} punti sulla media del campionato`}: niente di speciale in questa partita.` };
+  const edgeOk = MODEL.edgeMode === "ratio" ? sel.base > 0 && sel.pLow / sel.base - 1 >= MODEL.minEdgeRatio : sel.edge != null && sel.edge >= MODEL.minEdge;
+  if (sel.edge == null || !edgeOk) return { verdict: "EVITA", reason: `Esito probabile ma ${edgePts == null ? "in linea con la media del campionato" : `${edgePts} punti sulla media del campionato`}: niente di speciale in questa partita.` };
   return { verdict: "BET", reason: `Probabilità prudente ${(sel.pLow * 100).toFixed(0)}%${edgeText}. Senza quota reale il valore NON è verificato: gioca solo se la quota è almeno ${sel.minOdds.toFixed(2).replace(".", ",")}.` };
 }
 

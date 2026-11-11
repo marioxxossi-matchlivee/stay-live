@@ -65,7 +65,6 @@ export const LEAGUES = [
   { id: "brasileirao", name: "Brasileirão Serie A", short: "Brasileirão", continent: "sud-america", country: "BR", nation: "Brasile", tier: 1, provider: "apifootball", afId: 71, afCountry: "Brazil", afName: "Serie A", calendarYear: true },
   { id: "j2", name: "J2 League", short: "J2", continent: "asia", country: "JP", nation: "Giappone", tier: 2, provider: "apifootball", afId: 99, afCountry: "Japan", afName: "J2" },
   { id: "j3", name: "J3 League", short: "J3", continent: "asia", country: "JP", nation: "Giappone", tier: 3, provider: "apifootball", afId: 100, afCountry: "Japan", afName: "J3" },
-  { id: "nations", name: "UEFA Nations League", short: "Nations League", continent: "europa", country: "UEFA-N", nation: "Nazionali", tier: 0, international: true, provider: "apifootball", afId: 5, afCountry: "World", afName: "Nations League" },
   { id: "ligamx", name: "Liga MX", short: "Liga MX", continent: "nord-america", country: "MX", nation: "Messico", tier: 1, provider: "apifootball", afId: 262, afCountry: "Mexico", afName: "Liga MX" },
   { id: "saudipro", name: "Saudi Pro League", short: "Arabia", continent: "asia", country: "SA", nation: "Arabia Saudita", tier: 1, provider: "apifootball", afId: 307, afCountry: "Saudi-Arabia", afName: "Pro League" },
   { id: "j1", name: "J1 League", short: "J1", continent: "asia", country: "JP", nation: "Giappone", tier: 1, provider: "apifootball", afId: 98, afCountry: "Japan", afName: "J1", afSeason: 2027 },
@@ -88,8 +87,6 @@ export const LEAGUES = [
   { id: "bolivia", name: "Primera División", short: "Bolivia", continent: "sud-america", country: "BO", nation: "Bolivia", tier: 1, provider: "apifootball", afId: 344, afCountry: "Bolivia", calendarYear: true },
   { id: "arg_nacional", name: "Primera Nacional", short: "Arg. Nacional", continent: "sud-america", country: "AR", nation: "Argentina", tier: 2, provider: "apifootball", afId: 129, afCountry: "Argentina", afName: "Primera Nacional", calendarYear: true },
   { id: "belarus", name: "Premier League", short: "Bielorussia", continent: "europa", country: "BY", nation: "Bielorussia", tier: 1, provider: "apifootball", afId: 116, afCountry: "Belarus", afName: "Premier League", calendarYear: true },
-  { id: "afcon_q", name: "Qualificazioni Coppa d'Africa", short: "AFCON qual.", continent: "africa", country: "CAF-N", nation: "Nazionali", tier: 0, international: true, provider: "apifootball", afId: 36, afCountry: "World", afName: "Qualification", afSeason: 2027 },
-  { id: "concacaf_nl", name: "CONCACAF Nations League", short: "CONCACAF NL", continent: "nord-america", country: "CONCACAF-N", nation: "Nazionali", tier: 0, international: true, provider: "apifootball", afId: 536, afCountry: "World", afName: "Nations League", afSeason: 2025 },
 ];
 export const LEAGUE_IDS = new Set(LEAGUES.map((l) => l.id));
 
