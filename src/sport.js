@@ -1,6 +1,7 @@
 // Stay Live — scelta dello sport. Il calcio (main.js) resta com'è; il tennis è un modulo separato caricato solo su richiesta.
 // Un errore nel tennis non può toccare il calcio: il caricamento è dinamico e protetto.
 import "./sport.css";
+import "./monitor-tab.js";
 
 const KEY = "sl-sport";
 const body = document.body;

@@ -13,7 +13,7 @@ const MARKETS = {
   over15: "Over/Under", under15: "Over/Under", over25: "Over/Under", under25: "Over/Under", over35: "Over/Under", under35: "Over/Under",
   btts: "Gol / No Gol", nobtts: "Gol / No Gol",
 };
-const LABELS = {
+export const LABELS = {
   home: "1 · Vittoria casa", draw: "X · Pareggio", away: "2 · Vittoria trasferta", dc1x: "1X", dcx2: "X2", dc12: "12",
   over15: "Over 1,5", under15: "Under 1,5", over25: "Over 2,5", under25: "Under 2,5", over35: "Over 3,5", under35: "Under 3,5",
   btts: "Gol", nobtts: "No Gol",
@@ -96,7 +96,7 @@ export function efficiencyHtml(eff, fmt) {
 export function reliabilityHtml(data, fmt) {
   const { esc, pct } = fmt, t = data?.total;
   const head = `<h3>Affidabilità dei BET dell'app</h3>`;
-  if (!t?.n) return `<section class="ef-card">${head}<p class="ef-empty">${data?.pending ? `${data.pending} BET registrati, in attesa del risultato.` : "Nessun BET ancora concluso."} I pronostici si registrano da soli prima del calcio d'inizio: le percentuali compaiono man mano che le partite finiscono.</p></section>`;
+  if (!t?.n) return `<section class="ef-card">${head}<p class="ef-empty">${data?.olderVersions ? `${data.olderVersions} BET già conclusi, ma registrati con versioni precedenti del modello e quindi non contati qui: tutti i numeri sono nella sezione Affidabilità.` : data?.pending ? `${data.pending} BET registrati, in attesa del risultato.` : "Nessun BET ancora concluso."} I pronostici si registrano da soli prima del calcio d'inizio: le percentuali compaiono man mano che le partite finiscono.</p></section>`;
   const gap = t.expected != null ? t.rate - t.expected : null;
   const verdict = gap == null || t.n < 30 ? "" : gap < -0.05 ? `<p class="ef-note">Il modello promette più di quanto mantiene: ${esc(pct(t.expected))} dichiarato contro ${esc(pct(t.rate))} reale. Le probabilità vanno riviste.</p>` : gap > 0.05 ? `<p class="ef-hint">Il modello è più prudente della realtà: ${esc(pct(t.rate))} reale contro ${esc(pct(t.expected))} dichiarato.</p>` : `<p class="ef-hint">Dichiarato e reale sono vicini: il modello è ben tarato su questi BET.</p>`;
   const cal = (data.calibration ?? []).map((b) => `<li><span class="ef-name">${esc(pct(b.lo))}–${esc(pct(b.hi))}</span><span class="ef-pair">dichiarato <b>${esc(pct(b.expected))}</b> · reale <b>${esc(pct(b.rate))}</b></span><small>${b.won}/${b.n}</small></li>`).join("");

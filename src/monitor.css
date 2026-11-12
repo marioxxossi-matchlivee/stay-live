@@ -1,0 +1,42 @@
+/* Sezione Affidabilità: classi mn-*, stessi colori e font dell'app. */
+#view-reliability { padding-bottom: calc(var(--tab-h, 78px) + 24px + env(safe-area-inset-bottom, 0px)); }
+.mn-intro h1 { margin: 6px 0 4px; font: 800 clamp(26px, 6vw, 34px)/1.1 var(--head); letter-spacing: -.03em; }
+.mn-intro p { margin: 0 0 12px; color: var(--ink-2); font-size: 14px; }
+.mn-seg { position: relative; display: grid; grid-template-columns: 1fr 1fr; padding: 4px; margin: 0 0 12px; background: var(--soft-2); border-radius: 14px; }
+.mn-seg::before { content: ""; position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / 2); background: var(--card); border-radius: 11px; box-shadow: var(--shadow); transform: translateX(calc(var(--i, 0) * 100%)); transition: transform .25s cubic-bezier(.2,.8,.2,1); }
+.mn-seg button { position: relative; z-index: 1; height: 40px; border: 0; background: none; font: 700 14px var(--body); color: var(--ink-2); border-radius: 11px; padding: 0 6px; }
+.mn-seg button[aria-pressed="true"] { color: var(--ink); }
+.mn-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 16px; margin: 0 0 12px; box-shadow: var(--shadow); }
+.mn-card h3 { margin: 0 0 8px; font: 800 16px/1.2 var(--head); letter-spacing: -.02em; }
+.mn-card h4 { margin: 14px 0 6px; font: 700 12px/1 var(--body); text-transform: uppercase; letter-spacing: .06em; color: var(--mute); }
+.mn-big { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.mn-big b { font: 800 34px/1 var(--head); letter-spacing: -.03em; color: var(--pitch); font-variant-numeric: tabular-nums; }
+.mn-big span { color: var(--ink-2); font-size: 14px; }
+.mn-bar { position: relative; height: 10px; border-radius: 6px; background: var(--soft-2); margin: 10px 0 12px; overflow: visible; }
+.mn-bar i { display: block; height: 100%; border-radius: 6px; background: var(--pitch-2); }
+.mn-bar b { position: absolute; top: -4px; width: 3px; height: 18px; border-radius: 2px; background: var(--ink); transform: translateX(-1px); }
+.mn-kv { display: grid; gap: 6px; margin: 0; }
+.mn-kv div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; border-bottom: 1px solid var(--soft-line, var(--line)); padding-bottom: 6px; }
+.mn-kv dt { color: var(--ink-2); } .mn-kv dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.mn-prog { margin: 12px 0 0; font-size: 13px; color: var(--ink-2); }
+.mn-prog span { display: block; height: 6px; border-radius: 4px; background: var(--soft-2); margin-top: 6px; overflow: hidden; }
+.mn-prog span i { display: block; height: 100%; background: var(--blue); }
+.mn-verdict { margin: 12px 0 0; padding: 10px 12px; border-radius: var(--r-sm); background: var(--soft-2); font-size: 14px; color: var(--ink); font-weight: 600; }
+.mn-note { margin: 8px 0 0; font-size: 13px; color: var(--ink-2); }
+.mn-limit { padding: 10px 12px; background: var(--warn-tint); color: var(--warn); border-radius: var(--r-sm); }
+.mn-empty, .mn-loading { color: var(--mute); font-size: 14px; }
+.mn-kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.mn-kpis div { background: var(--soft); border-radius: 12px; padding: 10px 12px; }
+.mn-kpis b { display: block; font: 800 22px var(--head); font-variant-numeric: tabular-nums; }
+.mn-kpis span { font-size: 12.5px; color: var(--mute); }
+.mn-scroll { overflow-x: auto; }
+.mn-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.mn-table th, .mn-table td { padding: 8px 6px; border-bottom: 1px solid var(--line); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mn-table th:first-child { text-align: left; font-weight: 600; color: var(--ink-2); white-space: normal; }
+.mn-table thead th { font-size: 11.5px; color: var(--mute); }
+.mn-table td.bad { color: var(--red); font-weight: 700; } .mn-table td.good { color: var(--pitch-deep); font-weight: 700; }
+.mn-emptybox { text-align: center; padding: 28px 16px; color: var(--ink-2); }
+.mn-emptybox h3 { margin: 0 0 6px; font: 800 18px var(--head); color: var(--ink); }
+.mn-retry { margin-top: 10px; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 8px 18px; font-weight: 700; }
+@media (min-width: 720px) { .mn-kpis { grid-template-columns: repeat(4, 1fr); } }
+@media (prefers-reduced-motion: reduce) { .mn-seg::before { transition: none; } }

@@ -24,3 +24,7 @@ body[data-sport="gate"] > :not(#sport-gate):not(script):not(style) { display: no
 .sg-loading { padding: 48px 20px; text-align: center; color: var(--ink-2); line-height: 2.2; }
 .sg-back { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 8px 16px; font-weight: 700; }
 @media (prefers-reduced-motion: reduce) { .sg-card { transition: none; } }
+
+/* Quarta scheda della barra del calcio (Affidabilità) */
+nav.tabbar { grid-template-columns: repeat(4, 1fr); }
+nav.tabbar .tab-item span { font-size: 11px; }
