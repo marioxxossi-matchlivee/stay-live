@@ -98,8 +98,8 @@ export function normalizeResult(row, tour) {
 
 /** Estrae l'elenco da una risposta paginata (programma: `matches`, risultati: `data`). Risposta inattesa → elenco vuoto + motivo. */
 export function readPage(body) {
-  if (!body || typeof body !== "object") return { items: [], hasNext: false, problem: "risposta non valida" };
-  const items = Array.isArray(body.matches) ? body.matches : Array.isArray(body.data) ? body.data : null;
+  if (!body || typeof body !== "object") return { items: [], hasNext: false, problem: "risposta non valida" }; // il ranking per data è un ARRAY senza involucro
+  const items = Array.isArray(body) ? body : Array.isArray(body.matches) ? body.matches : Array.isArray(body.data) ? body.data : null;
   if (!items) return { items: [], hasNext: false, problem: "elenco non trovato nella risposta" };
   return { items, hasNext: body.hasNextPage === true, problem: null };
 }
@@ -145,7 +145,7 @@ export function normalizeRankingPage(body, tour) {
   if (page.problem) return { ...page, rows: [] };
   const rows = [];
   for (const r of page.items) {
-    const id = idOf(r?.player?.id), pos = asInt(r?.position), pts = num(r?.rankingPoints ?? r?.point);
+    const id = idOf(r?.player?.id), pos = asInt(r?.position), pts = num(r?.rankingPoints ?? r?.point ?? r?.pts);
     if (!id || !pos || pos < 1) continue;
     rows.push({ tour, player_id: id, name: r.player.name ?? null, country: r.player.countryAcr ?? null, position: pos, points: pts, ranking_date: isoOrNull(r.date) });
   }
