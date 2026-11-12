@@ -1,0 +1,6 @@
+ELIMINA questi 2 file dal progetto (non servono più, nessuno li usa):
+  functions/api/_odds.js
+  functions/api/quotes.js
+
+Tutto il resto dello ZIP va COPIATO nel progetto mantenendo le stesse cartelle (sostituisce i file con lo stesso nome).
+Le migrazioni SQL sono GIÀ state eseguite su Supabase: non vanno rieseguite.
