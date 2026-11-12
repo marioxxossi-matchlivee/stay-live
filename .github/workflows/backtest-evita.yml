@@ -4,6 +4,8 @@ name: Backtest affidabilità (BET + EVITA)
 # e griglia di soglie (scelta sulla validazione, giudizio sul test). Non modifica nulla: serve a decidere. Il report compare nel riepilogo.
 # Si avvia a mano: Actions → "Backtest affidabilità (BET + EVITA)" → Run workflow. Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 on:
+  schedule:
+    - cron: "17 3 * * 0"   # ogni domenica, per tenere aggiornata la sezione «Affidabilità» dell'app
   workflow_dispatch:
     inputs:
       warmup:
@@ -26,6 +28,11 @@ jobs:
         run: node scripts/export-finals.js finals.json
       - name: Affidabilità BET + EVITA
         run: node scripts/backtest-evita.js --file finals.json --warmup "${{ inputs.warmup || '0.3' }}" | tee report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Pubblica nella sezione «Affidabilità» dell'app
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/publish-backtest.js --file finals.json --warmup "${{ inputs.warmup || '0.3' }}"
       - uses: actions/upload-artifact@v4
         with:
           name: report-affidabilita
