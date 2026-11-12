@@ -32,3 +32,11 @@ test("probeOne: chiave solo nelle intestazioni, errori senza segreti, timeout ge
   const net = await probeOne("h.example", "K1", "/x", async () => { throw new Error("giù K1"); });
   assert.equal(net.status, 0); assert.ok(!JSON.stringify(net).includes("K1"));
 });
+
+test("probeOne direct: chiave in X-Gravitee-Api-Key, mai nell'URL, percorso dopo l'URL base", async () => {
+  let seen;
+  const r = await probeOne("", "K2", "/x", async (url, opt) => { seen = { url, opt }; return new Response("{}", { status: 200 }); }, 1000, { mode: "direct", base: "https://b.example/v1/tennis/" });
+  assert.equal(r.ok, true); assert.equal(seen.url, "https://b.example/v1/tennis/x");
+  assert.equal(seen.opt.headers["X-Gravitee-Api-Key"], "K2"); assert.equal(seen.opt.headers["X-RapidAPI-Key"], undefined);
+  assert.ok(!seen.url.includes("K2"));
+});
