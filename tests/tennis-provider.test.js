@@ -143,3 +143,10 @@ test("superfici per anno: totale e dettaglio annuale (per usare solo gli anni pr
   assert.equal(r.byYear.length, 2); assert.equal(r.byYear[1].year, 2025);
   assert.deepEqual(normalizeSurfaceSummary(null), { byYear: [], total: {} });
 });
+
+test("ranking per data: array senza involucro e campo pts; walkover non è una vittoria normale", () => {
+  const r = normalizeRankingPage([{ date: "2026-11-09T00:00:00.000Z", pts: 9550, position: 1, player: { id: 24008, name: "Alexander Zverev", countryAcr: "GER" } }], "atp");
+  assert.equal(r.rows.length, 1); assert.equal(r.rows[0].points, 9550); assert.equal(r.hasNext, false);
+  const wo = normalizeResult({ ...resultSingles, result_type: "walkover", result: "w/o" }, "atp");
+  assert.equal(wo.winner, null); assert.equal(wo.status, "unknown"); assert.equal(wo.result_type, "walkover");
+});
