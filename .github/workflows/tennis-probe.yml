@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       paths:
-        description: "Percorsi da provare, separati da virgola (es. /tennis/v2/upcoming/matches/atp). Vuoto = solo le partite in programma ATP"
+        description: "Percorsi da provare, separati da virgola (es. /tennis/v2/upcoming/matches/atp). Obbligatorio con SportsAPI365 Direct (URL base https://api.sportsapi365.com/v1/tennis, i percorsi NON lo ripetono)"
         required: false
         default: ""
 
@@ -30,6 +30,8 @@ jobs:
         env:
           TENNIS_API_KEY: ${{ secrets.TENNIS_API_KEY }}
           TENNIS_API_HOST: ${{ secrets.TENNIS_API_HOST }}
+          TENNIS_API_BASE: ${{ secrets.TENNIS_API_BASE }}
+          TENNIS_API_MODE: ${{ vars.TENNIS_API_MODE }}
           PROBE_PATHS: ${{ inputs.paths }}
         run: node scripts/tennis-probe.js
       - uses: actions/upload-artifact@v4
