@@ -41,7 +41,7 @@ export function parsePaths(raw) {
 export const DIRECT_BASE = "https://api.sportsapi365.com/v1/tennis";
 
 /** mode "direct" (SportsAPI365): `base` = URL base completo, chiave in X-Gravitee-Api-Key. mode "rapidapi": `host` e intestazioni RapidAPI. */
-export async function probeOne(host, key, path, fetchImpl = fetch, timeoutMs = 15000, { mode = "rapidapi", base = DIRECT_BASE } = {}) {
+export async function probeOne(host, key, path, fetchImpl = fetch, timeoutMs = 15000, { mode = "rapidapi", base = DIRECT_BASE, maxItems = 2 } = {}) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   try {
@@ -55,7 +55,7 @@ export async function probeOne(host, key, path, fetchImpl = fetch, timeoutMs = 1
     return {
       path, status: res.status, ok: res.ok,
       rateLimit: Object.fromEntries([...res.headers].filter(([k]) => /ratelimit|quota|requests-remaining/i.test(k))),
-      sample: res.ok ? shrink(body) : redact(typeof body === "string" ? body : JSON.stringify(body).slice(0, 300), key),
+      sample: res.ok ? shrink(body, { maxItems }) : redact(typeof body === "string" ? body : JSON.stringify(body).slice(0, 300), key),
     };
   } catch (e) {
     return { path, status: 0, ok: false, sample: redact(e?.name === "AbortError" ? "timeout" : e?.message ?? "errore di rete", key) };
@@ -70,10 +70,11 @@ async function main() {
   const host = process.env.TENNIS_API_HOST || DEFAULT_HOST;
   const base = process.env.TENNIS_API_BASE || DIRECT_BASE;
   if (mode === "direct" && !String(process.env.PROBE_PATHS ?? "").trim()) { console.error("Indica almeno un percorso in PROBE_PATHS (nessun percorso predefinito per SportsAPI365)."); process.exit(1); }
+  const maxItems = Math.min(50, Math.max(1, Number(process.env.PROBE_MAX_ITEMS) || 2)); // elementi per elenco nel campione (predefinito 2)
   const paths = parsePaths(process.env.PROBE_PATHS);
   const results = [];
   for (const p of paths) {
-    const r = await probeOne(host, key, p, fetch, 15000, { mode, base });
+    const r = await probeOne(host, key, p, fetch, 15000, { mode, base, maxItems });
     console.log(`${r.ok ? "OK " : "ERR"} ${r.status} ${p}`);
     results.push(r);
     await new Promise((ok) => setTimeout(ok, 400)); // senza raffiche
