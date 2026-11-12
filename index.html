@@ -21,13 +21,16 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>html[data-gate] body>:not(#sport-gate):not(script):not(style){display:none!important}</style>
+    <script>try{if(!sessionStorage.getItem("sl-sport")||sessionStorage.getItem("sl-sport")==="tennis")document.documentElement.setAttribute("data-gate","1")}catch(e){document.documentElement.setAttribute("data-gate","1")}setTimeout(function(){document.documentElement.removeAttribute("data-gate")},6000)</script>
     <title>Stay Live — Analisi partite</title>
   </head>
   <body>
     <div class="ptr" id="ptr" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></svg></div>
     <header class="top">
       <a class="brand" href="/" aria-label="Stay Live"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="10" fill="#0b1a2a"/><circle cx="16" cy="16" r="7.5" fill="none" stroke="#18b36f" stroke-width="3"/><circle cx="16" cy="16" r="2.4" fill="#fff"/></svg><span class="word">Stay<span class="live">Live</span></span></a>
-      <button class="icon-btn" id="refresh" type="button" aria-label="Aggiorna dati"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></svg></button>
+      <div class="top-actions" style="display:flex;align-items:center;gap:8px"><button class="sport-pill" id="sport-switch" type="button" aria-label="Cambia sport">Calcio ▾</button>
+      <button class="icon-btn" id="refresh" type="button" aria-label="Aggiorna dati"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></svg></button></div>
     </header>
     <main>
       <!-- PARTITE -->
@@ -114,5 +117,6 @@
     <dialog id="detail" aria-label="Dettaglio partita"><span class="grab" aria-hidden="true"></span><button class="close" data-close aria-label="Chiudi">×</button><div id="detail-body"></div></dialog>
     <dialog id="preview" aria-label="Preview giornata"><span class="grab" aria-hidden="true"></span><button class="close" data-close aria-label="Chiudi">×</button><div id="preview-body"></div></dialog>
     <script type="module" src="/src/main.js"></script>
+    <script type="module" src="/src/sport.js"></script>
   </body>
 </html>
