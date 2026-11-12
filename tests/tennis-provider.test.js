@@ -93,3 +93,53 @@ test("migrazione provider: solo additiva, nessuna operazione distruttiva né sul
   assert.doesNotMatch(sql, /\b(drop\s+(table|column|index|view|function)|delete\s+from|truncate|rename)\b/i);
   for (const stmt of sql.split(";").map((s) => s.trim()).filter(Boolean)) assert.match(stmt, /public\.tennis_|tennis_matches/i);
 });
+
+import { normalizeLive, parseMatchKey, parseLiveScore, normalizeRankingPage, normalizeProfile, normalizeMatchStats, normalizeSurfaceSummary } from "../functions/api/_tennis-provider.js";
+
+test("live: chiave canonica uguale a quella del programma, set nell'ordine canonico, nessun vincitore", () => {
+  const live = { id: 4764879, participant1: "Gavin Goode", participant2: "Youcef Rihane", league: "M15 Naples", score: "1-6,1-4", status: "InPlay", points: "40-40", indicator: "1,0", tournament: { name: "M15 Naples" }, tourType: "atp", startTimestamp: 1794517159, roundId: 5, matchKey: "119380-52718-22249-5", matchId: "119380-52718-22249-5", updatedAt: 1794522275 };
+  const m = normalizeLive(live);
+  assert.equal(m.match_key, "22249|5|52718|119380"); assert.equal(m.status, "live");
+  assert.deepEqual(m.sets, [[6, 1], [4, 1]]); // scambiati perché 119380 > 52718
+  assert.equal(m.winner, undefined); assert.equal(m.indicator_raw, "1,0");
+  assert.equal(normalizeLive({ ...live, status: "Ended" }).status, "ended_unconfirmed");
+  assert.equal(normalizeLive({ ...live, status: "Boh" }).status, "unknown");
+  assert.equal(normalizeLive({ ...live, score: "testo" }).sets, null);
+  assert.equal(normalizeLive({ ...live, matchKey: "x" }), null); assert.equal(normalizeLive(null), null);
+  assert.equal(normalizeLive({ ...live, tourType: "itf" }), null); // il provider ha solo atp/wta
+});
+
+test("live: matchKey e punteggio", () => {
+  assert.deepEqual(parseMatchKey("76964-90227-17409-5"), { id1: "76964", id2: "90227", tournamentId: "17409", roundId: 5 });
+  assert.equal(parseMatchKey("1-2-3"), null);
+  assert.deepEqual(parseLiveScore("6-4,3-6,0-0"), [[6, 4], [3, 6], [0, 0]]); assert.equal(parseLiveScore(""), null);
+});
+
+test("ranking: righe reali, posizione obbligatoria, risposta inattesa gestita", () => {
+  const body = { data: [{ id: 1, date: "2026-11-09T00:00:00.000Z", point: 9550, position: 1, player: { id: 24008, name: "Alexander Zverev", countryAcr: "GER" }, rankingPoints: 9550 }, { position: 0, player: { id: 5 } }, { position: 2, player: {} }], page: 1, hasNextPage: true };
+  const r = normalizeRankingPage(body, "atp");
+  assert.equal(r.rows.length, 1); assert.deepEqual([r.rows[0].player_id, r.rows[0].position, r.rows[0].points], ["24008", 1, 9550]); assert.equal(r.hasNext, true);
+  assert.ok(normalizeRankingPage({}, "atp").problem);
+});
+
+test("profilo: rank e punti correnti, null se manca", () => {
+  const p = normalizeProfile({ data: { playerStatus: "Active", id: 24008, name: "Alexander Zverev", countryAcr: "GER", currentRank: 1, points: 9550, rankingDate: "2026-11-09T00:00:00.000Z", information: { plays: "Right-Handed" } } });
+  assert.deepEqual([p.player_id, p.current_rank, p.points], ["24008", 1, 9550]);
+  assert.equal(normalizeProfile({ data: { id: 7, currentRank: 0 } }).current_rank, null); assert.equal(normalizeProfile({}), null);
+});
+
+test("statistiche: servizio e risposta dai dati reali; valori assurdi → mancanti", () => {
+  const body = { data: { serviceStats: { firstServeOfGm: 71757, winningOnFirstServeGm: 35700, winningOnSecondServeGm: 12218 }, rtnStats: { firstServeOfGm: 75770, winningOnFirstServeGm: 32772, winningOnSecondServeGm: 14017 } } };
+  const s = normalizeMatchStats(body);
+  assert.ok(Math.abs(s.serve_pts_won - 0.6678) < 0.001); assert.ok(Math.abs(s.return_pts_won - 0.3825) < 0.001); assert.equal(s.serve_points, 71757);
+  const bad = normalizeMatchStats({ data: { serviceStats: { firstServeOfGm: 100, winningOnFirstServeGm: 99, winningOnSecondServeGm: 99 }, rtnStats: { firstServeOfGm: 0 } } });
+  assert.equal(bad.serve_pts_won, null); assert.equal(bad.return_pts_won, null);
+  assert.deepEqual(normalizeMatchStats(null), { serve_pts_won: null, return_pts_won: null, serve_points: null, return_points: null });
+});
+
+test("superfici per anno: totale e dettaglio annuale (per usare solo gli anni precedenti)", () => {
+  const r = normalizeSurfaceSummary({ data: [{ year: 2026, surfaces: [{ court: "Hard", courtWins: 30, courtLosses: 9 }, { court: "I.hard", courtWins: 6, courtLosses: 3 }, { court: "Grass", courtWins: 9, courtLosses: 2 }] }, { year: 2025, surfaces: [{ court: "Clay", courtWins: 18, courtLosses: 7 }] }] });
+  assert.deepEqual(r.total.hard, { w: 36, l: 12 }); assert.deepEqual(r.total.clay, { w: 18, l: 7 });
+  assert.equal(r.byYear.length, 2); assert.equal(r.byYear[1].year, 2025);
+  assert.deepEqual(normalizeSurfaceSummary(null), { byYear: [], total: {} });
+});
