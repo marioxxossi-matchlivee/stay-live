@@ -103,3 +103,93 @@ export function readPage(body) {
   if (!items) return { items: [], hasNext: false, problem: "elenco non trovato nella risposta" };
   return { items, hasNext: body.hasNextPage === true, problem: null };
 }
+
+// ───────────── Live, ranking, profili e statistiche (campioni reali della sonda del 12/11/2026) ─────────────
+const surfaceFamily = (name) => { const s = String(name ?? "").toLowerCase(); return s.includes("clay") ? "clay" : s.includes("grass") ? "grass" : s.includes("hard") || s.includes("carpet") ? "hard" : null; };
+const asInt = (v) => { const n = Number(v); return Number.isInteger(n) ? n : null; };
+
+/** matchKey del provider = id1-id2-torneo-turno (stesso formato di liveMatchId del programma e di matchKey dei risultati). */
+export function parseMatchKey(key) {
+  const m = /^(\d+)-(\d+)-(\d+)-(\d+)$/.exec(String(key ?? ""));
+  return m ? { id1: m[1], id2: m[2], tournamentId: m[3], roundId: Number(m[4]) } : null;
+}
+
+/** "6-4,4-6,4-4" → [[6,4],[4,6],[4,4]]; testo non riconosciuto → null (non si inventano punteggi). */
+export function parseLiveScore(score) {
+  const parts = String(score ?? "").split(",").map((s) => /^(\d{1,2})-(\d{1,2})$/.exec(s.trim()));
+  return parts.length && parts.every(Boolean) ? parts.map((m) => [Number(m[1]), Number(m[2])]) : null;
+}
+
+/**
+ * Riga del feed LIVE. Non dà mai un vincitore: "Ended" nel feed live NON è un risultato confermato (lo confermano solo i risultati).
+ * I set sono riportati nell'ordine canonico (id minore = giocatore 1), come le altre tabelle.
+ */
+export function normalizeLive(row) {
+  const k = parseMatchKey(row?.matchKey ?? row?.matchId);
+  if (!k || row?.tourType === undefined || ![...TOURS].includes(row.tourType)) return null;
+  const swapped = Number(k.id1) > Number(k.id2);
+  const sets = parseLiveScore(row.score);
+  const status = row.status === "InPlay" ? "live" : row.status === "Upcoming" ? "scheduled" : row.status === "Ended" ? "ended_unconfirmed" : "unknown";
+  return {
+    match_key: canonicalMatchKey(k.tournamentId, k.roundId, k.id1, k.id2), live_event_id: idOf(row.id), tour: row.tourType, tournament_id: k.tournamentId, round_id: k.roundId,
+    tournament: row.tournament?.name ?? row.league ?? null, status, sets: sets ? (swapped ? sets.map(([a, b]) => [b, a]) : sets) : null, score_raw: row.score ?? null,
+    points: row.points ?? null, indicator_raw: row.indicator ?? null, // il significato di "indicator" non è documentato con certezza: non si interpreta
+    starts_at: Number.isFinite(row.startTimestamp) ? new Date(row.startTimestamp * 1000).toISOString() : null,
+    updated_at: Number.isFinite(row.updatedAt) ? new Date(row.updatedAt * 1000).toISOString() : null,
+  };
+}
+
+/** Pagina del ranking attuale (/{tour}/ranking/singles). */
+export function normalizeRankingPage(body, tour) {
+  const page = readPage(body);
+  if (page.problem) return { ...page, rows: [] };
+  const rows = [];
+  for (const r of page.items) {
+    const id = idOf(r?.player?.id), pos = asInt(r?.position), pts = num(r?.rankingPoints ?? r?.point);
+    if (!id || !pos || pos < 1) continue;
+    rows.push({ tour, player_id: id, name: r.player.name ?? null, country: r.player.countryAcr ?? null, position: pos, points: pts, ranking_date: isoOrNull(r.date) });
+  }
+  return { items: page.items, hasNext: page.hasNext, problem: null, rows };
+}
+
+export function normalizeProfile(body) {
+  const d = body?.data;
+  if (!d || typeof d !== "object" || !d.id) return null;
+  return { player_id: String(d.id), name: d.name ?? null, country: d.countryAcr ?? null, status: d.playerStatus ?? null, current_rank: asInt(d.currentRank) || null, points: num(d.points), ranking_date: isoOrNull(d.rankingDate), plays: d.information?.plays ?? null };
+}
+
+/**
+ * Statistiche di CARRIERA (valori di OGGI, non storici: vanno salvati con l'ora di lettura e MAI usati per rivalutare partite passate).
+ * Servizio: punti vinti al servizio = (vinti su 1ª + vinti su 2ª) / punti al servizio.
+ * Risposta: il provider riporta i punti vinti dall'AVVERSARIO al servizio contro di lui; la quota del giocatore è il complemento.
+ * Questa lettura è dedotta dall'ordine di grandezza (≈62% sarebbe assurdo come quota in risposta) e protetta da un limite di buon senso;
+ * va confermata con la documentazione dell'endpoint. Fuori dai limiti → null (dato mancante), mai corretto.
+ */
+export function normalizeMatchStats(body) {
+  const s = body?.data?.serviceStats, r = body?.data?.rtnStats;
+  const out = { serve_pts_won: null, return_pts_won: null, serve_points: null, return_points: null };
+  const ratio = (st) => (st && num(st.firstServeOfGm) > 0 ? (num(st.winningOnFirstServeGm) + num(st.winningOnSecondServeGm)) / num(st.firstServeOfGm) : null);
+  const sv = ratio(s), rt = ratio(r);
+  if (sv !== null && sv > 0.4 && sv < 0.85) { out.serve_pts_won = sv; out.serve_points = num(s.firstServeOfGm); }
+  if (rt !== null && rt > 0.45 && rt < 0.8) { out.return_pts_won = 1 - rt; out.return_points = num(r.firstServeOfGm); }
+  return out;
+}
+
+/** Record per superficie e per anno (il dettaglio per anno permette di usare solo gli anni precedenti nel backtest). */
+export function normalizeSurfaceSummary(body) {
+  const years = Array.isArray(body?.data) ? body.data : null;
+  if (!years) return { byYear: [], total: {} };
+  const byYear = [], total = {};
+  for (const y of years) {
+    const yr = asInt(y?.year); if (!yr || !Array.isArray(y.surfaces)) continue;
+    const rec = {};
+    for (const s of y.surfaces) {
+      const fam = surfaceFamily(s?.court), w = asInt(s?.courtWins), l = asInt(s?.courtLosses);
+      if (!fam || w === null || l === null) continue;
+      rec[fam] = { w: (rec[fam]?.w ?? 0) + w, l: (rec[fam]?.l ?? 0) + l };
+      total[fam] = { w: (total[fam]?.w ?? 0) + w, l: (total[fam]?.l ?? 0) + l };
+    }
+    byYear.push({ year: yr, ...rec });
+  }
+  return { byYear, total };
+}
