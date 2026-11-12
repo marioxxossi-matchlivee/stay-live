@@ -38,12 +38,16 @@ export function parsePaths(raw) {
   return paths;
 }
 
-export async function probeOne(host, key, path, fetchImpl = fetch, timeoutMs = 15000) {
+export const DIRECT_BASE = "https://api.sportsapi365.com/v1/tennis";
+
+/** mode "direct" (SportsAPI365): `base` = URL base completo, chiave in X-Gravitee-Api-Key. mode "rapidapi": `host` e intestazioni RapidAPI. */
+export async function probeOne(host, key, path, fetchImpl = fetch, timeoutMs = 15000, { mode = "rapidapi", base = DIRECT_BASE } = {}) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const res = await fetchImpl(`https://${host}${path}`, {
-      headers: { "X-RapidAPI-Key": key, "X-RapidAPI-Host": host, Accept: "application/json" },
+    const direct = mode === "direct";
+    const res = await fetchImpl(direct ? `${base.replace(/\/+$/, "")}${path}` : `https://${host}${path}`, {
+      headers: direct ? { "X-Gravitee-Api-Key": key, Accept: "application/json" } : { "X-RapidAPI-Key": key, "X-RapidAPI-Host": host, Accept: "application/json" },
       signal: ctl.signal,
     });
     const text = await res.text();
@@ -61,16 +65,20 @@ export async function probeOne(host, key, path, fetchImpl = fetch, timeoutMs = 1
 async function main() {
   const key = process.env.TENNIS_API_KEY;
   if (!key) { console.error("Manca TENNIS_API_KEY"); process.exit(1); }
+  // Predefinito: SportsAPI365 Direct. TENNIS_API_MODE=rapidapi per il vecchio provider. TENNIS_API_BASE sovrascrive l'URL base.
+  const mode = (process.env.TENNIS_API_MODE || "direct").toLowerCase() === "rapidapi" ? "rapidapi" : "direct";
   const host = process.env.TENNIS_API_HOST || DEFAULT_HOST;
+  const base = process.env.TENNIS_API_BASE || DIRECT_BASE;
+  if (mode === "direct" && !String(process.env.PROBE_PATHS ?? "").trim()) { console.error("Indica almeno un percorso in PROBE_PATHS (nessun percorso predefinito per SportsAPI365)."); process.exit(1); }
   const paths = parsePaths(process.env.PROBE_PATHS);
   const results = [];
   for (const p of paths) {
-    const r = await probeOne(host, key, p);
+    const r = await probeOne(host, key, p, fetch, 15000, { mode, base });
     console.log(`${r.ok ? "OK " : "ERR"} ${r.status} ${p}`);
     results.push(r);
     await new Promise((ok) => setTimeout(ok, 400)); // senza raffiche
   }
-  const out = { host, at: new Date().toISOString(), results };
+  const out = { provider: mode, base: mode === "direct" ? base : host, at: new Date().toISOString(), results };
   fs.writeFileSync("tennis-probe-output.json", JSON.stringify(out, null, 2));
   if (process.env.GITHUB_STEP_SUMMARY) {
     fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, "## Sonda Tennis-API\n" + results.map((r) => `- \`${r.path}\` → ${r.status}`).join("\n") + "\n\nIl file `tennis-probe-output.json` è negli artifact del giro.\n");
