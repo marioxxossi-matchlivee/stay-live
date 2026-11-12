@@ -1,0 +1,40 @@
+name: Tennis — sonda API (manuale)
+
+# Solo manuale. Chiama ogni percorso indicato UNA volta (1 richiesta ciascuno) e salva un esempio ridotto delle risposte,
+# per vedere i nomi reali dei campi. La chiave resta nei secrets: non compare mai nei log né nell'output.
+# Secrets: TENNIS_API_KEY (obbligatorio), TENNIS_API_HOST (facoltativo).
+on:
+  workflow_dispatch:
+    inputs:
+      paths:
+        description: "Percorsi da provare, separati da virgola (es. /tennis/v2/upcoming/matches/atp). Vuoto = solo le partite in programma ATP"
+        required: false
+        default: ""
+
+concurrency:
+  group: tennis-api
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Sonda
+        env:
+          TENNIS_API_KEY: ${{ secrets.TENNIS_API_KEY }}
+          TENNIS_API_HOST: ${{ secrets.TENNIS_API_HOST }}
+          PROBE_PATHS: ${{ inputs.paths }}
+        run: node scripts/tennis-probe.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tennis-probe-output
+          path: tennis-probe-output.json
+          if-no-files-found: ignore
