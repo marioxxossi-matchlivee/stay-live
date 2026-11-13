@@ -1,0 +1,10 @@
+Aggiornamento Stay Live Tennis. Copia le cartelle nel progetto mantenendo i percorsi (sostituisce i file con lo stesso nome).
+
+ELIMINA questi 2 file del calcio (non usati da nessuno, il test monitor-ui li vuole assenti):
+  functions/api/_odds.js
+  functions/api/quotes.js
+
+Migrazioni SQL: 202611150001_tennis_sync.sql è GIÀ stata applicata su Supabase. Non rieseguirla.
+
+Poi: GitHub → Actions → "Tennis — sincronizzazione" → Run workflow: backfill (120 giorni), poi static, poi refresh.
+Dettagli in TENNIS.md.
