@@ -1,14 +1,21 @@
-# Stay Live — Dominance (crop corretto)
+# Stay Live — Full-Bleed / No Frame Icon Pack
 
-Pacchetto rigenerato correggendo il ritaglio: ora l'intera icona centrale
-è inclusa, con tutti i bordi luminosi e gli angoli arrotondati integri.
-È stato aggiunto un sottile margine nero per evitare che il bordo esterno
-venga tagliato. Non sono incluse parti delle icone adiacenti.
+Questa versione elimina la cornice arrotondata incorporata nell'immagine.
+L'artwork è a tutta superficie: sfondo nero/blu notte edge-to-edge e monogramma
+SL argento con taglio elettrico blu. Non sono presenti bordi neri esterni o
+una seconda cornice disegnata. La maschera arrotondata viene lasciata al launcher.
 
 ## Installazione
-Estrarre nella root del repository e sostituire:
+Estrarre lo ZIP nella root del repository e sostituire:
 - `public/icons/`
 - `public/apple-touch-icon.png`
 - `public/favicon.ico`
 
-`manifest.webmanifest` non è incluso e resta invariato.
+I nomi e i percorsi rispettano la struttura mostrata negli screenshot.
+`manifest.webmanifest` non è incluso: resta invariato.
+
+## Nota Android
+Le immagini maskable sono full-bleed e senza cornice disegnata. Il launcher
+Samsung/Android applica la propria maschera. Se il manifest usa un'immagine
+con `purpose: "any maskable"`, questa grafica non contiene una cornice interna
+che possa generare il doppio bordo.
