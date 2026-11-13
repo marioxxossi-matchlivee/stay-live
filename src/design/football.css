@@ -1,0 +1,188 @@
+/* =====================================================================
+   Calcio · personalità "smeraldo": card partita con gerarchia chiara, dettaglio, giocate, impostazioni.
+   ===================================================================== */
+/* ---------- Card partita ---------- */
+.list{gap:10px}
+.row{background:linear-gradient(180deg,var(--sl-s2),var(--sl-s1));border:1px solid var(--sl-line);border-radius:var(--rad-lg);box-shadow:var(--sh-2);padding:14px 8px 14px 6px;overflow:hidden;transition:transform var(--t-fast) var(--ease-out),border-color var(--t-base),box-shadow var(--t-base)}
+.row::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:0 3px 3px 0;background:var(--sl-line-2);transition:background var(--t-base)}
+.row.is-bet{border-color:var(--sl-accent-line);background:linear-gradient(180deg,rgba(77,155,255,.1),var(--sl-s1) 70%);box-shadow:var(--sh-2),0 0 28px -16px rgba(77,155,255,.6)}
+.row.is-bet::before{background:var(--sl-accent);box-shadow:0 0 10px var(--sl-accent)}
+.row.sel{background:linear-gradient(180deg,rgba(180,195,230,.14),var(--sl-s1));border-color:rgba(180,195,230,.5);box-shadow:var(--sh-2)}
+.row:active{transform:scale(.985)}
+.row.swipe-ready{background:var(--sl-accent-tint);box-shadow:0 0 0 2px var(--sl-accent)}
+.row .chk input{border:2px solid var(--sl-s4);background-color:transparent;border-radius:50%;width:24px;height:24px}
+.row .chk input:checked{background-color:var(--sl-accent);border-color:var(--sl-accent);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath fill='%23031230' d='M232.5 80.5l-128 128a12 12 0 0 1-17 0l-56-56a12 12 0 0 1 17-17L96 183 215.5 63.5a12 12 0 0 1 17 17Z'/%3E%3C/svg%3E")}
+.row-main .meta{color:var(--sl-mute);font-size:12px;align-items:center;gap:8px}
+.row-main .meta b{font:800 14px var(--sl-font);color:var(--sl-ink);letter-spacing:-.01em}
+.row-main .meta>span:nth-of-type(1){font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:10.5px;color:var(--sl-mute);background:var(--sl-s3);padding:2px 8px;border-radius:999px}
+.live-tag{display:inline-flex;align-items:center;gap:6px;margin-left:auto;color:var(--sl-live);font:800 10.5px var(--sl-font);letter-spacing:.1em;text-transform:uppercase;background:rgba(255,77,94,.12);border:1px solid rgba(255,77,94,.3);padding:2px 9px 2px 8px;border-radius:999px}
+.live-tag::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--sl-live);animation:sllivedot 1.4s ease-in-out infinite}
+@keyframes sllivedot{50%{opacity:.25;transform:scale(.7)}}
+.fx{gap:8px}
+.side b{font:700 15.5px var(--sl-font);letter-spacing:-.02em;color:var(--sl-ink)}
+.side .score{font:800 20px var(--sl-font);color:var(--sl-ink)}
+.crest{background:#fff;box-shadow:0 0 0 1px rgba(255,255,255,.12),0 3px 8px -2px rgba(0,0,0,.6);width:30px;height:30px}
+.crest em{color:#3a4a63}
+.crest.sm{width:24px;height:24px}
+.pick{border-radius:14px;padding:9px 12px;gap:3px}
+.pick .pk-main{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pick .pk-label{font:800 16px var(--sl-font);letter-spacing:-.02em;color:var(--sl-ink)}
+.pick .pk-sub{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px}
+.pick.bet{background:linear-gradient(135deg,rgba(77,155,255,.2),rgba(77,155,255,.07));border:1px solid var(--sl-accent-line);color:var(--sl-accent)}
+.pick.bet .pk-label{color:var(--sl-ink)}
+.pick.skip{background:rgba(150,175,230,.08);border:1px solid var(--sl-line);color:var(--sl-ink-2)}
+.pick.none{background:rgba(150,175,230,.06);border:1px dashed var(--sl-line-2);color:var(--sl-mute)}
+.vd-pill{display:inline-flex;align-items:center;gap:4px;font:800 11px var(--sl-font);letter-spacing:.1em;padding:3px 9px;border-radius:8px;background:var(--sl-accent);color:var(--sl-accent-ink)}
+.vd-pill .ic{font-size:12px}
+.pick.skip .vd-pill{background:rgba(150,175,230,.18);color:var(--sl-ink-2)}
+.pk-q{font-weight:600;color:var(--sl-ink-2)}
+.pk-q.real{color:var(--sl-accent);font-weight:700}
+.pk-q.none{color:var(--sl-faint)}
+.pk-pct{font-style:normal;font-weight:600;color:var(--sl-mute)}
+.api-tag{background:var(--sl-blue-tint);color:var(--sl-blue);border:1px solid rgba(180,195,230,.3);font:800 9.5px var(--sl-font)}
+.row-save{color:var(--sl-mute);width:44px;height:44px}
+.row-save .ic{font-size:21px}
+.row-save:hover{background:var(--sl-s3);color:var(--sl-ink)}
+.row-save.done,.row-save:disabled{color:var(--sl-accent)}
+.row-save.done svg{fill:currentColor}
+.row-save.pop .ic{animation:slwiggle .5s var(--ease-spring)}
+/* O/U + corner */
+.cm{background:rgba(150,175,230,.08);border:1px solid var(--sl-line);border-radius:14px;color:var(--sl-ink)}
+.cm b{font:700 13.5px var(--sl-font);display:flex;align-items:center;gap:6px}
+.cm em{font:800 17px var(--sl-font);color:var(--sl-ink)}
+.cm small{color:var(--sl-mute)}
+.cm.hi{background:var(--sl-accent-tint);border-color:var(--sl-accent-line)}
+.cm.hi em,.cm.hi .ic{color:var(--sl-accent)}
+.cm.none{color:var(--sl-mute)}
+.cb{background:rgba(150,175,230,.08);border-radius:14px;color:var(--sl-ink-2)}
+.cb-t b{color:var(--sl-ink)}
+.pc-bar{background:var(--sl-s3)}
+.pc-bar i{background:var(--sl-accent)}
+
+/* ---------- Dettaglio partita ---------- */
+.verdict,.kv div,.mk,.form,.pv-card,.pv-bank,.api-card,.af-sec,.pl-sum div{background:var(--sl-s2);border:1px solid var(--sl-line);box-shadow:none;border-radius:var(--rad-md)}
+.verdict{border-left:1px solid var(--sl-line);box-shadow:inset 4px 0 0 var(--sl-avoid)}
+.verdict.bet{box-shadow:inset 4px 0 0 var(--sl-accent);background:linear-gradient(135deg,rgba(77,155,255,.14),var(--sl-s2))}
+.verdict h3{color:var(--sl-ink)}.verdict.bet h3{color:var(--sl-accent)}
+.verdict p,.steps span{color:var(--sl-ink-2)}
+.kv small,.sl-info,.sl-p small,.af-body small,.pl-note,.form div{color:var(--sl-mute)}
+.kv strong{font-weight:800;letter-spacing:-.02em}
+h4{color:var(--sl-mute);font:800 11.5px var(--sl-font);letter-spacing:.1em;text-transform:uppercase}
+.mk>h5{border-bottom:1px solid var(--sl-line);color:var(--sl-mute)}
+.sl{border-bottom:1px solid var(--sl-line)}
+.sl-name{color:var(--sl-ink)}
+.sl-info input,.pv-bank input,.pv-odds input,.pv-q input,.rec-q input{background:var(--sl-s1);border:1px solid var(--sl-line-2);color:var(--sl-ink);border-radius:10px}
+.res.bet{background:var(--sl-accent-tint);color:var(--sl-accent)}
+.res.skip{background:rgba(150,175,230,.14);color:var(--sl-ink-2)}
+.steps li::marker{color:var(--sl-accent)}
+.form b{font-family:var(--sl-font)}
+.api-card{padding:14px}
+.api-bar{border-radius:12px;gap:2px}
+.api-bar .h{background:var(--sl-accent-2);color:var(--sl-accent-ink)}
+.api-bar .d{background:var(--sl-s4);color:var(--sl-ink)}
+.api-bar .a{background:var(--sl-blue);color:#031326}
+.api-note{color:var(--sl-ink-2)}
+.api-note.warn{background:var(--sl-warn-tint);color:var(--sl-warn);border:1px solid rgba(255,184,74,.25)}
+.api-note.ok{background:var(--sl-accent-tint);color:var(--sl-accent);border:1px solid var(--sl-accent-line)}
+.api-advice small{color:var(--sl-mute)}
+.rec{background:linear-gradient(135deg,rgba(77,155,255,.16),rgba(77,155,255,.05));box-shadow:inset 4px 0 0 var(--sl-accent);border:1px solid var(--sl-accent-line);border-radius:var(--rad-md)}
+.rec.none{background:var(--sl-s2);box-shadow:inset 4px 0 0 var(--sl-avoid);border-color:var(--sl-line)}
+.rec-tag{color:var(--sl-accent)}.rec.none .rec-tag{color:var(--sl-mute)}
+.rec-p{color:var(--sl-accent)}.rec-p small{color:var(--sl-mute)}
+.why li::before{background:var(--sl-accent-tint);color:var(--sl-accent)}
+.why li,.rec.none p{color:var(--sl-ink-2)}
+details.more>summary,.af-sec>summary{color:var(--sl-ink)}
+.acc-head,.acc>button,.accordion>button{color:var(--sl-ink)}
+.link,.lg-odd{color:var(--sl-accent)}.lg-odd{color:var(--sl-mute)}
+
+/* ---------- Dati API-Football ---------- */
+#pane-data{--af-home:var(--sl-accent);--af-away:var(--sl-blue);--af-draw:#4a5870}
+#pane-data .af-empty,#pane-data .empty{background:var(--sl-s2);border-color:var(--sl-line-2)}
+.af-hero{background:radial-gradient(120% 90% at 85% -10%,rgba(77,155,255,.55) 0,rgba(14,110,76,.35) 30%,transparent 62%),linear-gradient(160deg,#142238 0,#0a1220 75%);border:1px solid var(--sl-line-2);box-shadow:var(--sh-2)}
+.af-chip{background:rgba(255,255,255,.1);color:var(--sl-ink)}
+.af-status{background:var(--sl-s4);color:var(--sl-ink)}
+.af-status.live{background:rgba(255,77,94,.18);color:#ff8a96}
+.af-status.ft{background:var(--sl-accent-tint);color:var(--sl-accent)}
+.af-status.off{background:var(--sl-warn-tint);color:var(--sl-warn)}
+.af-crest{box-shadow:0 0 0 3px rgba(255,255,255,.14),0 6px 14px -4px #000a}
+.af-sec>summary{padding:13px 14px}
+.af-st{font-weight:700;letter-spacing:-.01em}
+.af-ic{background:var(--sl-s3);color:var(--sl-ink-2);border-radius:11px}
+.af-ic svg{fill:currentColor;stroke:none;width:19px;height:19px}
+.af-ic[data-tone=green]{background:var(--sl-accent-tint);color:var(--sl-accent)}
+.af-ic[data-tone=blue]{background:var(--sl-blue-tint);color:var(--sl-blue)}
+.af-ic[data-tone=red]{background:var(--sl-danger-tint);color:var(--sl-danger)}
+.af-ic[data-tone=amber]{background:var(--sl-warn-tint);color:var(--sl-warn)}
+.af-sec>summary small{background:var(--sl-s3);color:var(--sl-ink-2)}
+.af-chev{border-color:var(--sl-mute)}
+.af-body h5,.af-kv dt,.af-t th{color:var(--sl-mute)}
+.af-kv div,.af-list li,.af-fresh li,.af-t td,.af-t th{border-color:var(--sl-line)}
+.af-odd{color:var(--sl-ink)}
+.af-pill{background:rgba(150,175,230,.14);color:var(--sl-ink-2)}
+.af-pill.ok{background:var(--sl-accent-tint);color:var(--sl-accent)}
+.af-pill.err{background:var(--sl-danger-tint);color:var(--sl-danger)}
+.af-pill.warn,.af-pill.off{background:var(--sl-warn-tint);color:var(--sl-warn)}
+.af-advice{background:linear-gradient(135deg,rgba(77,155,255,.16),rgba(77,155,255,.04));border:1px solid var(--sl-accent-line);border-left:4px solid var(--sl-accent)}
+.af-advice small{color:var(--sl-accent)}.af-advice strong{color:var(--sl-ink)}.af-advice span,.af-advice span small{color:var(--sl-ink-2)}
+.af-tiles div,.af-prob-leg div,.af-cov li{background:var(--sl-s3);border-color:var(--sl-line)}
+.af-prob-leg div{border-top-color:#4a5870}.af-prob-leg .h{border-top-color:var(--sl-accent)}.af-prob-leg .a{border-top-color:var(--sl-blue)}
+.af-split.none .af-split-bar i,.af-split.none .af-split-bar u{background:var(--sl-s4)}
+.af-oddtile{background:var(--sl-s3);border-color:var(--sl-line)}
+.af-oddtile.over{background:linear-gradient(160deg,rgba(77,155,255,.18),var(--sl-s3));border-color:var(--sl-accent-line)}
+.af-oddtile.over small,.af-oddtile.over strong{color:var(--sl-accent)}
+.af-oddtile.under{background:linear-gradient(160deg,rgba(180,195,230,.2),var(--sl-s3));border-color:rgba(180,195,230,.35)}
+.af-oddtile.under small,.af-oddtile.under strong{color:var(--sl-blue)}
+.af-av{background:var(--sl-s3);color:var(--sl-ink-2)}
+.af-sc{background:var(--sl-s4);color:var(--sl-ink)}
+.af-tl::before{background:var(--sl-s3)}
+.ev{background:var(--sl-s4);box-shadow:0 0 0 2px var(--sl-s2)}
+.ev.goal{background:var(--sl-accent);box-shadow:0 0 0 2px var(--sl-s2),0 0 0 4px var(--sl-accent-tint)}
+.ev.miss{background:#5d6a80}.ev.sub{background:var(--sl-blue-tint);box-shadow:0 0 0 2px var(--sl-s2),inset 0 0 0 2px var(--sl-blue)}
+.ev.var{background:var(--sl-s4);box-shadow:0 0 0 2px var(--sl-s2),inset 0 0 0 2px #7d8aa0}
+.af-meter{background:var(--sl-s4)}.af-meter i{background:linear-gradient(90deg,var(--sl-accent-2),var(--sl-accent))}
+.af-cov i{background:var(--sl-s4);color:var(--sl-mute)}.af-cov .yes i{background:var(--sl-accent-tint);color:var(--sl-accent)}.af-cov .no i{background:var(--sl-danger-tint);color:var(--sl-danger)}
+.af-warn{background:var(--sl-warn-tint);color:var(--sl-warn);border-color:rgba(255,184,74,.28)}
+.af-warn svg{fill:currentColor;stroke:none}
+.af-note{color:var(--sl-ink-2)}.af-err{color:var(--sl-danger)}
+.af-rec{background:var(--sl-s3)}
+
+/* ---------- Preview, resoconto, giocate ---------- */
+.pv-card{padding:14px}
+.pv-pick .vd.bet{background:var(--sl-accent);color:var(--sl-accent-ink)}
+.pv-pick .vd.skip{background:rgba(150,175,230,.18);color:var(--sl-ink-2)}
+.pv-pick em{color:var(--sl-accent)}.pv-card.is-skip .pv-pick em{color:var(--sl-mute)}
+.pv-section>h3{color:var(--sl-ink)}
+.pv-multi-sec>h3{color:var(--sl-blue)}
+.pv-multi-card{background:var(--sl-s2);border:1px solid var(--sl-line);border-left:4px solid var(--sl-blue);border-radius:var(--rad-md)}
+.pv-sum span,.pv-totals,.pv-why,.pv-q,.pv-qstatus,.pv-no{color:var(--sl-ink-2)}
+.pl-sum small{color:var(--sl-mute)}
+.pl-leg,.pl-leg.pending{border-color:var(--sl-line)}
+.st-pill{border-radius:999px;font-weight:800;letter-spacing:.06em}
+.st-pill svg{fill:none;stroke:currentColor}
+.st-won{background:var(--sl-accent-tint);color:var(--sl-accent)}
+.st-lost{background:var(--sl-danger-tint);color:var(--sl-danger)}
+.st-pending{background:var(--sl-warn-tint);color:var(--sl-warn)}
+.st-void{background:rgba(150,175,230,.14);color:var(--sl-ink-2)}
+.lg-st{background:var(--sl-s3);color:var(--sl-ink-2)}.lg-st.won{background:var(--sl-accent-tint);color:var(--sl-accent)}
+
+/* ---------- Impostazioni ---------- */
+.set-group{background:var(--sl-s1);border:1px solid var(--sl-line);border-radius:var(--rad-lg);box-shadow:none;padding:16px}
+.set-group h2{color:var(--sl-mute);font:800 11px var(--sl-font);letter-spacing:.14em;text-transform:uppercase}
+.set-row small,.set-hint{color:var(--sl-mute)}
+.set-row b{color:var(--sl-ink)}
+.set-row select,.set-row input{background:var(--sl-s2);border:1px solid var(--sl-line-2)}
+.set-btn{background:var(--sl-accent);color:var(--sl-accent-ink);border:0;border-radius:14px;font:800 14px var(--sl-font);display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:13px}
+.set-btn.danger{background:var(--sl-danger-tint);color:var(--sl-danger);border:1px solid rgba(255,107,122,.3)}
+.set-btn .ic{font-size:18px}
+
+/* Il pronostico dentro la card (le vecchie regole sono più specifiche: si ribadisce qui) */
+.row-main .pick,.row-main .pick.bet,.row-main .pick.skip,.row-main .pick.none{border-radius:14px;padding:10px 12px;gap:4px}
+.row-main .pick.bet{background:linear-gradient(135deg,rgba(77,155,255,.22),rgba(77,155,255,.06));border:1px solid var(--sl-accent-line)}
+.row-main .pick.skip{background:rgba(150,175,230,.07);border:1px solid var(--sl-line)}
+.row-main .pick.none{background:transparent;border:1px dashed var(--sl-line-2)}
+.row-main .pick.bet .vd-pill{background:var(--sl-accent);color:var(--sl-accent-ink)}
+.row-main .pick.skip .vd-pill,.row-main .pick.none .vd-pill{background:rgba(150,175,230,.18);color:var(--sl-ink-2)}
+.row-main .pick .pk-label{font-size:16.5px;color:var(--sl-ink)}
+.row-main .pick.skip .pk-label,.row-main .pick.none .pk-label{color:var(--sl-ink-2)}
+.row-main .pick .pk-q.real,.row-main .pick.bet .pk-pct{color:var(--sl-accent)}
+.row-main .pick .pk-q,.row-main .pick .pk-pct{color:var(--sl-mute)}

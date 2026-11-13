@@ -1,0 +1,60 @@
+/* =====================================================================
+   Stay Live · Design system "Night Pitch"
+   Unica fonte di verità per colori, tipografia, spazi, raggi, ombre, moto, icone, z-index.
+   Caricato DOPO style.css: ridefinisce anche i token storici (--ink, --card, --pitch…) così le regole vecchie si adattano.
+   ===================================================================== */
+:root{
+  color-scheme:dark;
+  /* Superfici (dal fondo al primo piano) */
+  --sl-bg:#03060e; --sl-s1:#091020; --sl-s2:#0e1830; --sl-s3:#15223f; --sl-s4:#1e2f55;
+  --sl-line:rgba(130,170,255,.14); --sl-line-2:rgba(130,170,255,.25);
+  /* Testo */
+  --sl-ink:#eef3ff; --sl-ink-2:#b8c4de; --sl-mute:#8696b8; --sl-faint:#5b6b8e;
+  /* Accenti: calcio = smeraldo, tennis = lime; semantica BET / EVITA / avvisi */
+  --sl-accent:#4d9bff; --sl-accent-2:#2f7bff; --sl-accent-deep:#1c55d6; --sl-accent-ink:#031230; --sl-accent-tint:rgba(77,155,255,.14); --sl-accent-line:rgba(77,155,255,.38);
+  --sl-lime:#46dcff; --sl-lime-ink:#021b24; --sl-lime-tint:rgba(70,220,255,.13); /* accento Tennis: azzurro ghiaccio (nome storico) */
+  --sl-blue:#b4c3e6; --sl-blue-tint:rgba(180,195,230,.14); /* argento: secondo colore del logo */
+  --sl-bet:var(--sl-accent); --sl-win:#34d399; --sl-avoid:#9aa7bb; --sl-warn:#ffb84a; --sl-warn-tint:rgba(255,184,74,.13); --sl-danger:#ff6b7a; --sl-danger-tint:rgba(255,107,122,.13); --sl-live:#ff4d5e;
+  /* Tipografia */
+  --sl-font:"Inter","Inter Display",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --fs-xs:11px; --fs-sm:13px; --fs-md:15px; --fs-lg:18px; --fs-xl:24px; --fs-2xl:clamp(28px,8vw,38px);
+  /* Spazi, raggi, icone */
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:28px;
+  --rad-sm:10px; --rad-md:16px; --rad-lg:22px; --rad-xl:28px;
+  --ico-sm:16px; --ico-md:20px; --ico-lg:24px;
+  /* Ombre e bagliori */
+  --sh-1:0 1px 0 rgba(255,255,255,.04) inset,0 1px 2px rgba(0,0,0,.5);
+  --sh-2:0 1px 0 rgba(255,255,255,.05) inset,0 10px 28px -14px rgba(0,0,0,.8);
+  --sh-3:0 24px 60px -18px rgba(0,0,0,.9),0 0 0 1px var(--sl-line);
+  --glow:0 0 0 1px var(--sl-accent-line),0 8px 30px -10px rgba(77,155,255,.45);
+  /* Moto */
+  --ease-out:cubic-bezier(.22,1,.36,1); --ease-spring:cubic-bezier(.34,1.45,.5,1); --ease-io:cubic-bezier(.65,0,.35,1);
+  --t-fast:.14s; --t-base:.24s; --t-slow:.4s;
+  /* Livelli */
+  --z-top:30; --z-nav:40; --z-selbar:45; --z-sheet:60; --z-toast:80;
+  --nav-h:68px; --safe-b:env(safe-area-inset-bottom,0px); --safe-t:env(safe-area-inset-top,0px);
+
+  /* ---- Token storici rimappati sul nuovo sistema ---- */
+  --head:var(--sl-font); --body:var(--sl-font);
+  --ink:var(--sl-ink); --ink-2:var(--sl-ink-2); --mute:var(--sl-mute); --paper:var(--sl-bg); --card:var(--sl-s1);
+  --blue:var(--sl-blue); --soft:var(--sl-s2); --soft-2:var(--sl-s3); --soft-line:var(--sl-line); --line:var(--sl-line);
+  --pitch:var(--sl-accent); --pitch-2:var(--sl-accent); --pitch-deep:var(--sl-accent-2); --pitch-tint:var(--sl-accent-tint);
+  --red:var(--sl-danger); --red-tint:var(--sl-danger-tint); --warn:var(--sl-warn); --warn-tint:var(--sl-warn-tint);
+  --skip:var(--sl-avoid); --skip-tint:rgba(150,175,230,.12);
+  --shadow:var(--sh-1); --shadow-2:var(--sh-2); --r-sm:var(--rad-sm); --r-md:var(--rad-md); --r-lg:var(--rad-lg);
+  --tab-h:var(--nav-h); --ease:var(--ease-out); --dur-fast:var(--t-fast); --dur:var(--t-base); --dur-slow:var(--t-slow);
+  font-family:var(--sl-font);
+}
+html{background:var(--sl-bg);-webkit-tap-highlight-color:transparent}
+body{color:var(--sl-ink);background:var(--sl-bg)!important;font-family:var(--sl-font);font-size:var(--fs-md);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overscroll-behavior-y:none}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(900px 440px at 50% -150px,rgba(47,123,255,.26),transparent 70%),linear-gradient(115deg,transparent 58%,rgba(77,155,255,.07) 62%,transparent 66%),radial-gradient(500px 320px at 110% 30%,rgba(47,123,255,.12),transparent 70%)}
+body[data-sport="tennis"]::before{background:radial-gradient(900px 440px at 50% -150px,rgba(70,220,255,.18),transparent 70%),radial-gradient(500px 320px at -10% 30%,rgba(47,123,255,.12),transparent 70%)}
+::selection{background:var(--sl-accent-tint);color:var(--sl-ink)}
+*{scrollbar-width:thin;scrollbar-color:var(--sl-s4) transparent}
+b,strong{font-weight:700}
+h1,h2,h3,h4,h5{color:var(--sl-ink)}
+:focus-visible{outline:2px solid var(--sl-accent)!important;outline-offset:2px}
+.ic{width:1em;height:1em;flex:none;vertical-align:-.15em;margin-right:0;fill:currentColor}
+.ic-sm{font-size:var(--ico-sm)}.ic-md{font-size:var(--ico-md)}.ic-lg{font-size:var(--ico-lg)}
+.stat b,.sl-p,.score{font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
