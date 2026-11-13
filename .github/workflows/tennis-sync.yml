@@ -1,0 +1,62 @@
+name: Tennis — sincronizzazione
+
+# Un solo workflow coordinato per tutto il tennis (SportsAPI365 Direct → Supabase → modello → snapshot → app). Il calcio non è coinvolto.
+#   ogni 15 minuti   live      feed delle partite in corso (1 richiesta) + ricostruzione della snapshot
+#   ogni 30 minuti   refresh   programma ATP/WTA, risultati di oggi e ieri, pronostici, quote ed EV, snapshot
+#   ogni giorno      static    ranking, tornei, statistiche dei giocatori in programma, backtest cronologico
+#   a mano           backfill  storico dei risultati degli ultimi N giorni (da lanciare una volta, poi basta il refresh)
+# Consumo stimato: ~96 + ~1.000 + ~300 richieste al giorno su 200.000 al mese (6.600 al giorno circa): ampiamente nei limiti.
+# Anti-sovrapposizione: gruppo di concorrenza per modalità + blocco a scadenza su Supabase (tennis_acquire_lock).
+#
+# Secrets del repository: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, TENNIS_API_KEY   (facoltativo: TENNIS_API_BASE)
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+    - cron: "20,50 * * * *"
+    - cron: "35 3 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Modalità"
+        type: choice
+        options: [refresh, live, static, backfill]
+        default: refresh
+      backfill_days:
+        description: "Solo backfill: quanti giorni di risultati scaricare (consigliato 120; ~8 richieste a giorno)"
+        required: false
+        default: "120"
+
+concurrency:
+  group: tennis-sync-${{ github.event.inputs.mode || github.event.schedule }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Scelta della modalità
+        id: mode
+        run: |
+          if [ -n "${{ github.event.inputs.mode }}" ]; then M="${{ github.event.inputs.mode }}";
+          else case "${{ github.event.schedule }}" in
+            "*/15 * * * *") M=live;;
+            "20,50 * * * *") M=refresh;;
+            "35 3 * * *") M=static;;
+            *) M=refresh;;
+          esac; fi
+          echo "mode=$M" >> "$GITHUB_OUTPUT"
+      - name: Sincronizzazione tennis
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TENNIS_API_KEY: ${{ secrets.TENNIS_API_KEY }}
+          TENNIS_API_BASE: ${{ secrets.TENNIS_API_BASE }}
+          BACKFILL_DAYS: ${{ github.event.inputs.backfill_days }}
+        run: node scripts/tennis-sync.js "${{ steps.mode.outputs.mode }}"
