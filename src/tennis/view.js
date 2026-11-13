@@ -1,4 +1,5 @@
 // Stay Live Tennis — HTML dell'interfaccia (stringhe pure, tutto passa da esc()).
+import { icon } from "../icons.js";
 import { esc, pct, num, fmtTime, dayKey, dayParts } from "../format.js";
 import { surfaceOf, surfaceLabel, SURFACE_LABEL, categoryLabel, flag, CATEGORY_LABEL, DEFAULT_HISTORY_FILTERS, PERIODS, OUTCOMES, filterHistory } from "./board.js";
 import { summarizeHistory } from "../../functions/api/_tennis-snapshot.js";
@@ -22,7 +23,7 @@ function pickBlock(m) {
   const p = m.prediction;
   if (!p) return `<div class="tn-pick none">In attesa di analisi</div>`;
   if (!p.published) return `<div class="tn-pick none"><b>Nessun pronostico</b><span>${esc(p.abstainReason ?? "Dati insufficienti.")}</span></div>`;
-  const hit = m.status === "finished" && m.winner ? (p.pick === m.winner ? `<span class="tn-res ok">✓ Centrato</span>` : `<span class="tn-res ko">✗ Non centrato</span>`) : "";
+  const hit = m.status === "finished" && m.winner ? (p.pick === m.winner ? `<span class="tn-res ok">${icon("check")}Centrato</span>` : `<span class="tn-res ko">${icon("close")}Non centrato</span>`) : "";
   const prob = p.pick === 1 ? p.p1 : p.p2;
   return `<div class="tn-pick yes"><div class="tn-pick-head"><b>Pronostico ${p.pick}</b><span class="tn-pick-name">${esc(nameOf(m, p.pick))}</span><em>${pct(prob)}</em></div><div class="tn-pick-foot">${relTag(p.reliability)}${hit}</div></div>`;
 }
@@ -30,6 +31,9 @@ function pickBlock(m) {
 
 const RESULT_TYPE_LABEL = (t) => (/walk|w\/o|wo\b/i.test(t ?? "") ? "walkover" : /retir/i.test(t ?? "") ? "ritiro" : t ? String(t) : "esito non regolare");
 const nm = (p) => `${flag(p.country) ? `<span class="tn-flag" aria-hidden="true">${flag(p.country)}</span>` : ""}${esc(p.name)}`;
+const initials = (n) => String(n ?? "?").split(/\s+/).filter(Boolean).slice(-2).map((w) => w[0]).join("").toUpperCase();
+const probOf = (m, slot) => (m.prediction?.published ? `<span class="tn-pp${m.prediction.pick === slot ? " lead" : ""}">${pct(slot === 1 ? m.prediction.p1 : m.prediction.p2)}</span>` : "");
+const pbar = (m) => (m.prediction?.published ? `<div class="tn-pbar" aria-hidden="true"><i style="flex:${m.prediction.p1}" class="${m.prediction.pick === 1 ? "lead" : ""}"></i><i style="flex:${m.prediction.p2}" class="${m.prediction.pick === 2 ? "lead" : ""}"></i></div>` : "");
 const catTag = (m) => `<span class="tn-cat c-${esc(m.category ?? "unknown")}">${esc(categoryLabel(m))}</span>`;
 const betTag = (m) => (m.bet ? `<span class="tn-bet ${m.bet.verdict === "BET" ? "yes" : "no"}" title="${esc((m.bet.reasons ?? []).join(" "))}">${esc(m.bet.verdict)}</span>` : "");
 const liveScore = (m) => (m.live?.sets?.length ? `<div class="tn-score live">${esc(m.live.sets.map(([a, b]) => `${a}-${b}`).join("  "))}${m.live.points ? ` <small>punti ${esc(m.live.points)}</small>` : ""}</div>` : m.status === "live" ? `<div class="tn-score live"><small>Punteggio non disponibile</small></div>` : "");
@@ -40,7 +44,8 @@ export function matchCardHtml(m) {
   const win = (slot) => (done && m.winner === slot ? " win" : "");
   return `<button class="tn-card s-${surfaceOf(m) ?? "nd"}" type="button" data-key="${esc(m.key)}">
     <div class="tn-meta"><b>${esc(timeOf(m.startsAt))}</b><span>${esc(dateLabel(m.startsAt))}</span>${m.round ? `<span>${esc(m.round)}</span>` : ""}<span class="tn-grow"></span>${betTag(m)}${statusTag(m)}</div>
-    <div class="tn-players"><div class="tn-pl${win(1)}"><span class="tn-n">${nm(m.p1)}</span>${rank(m.p1.rank)}</div><div class="tn-vs">contro</div><div class="tn-pl${win(2)}"><span class="tn-n">${nm(m.p2)}</span>${rank(m.p2.rank)}</div></div>
+    <div class="tn-players"><div class="tn-pl${win(1)}"><span class="tn-av">${esc(initials(m.p1.name))}</span><span class="tn-n">${nm(m.p1)}</span>${rank(m.p1.rank)}${probOf(m, 1)}</div><div class="tn-vs">contro</div><div class="tn-pl${win(2)}"><span class="tn-av">${esc(initials(m.p2.name))}</span><span class="tn-n">${nm(m.p2)}</span>${rank(m.p2.rank)}${probOf(m, 2)}</div></div>
+    ${pbar(m)}
     ${liveScore(m)}${score}${pickBlock(m)}
     <div class="tn-foot">${surfTag(m)}${catTag(m)}<span class="tn-odds">${esc(oddsText(m))}</span></div>
   </button>`;
@@ -52,7 +57,7 @@ export function listHtml(groups) {
 
 /** Sezioni (In corso, Oggi, Prossimi giorni, Concluse): ognuna richiudibile, con il numero di partite. `groupFn` raggruppa per torneo. */
 export function sectionsHtml(secs, groupFn, openIds = new Set(["live", "today", "upcoming"])) {
-  return secs.map((sec) => `<details class="tn-sec" data-sec="${esc(sec.id)}"${openIds.has(sec.id) ? " open" : ""}><summary><b>${esc(sec.title)}</b><i>${sec.matches.length}</i></summary>${listHtml(groupFn(sec.matches))}</details>`).join("");
+  return secs.map((sec) => `<details class="tn-sec" data-sec="${esc(sec.id)}"${openIds.has(sec.id) ? " open" : ""}><summary><b>${esc(sec.title)}</b><i>${sec.matches.length}</i>${icon("caret-down", "tn-chev")}</summary>${listHtml(groupFn(sec.matches))}</details>`).join("");
 }
 
 export function emptyHtml(kind, detail = "") {
@@ -142,7 +147,7 @@ export function historyHtml(h) {
 const chipRow = (attr, list, cur, label) => `<div class="tn-chips-row" role="group" aria-label="${esc(label)}">${list.map(([v, l]) => `<button type="button" ${attr}="${esc(v)}" aria-pressed="${cur === v}">${esc(l)}</button>`).join("")}</div>`;
 
 function historyRowHtml(r) {
-  const out = !r.published ? `<span class="tn-res na">Astenuto</span>` : r.hit === true ? `<span class="tn-res ok">✓ Centrato</span>` : r.hit === false ? `<span class="tn-res ko">✗ Errato</span>` : `<span class="tn-res na">In attesa</span>`;
+  const out = !r.published ? `<span class="tn-res na">Astenuto</span>` : r.hit === true ? `<span class="tn-res ok">${icon("check")}Centrato</span>` : r.hit === false ? `<span class="tn-res ko">${icon("close")}Errato</span>` : `<span class="tn-res na">In attesa</span>`;
   const pick = r.published ? `${esc(r.pick === 1 ? r.p1Name : r.p2Name)} ${pct(r.pick === 1 ? r.p1 : 1 - r.p1)}` : esc(r.abstainReason ?? "Dati insufficienti");
   return `<div class="tn-hrow"><div><b>${esc(r.p1Name ?? "?")} – ${esc(r.p2Name ?? "?")}</b><small>${esc(when(r.startsAt))} · ${esc(r.tournament ?? "")}${r.score ? ` · ${esc(r.score)}` : ""}</small><small>${r.published ? "Pronostico: " : "Motivo: "}${pick}${r.bet?.verdict === "BET" ? ` · BET` : ""}</small></div>${out}</div>`;
 }

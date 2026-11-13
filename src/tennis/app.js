@@ -1,5 +1,6 @@
 // Stay Live Tennis — schermata tennis (caricata solo quando si sceglie il tennis: un errore qui non tocca il calcio).
 import "./tennis.css";
+import { icon, iconPair, markSvg } from "../icons.js";
 import { esc, dayParts } from "../format.js";
 import { DEFAULT_FILTERS, DEFAULT_HISTORY_FILTERS, SURFACE_LABEL, CATEGORY_LABEL, GENDER_LABEL, STATUS_FILTERS, facets, filterMatches, groupByTournament, sanitizeFilters, sanitizeMatches, sections } from "./board.js";
 import { detailHtml, diagnosticsHtml, emptyHtml, historyViewHtml, sectionsHtml } from "./view.js";
@@ -8,7 +9,7 @@ import { detailHtml, diagnosticsHtml, emptyHtml, historyViewHtml, sectionsHtml }
 const CACHE_KEY = "sl-tennis-board-v2";
 const STALE_MS = 75 * 60e3; // la snapshot si rinnova ogni 15–30 minuti
 const REFRESH_MS = 5 * 60e3;
-const refreshIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></svg>`;
+const refreshIcon = icon("refresh");
 
 async function getJson(url, ms = 15000) {
   const ctl = new AbortController();
@@ -23,17 +24,16 @@ const readCache = () => { try { return JSON.parse(localStorage.getItem(CACHE_KEY
 const writeCache = (data) => { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), data })); } catch { /* spazio esaurito */ } };
 
 export function mountTennis(root, { onSwitch = () => {} } = {}) {
-  const state = { matches: [], history: null, diagnostics: null, hf: { ...DEFAULT_HISTORY_FILTERS }, builtAt: null, filters: { ...DEFAULT_FILTERS }, tab: "matches", loading: false, error: null, fromCache: false, lastLoad: 0 };
+  const state = { matches: [], history: null, diagnostics: null, hf: { ...DEFAULT_HISTORY_FILTERS }, builtAt: null, filters: { ...DEFAULT_FILTERS }, tab: "matches", fOpen: false, loading: false, error: null, fromCache: false, lastLoad: 0 };
 
   root.innerHTML = `
     <header class="tn-top">
-      <a class="tn-brand" href="/" aria-label="Stay Live Tennis"><svg class="tn-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="10" fill="#0b1a2a"/><circle cx="16" cy="16" r="9" fill="#c6e03b"/><path d="M8.5 11.5c4 2 11 2 15 0M8.5 20.5c4-2 11-2 15 0" fill="none" stroke="#0b1a2a" stroke-width="1.6" stroke-linecap="round"/></svg><span>Stay<b>Live</b></span><em>Tennis</em></a>
-      <div class="tn-actions"><button class="tn-pill" id="tn-switch" type="button" aria-label="Cambia sport">Tennis ▾</button><button class="tn-ic" id="tn-refresh" type="button" aria-label="Aggiorna dati">${refreshIcon}</button></div>
+      <a class="tn-brand" href="/" aria-label="Stay Live Tennis">${markSvg("tn-mark", "#C8F031", "#2DE29A")}<span>Stay<b>Live</b></span></a>
+      <div class="tn-actions"><button class="tn-pill" id="tn-switch" type="button" aria-label="Cambia sport">${icon("tennis-ball")}<span>Tennis</span>${icon("caret-down")}</button><button class="tn-ic" id="tn-refresh" type="button" aria-label="Aggiorna dati">${refreshIcon}</button></div>
     </header>
     <main class="tn-main">
-      <section class="tn-intro"><h1>Partite di tennis</h1><p id="tn-sum" class="tn-sum" aria-live="polite">Caricamento…</p></section>
+      <section class="tn-intro"><p class="eyebrow">${icon("tennis-ball")}Tennis · ATP e WTA</p><h1>Partite di tennis</h1><p id="tn-sum" class="tn-sum" aria-live="polite">Caricamento…</p></section>
       <div id="tn-banner" class="tn-banner" role="status" hidden></div>
-      <div class="tn-seg tn-seg3" id="tn-tabs" role="group" aria-label="Sezione"><button type="button" data-tab="matches" aria-pressed="true">Partite</button><button type="button" data-tab="history" aria-pressed="false">Storico</button><button type="button" data-tab="diag" aria-pressed="false">Diagnostica</button></div>
       <div id="tn-pane-matches">
         <div id="tn-filters" class="tn-filters"></div>
         <div id="tn-body"></div>
@@ -41,7 +41,12 @@ export function mountTennis(root, { onSwitch = () => {} } = {}) {
       <div id="tn-pane-history" hidden></div>
       <div id="tn-pane-diag" hidden></div>
     </main>
-    <dialog id="tn-detail" aria-label="Dettaglio partita"><span class="grab" aria-hidden="true"></span><button class="close" data-close aria-label="Chiudi">×</button><div id="tn-detail-body" class="tn-detail-body"></div></dialog>`;
+    <nav class="sl-nav tn n3" id="tn-tabs" role="group" aria-label="Sezione"><span class="sl-nav-ind" aria-hidden="true"></span>
+      <button type="button" data-tab="matches" aria-pressed="true"><span class="tab-ic">${iconPair("tennis-ball")}</span><span class="tab-lb">Partite</span></button>
+      <button type="button" data-tab="history" aria-pressed="false"><span class="tab-ic">${iconPair("history")}</span><span class="tab-lb">Storico</span></button>
+      <button type="button" data-tab="diag" aria-pressed="false"><span class="tab-ic">${iconPair("pulse")}</span><span class="tab-lb">Diagnostica</span></button>
+    </nav>
+    <dialog id="tn-detail" aria-label="Dettaglio partita"><span class="grab" aria-hidden="true"></span><button class="close" data-close aria-label="Chiudi">${icon("close")}</button><div id="tn-detail-body" class="tn-detail-body"></div></dialog>`;
 
   const $ = (s) => root.querySelector(s);
   const dlg = $("#tn-detail");
@@ -62,7 +67,9 @@ export function mountTennis(root, { onSwitch = () => {} } = {}) {
     const tourney = fx.tournaments.length > 1 ? `<select id="tn-tournament" aria-label="Torneo"><option value="all">Tutti i tornei</option>${fx.tournaments.map((t) => `<option value="${esc(t)}"${t === f.tournament ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>` : "";
     const picks = `<label class="tn-check"><input type="checkbox" id="tn-onlypicks"${f.onlyPicks ? " checked" : ""}> Con pronostico</label><label class="tn-check"><input type="checkbox" id="tn-onlybet"${f.onlyBet ? " checked" : ""}> Solo BET</label>`;
     const days = fx.days.length > 1 ? `<div class="tn-days" role="group" aria-label="Data">${btn("data-day", "all", "Tutti", f.day).replace(">Tutti<", "><b>Tutti</b><small>i giorni</small><")}${fx.days.map((k) => { const d = dayParts(k); return `<button type="button" data-day="${esc(k)}" aria-pressed="${f.day === k}"><b>${esc(d.wd)}</b><small>${esc(d.dm)}</small></button>`; }).join("")}</div>` : "";
-    return `${search}${status}${tours}${cats}${surfaces}<div class="tn-row">${tourney}</div><div class="tn-row">${picks}</div>${days}`;
+    const active = [f.tour !== "all", f.category && f.category !== "all", f.surface !== "all", f.tournament !== "all", f.status !== "all", f.onlyPicks, f.onlyBet].filter(Boolean).length;
+    const bar = `<div class="tn-searchbar">${search}<button type="button" class="tn-ftoggle" data-ftoggle aria-expanded="${state.fOpen}" aria-controls="tn-fpanel">${icon("sliders")}<span>Filtri</span>${active ? `<i>${active}</i>` : ""}</button></div>`;
+    return `${bar}${days}<div class="tn-fpanel" id="tn-fpanel"${state.fOpen ? "" : " hidden"}>${status}${tours}${cats}${surfaces}<div class="tn-row">${tourney}</div><div class="tn-row">${picks}</div></div>`;
   }
 
   function summaryText() {
@@ -135,6 +142,7 @@ export function mountTennis(root, { onSwitch = () => {} } = {}) {
   root.addEventListener("click", (e) => {
     const t = e.target;
     if (!(t instanceof Element)) return;
+    const ft = t.closest("[data-ftoggle]"); if (ft) { state.fOpen = !state.fOpen; return render(); }
     const card = t.closest("[data-key]"); if (card && root.contains(card)) return openDetail(card.dataset.key);
     if (t.closest("#tn-switch")) return onSwitch();
     if (t.closest("#tn-refresh")) return void load();
