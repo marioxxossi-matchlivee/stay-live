@@ -73,6 +73,7 @@ export async function fetchUpcoming(api, tours = TOURS, meta = {}) {
     const r = await api.paginate((p) => `/upcoming/matches/${tour}?group=singles&limit=50&pageNo=${p}`, readPage, { maxPages: CFG.upcomingPages });
     for (const w of r.warnings) note(meta, `programma ${tour}: ${w}`);
     for (const row of r.items) { const n = normalizeUpcoming(row, tour); if (n) out.push(n); else dropped++; }
+    if (r.capped) { meta.capped = true; break; }
   }
   meta.upcoming = { rows: out.length, dropped };
   return out;
@@ -85,6 +86,7 @@ export async function fetchResults(api, dates, tours = TOURS, meta = {}) {
     const r = await api.paginate((p) => `/${tour}/results/${date}?pageNo=${p}&pageSize=50`, readPage, { maxPages: CFG.resultPages });
     for (const w of r.warnings) note(meta, `risultati ${tour} ${date}: ${w}`);
     for (const row of r.items) { const n = normalizeResult(row, tour); if (n) out.push(n); else if (Array.isArray(row?.player1?.members)) doubles++; else dropped++; }
+    if (r.capped) { meta.capped = true; meta.results = { rows: out.length, dropped, doublesSkipped: doubles, dates: dates.length, capped: true }; return out; }
   }
   meta.results = { rows: out.length, dropped, doublesSkipped: doubles, dates: dates.length };
   return out;
@@ -200,10 +202,14 @@ export async function runLive({ api, db, now }) {
   return meta;
 }
 
-export async function runRefresh({ api, db, now, days = 2 }) {
+export async function runRefresh({ api, db, now }) {
   const meta = {};
+  // Risultati: oggi; anche ieri solo nelle prime ore UTC (partite finite a cavallo della mezzanotte). Così si risparmia metà delle richieste.
+  // NB: `days` (BACKFILL_DAYS, 30 di default) vale SOLO per il backfill: il refresh lo ignora (era la causa del tetto raggiunto).
+  const nDays = new Date(now).getUTCHours() < 6 ? 2 : 1;
+  // Prima i risultati (chiudono le partite finite e alimentano il modello), poi il programma: se il tetto scatta, restano i risultati.
+  const results = await fetchResults(api, datesBack(now, nDays), TOURS, meta);
   const upcoming = await fetchUpcoming(api, TOURS, meta);
-  const results = await fetchResults(api, datesBack(now, days), TOURS, meta);
   meta.saved = await saveMatches(db, upcoming, results, now);
   const since = iso(now - 1 * H);
   const [matches, stats, rankings, bt] = await Promise.all([
@@ -282,7 +288,7 @@ export async function runJob(mode, { api, db, now = Date.now(), days, dates }) {
   let meta = {};
   try {
     meta = await job.fn({ api, db, now, days, dates });
-    meta.quota = api.stats.quota; meta.requests = api.stats.requests; meta.errorsHttp = api.stats.errors;
+    meta.quota = api.stats.quota; meta.requests = api.stats.requests; meta.errorsHttp = api.stats.errors; meta.byPath = api.stats.byPath;
     await recordUsage(db, api, now).catch(() => {});
     await finish(db, job.id, Date.now(), { ok: true, meta });
     return { ok: true, meta };
