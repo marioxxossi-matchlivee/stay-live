@@ -1,3 +1,4 @@
+import { icon } from "./icons.js";
 /**
  * Elenco compatto delle giocate salvate: riga chiusa (squadre, scudetti, esito) + pannello a fisarmonica con tutti i dettagli.
  * Funzioni pure: restituiscono HTML (ogni valore dell'utente passa da esc()) e non toccano gli stati o i risultati delle giocate.
@@ -7,17 +8,16 @@ import { dayKey, dayParts, esc } from "./format.js";
 
 /** Etichette degli stati già calcolati da plays.js (won | lost | pending | void): nessuno stato nuovo. */
 export const STATUS_LABEL = { won: "VINTA", lost: "PERSA", pending: "IN ATTESA", void: "ANNULLATA" };
-const svg = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${d}</svg>`;
 const STATUS_ICON = {
-  won: svg(`<path d="M20 6 9 17l-5-5"/>`),
-  lost: svg(`<path d="M6 6l12 12M18 6 6 18"/>`),
-  pending: svg(`<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>`),
-  void: svg(`<path d="M5 12h14"/>`),
+  won: icon("check", "ic-pill"),
+  lost: icon("close", "ic-pill"),
+  pending: icon("clock", "ic-pill"),
+  void: icon("minus", "ic-pill"),
 };
 /** Esito: testo + icona (mai solo il colore). */
 export const statusPill = (s) => `<span class="st-pill st-${esc(s)}">${STATUS_ICON[s] ?? ""}${STATUS_LABEL[s] ?? esc(String(s).toUpperCase())}</span>`;
 
-const CHEVRON = `<svg class="acc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg>`;
+const CHEVRON = icon("caret-down", "acc-chev");
 const domId = (id) => `acc-${String(id).replace(/[^\w-]/g, "_")}`;
 
 /**

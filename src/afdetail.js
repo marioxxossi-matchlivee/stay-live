@@ -4,6 +4,7 @@
  */
 import { dayKey, dayParts, esc, fmtTime, num } from "./format.js";
 import { crest as crestBase, initials } from "./ui.js";
+import { icon } from "./icons.js";
 import { adviceIt, commentIt, countryIt, eventIt, injuryTypeIt, posShortIt, reasonIt, roundIt } from "../functions/api/_it.js";
 
 const dash = "—";
@@ -11,24 +12,9 @@ const val = (v) => (v == null || v === "" ? dash : esc(v));
 const when = (iso) => (iso ? `${dayParts(dayKey(iso)).dm} ${fmtTime.format(new Date(iso))}` : dash);
 const empty = (msg) => `<p class="af-empty">${esc(msg)}</p>`;
 
-/* Icone (tratto, 24x24) usate nelle intestazioni delle sezioni */
-const ICON = {
-  match: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
-  pred: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
-  odds: '<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
-  injuries: '<path d="M3 12h4l2-5 4 10 2-5h6"/>',
-  people: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
-  lineups: '<circle cx="9" cy="8" r="3.5"/><path d="M2 21a7 7 0 0 1 14 0"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14.5a5.5 5.5 0 0 1 5 5.5"/>',
-  events: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
-  stats: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
-  h2h: '<path d="M7 7h13l-3-3M17 17H4l3 3"/>',
-  table: '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/>',
-  season: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>',
-  shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
-  pin: '<path d="M12 21s7-6.2 7-11a7 7 0 0 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>',
-  alert: '<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/>',
-};
-const svg = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICON[name]}</svg>`;
+/* Icone delle intestazioni: Phosphor (src/icons.js), stesso stile del resto dell'app */
+const ICON = { match: "calendar", pred: "target", odds: "tag", injuries: "first-aid", people: "user", lineups: "users", events: "clock", stats: "chart-bar", h2h: "swap", table: "list-numbers", season: "chart-line", shield: "shield-check", pin: "map-pin", alert: "warning" };
+const svg = (name) => icon(ICON[name] ?? "info");
 
 const sec = (title, body, { open = false, note = "", icon = "match", tone = "slate" } = {}) =>
   `<details class="af-sec"${open ? " open" : ""}><summary><span class="af-ic" data-tone="${tone}">${svg(icon)}</span><span class="af-st">${esc(title)}</span>${note ? `<small>${esc(note)}</small>` : ""}<i class="af-chev" aria-hidden="true"></i></summary><div class="af-body">${body}</div></details>`;

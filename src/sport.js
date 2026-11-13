@@ -2,6 +2,7 @@
 // Un errore nel tennis non può toccare il calcio: il caricamento è dinamico e protetto.
 import "./sport.css";
 import "./monitor-tab.js";
+import { icon, markSvg } from "./icons.js";
 
 const KEY = "sl-sport";
 const body = document.body;
@@ -16,12 +17,12 @@ gate.id = "sport-gate";
 gate.hidden = true;
 gate.innerHTML = `
   <div class="sg-inner">
-    <svg class="sg-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="10" fill="#0b1a2a"/><circle cx="16" cy="16" r="7.5" fill="none" stroke="#18b36f" stroke-width="3"/><circle cx="16" cy="16" r="2.4" fill="#fff"/></svg>
+    ${markSvg("sg-mark")}
     <h1>Stay<span>Live</span></h1>
     <p>Scegli lo sport. Puoi cambiare in qualsiasi momento.</p>
     <div class="sg-cards">
-      <button type="button" class="sg-card football" data-sport="football"><span class="sg-ico" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="12" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 10l5 3.6-1.9 5.8h-6.2L11 13.6z" fill="currentColor"/><path d="M16 10V4M21 13.6l5.6-1.8M19.1 19.4l3.5 4.8M12.9 19.4l-3.5 4.8M11 13.6L5.4 11.8" stroke="currentColor" stroke-width="2" fill="none"/></svg></span><b>Stay Live Calcio</b><small>Probabilità, BET o EVITA e preview di giornata</small></button>
-      <button type="button" class="sg-card tennis" data-sport="tennis"><span class="sg-ico" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="12" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 10c6 3.2 14 3.2 20 0M6 22c6-3.2 14-3.2 20 0" fill="none" stroke="currentColor" stroke-width="2"/></svg></span><b>Stay Live Tennis</b><small>Pronostico del vincitore, ATP e WTA</small></button>
+      <button type="button" class="sg-card football" data-sport="football"><span class="sg-ico" aria-hidden="true">${icon("soccer-ball")}</span><b>Stay Live Calcio</b><small>Probabilità, BET o EVITA e preview di giornata</small><span class="sg-go" aria-hidden="true">${icon("caret-right")}</span></button>
+      <button type="button" class="sg-card tennis" data-sport="tennis"><span class="sg-ico" aria-hidden="true">${icon("tennis-ball")}</span><b>Stay Live Tennis</b><small>Pronostico del vincitore, ATP e WTA</small><span class="sg-go" aria-hidden="true">${icon("caret-right")}</span></button>
     </div>
   </div>`;
 const root = document.createElement("div");
@@ -46,7 +47,7 @@ async function showTennis() {
   if (tennis) return tennis.show();
   if (loadingTennis) return;
   loadingTennis = true;
-  root.innerHTML = `<div class="sg-loading">Caricamento del tennis…</div>`;
+  root.innerHTML = `<div class="sg-loading"><i class="sg-spin"></i>Caricamento del tennis…</div>`;
   try {
     const mod = await import("./tennis/app.js");
     root.innerHTML = "";

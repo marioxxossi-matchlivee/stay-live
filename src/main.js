@@ -1,4 +1,7 @@
 import "./style.css";
+import "./design/tokens.css";
+import "./design/shell.css";
+import "./design/football.css";
 import { MODEL, verdictFor } from "../functions/api/model.js";
 import { MIN_ODDS_DEFAULT, adjustPick, clampMinOdds } from "./rules.js";
 import { computePlan, isBetItem } from "./plan.js";
@@ -9,7 +12,7 @@ import { crest, hideBrokenCrests, matchHeader } from "./ui.js";
 import { efficiency, efficiencyHtml, reliabilityHtml } from "./efficiency.js";
 import { absorbCorners, absorbResults, addPlay, evaluate, legFromItem, loadPlays, pendingCornerIds, pendingMatchIds, playFromItem, savePlays, signature } from "./plays.js";
 import { cornerBarHtml, cornerHtml, cornerShort } from "./corners.js";
-import { icon } from "./icons.js";
+import { icon, iconFill } from "./icons.js";
 import { enableSwipe } from "./gestures.js";
 import { accordionHtml, filterRows, groupByDay, playHeadHtml } from "./playlist.js";
 import { showToast } from "./toast.js";
@@ -198,7 +201,7 @@ function rowSaveHtml(m) {
   const cand = isOpen(m) ? playOfList(m) : null;
   if (!cand) return "";
   const saved = isSaved(cand);
-  return `<button class="row-save${saved ? " done" : ""}" type="button" data-row-save="${esc(m.id)}" aria-label="${saved ? `Giocata salvata: ${esc(cand.label)}` : `Salva giocata: ${esc(cand.label)}`}" aria-pressed="${saved}"${saved ? " disabled" : ""}>${icon("bookmark")}</button>`;
+  return `<button class="row-save${saved ? " done" : ""}" type="button" data-row-save="${esc(m.id)}" aria-label="${saved ? `Giocata salvata: ${esc(cand.label)}` : `Salva giocata: ${esc(cand.label)}`}" aria-pressed="${saved}"${saved ? " disabled" : ""}>${saved ? iconFill("bookmark") : icon("bookmark")}</button>`;
 }
 function rowHtml(m, k = 0) {
   const time = fmtTime.format(new Date(m.kickoffAt));
@@ -247,7 +250,7 @@ function renderLeagueNav() {
       const ls = inC.filter((l) => l.country === n.country).sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name, "it"));
       const key = `${c.id}:${n.country}`;
       return accordionHtml({ id: `nat:${key}`, open: openAcc.has(`nat:${key}`), cls: "nation", headCls: "nation-head",
-        head: `<span>${n.international ? "🏆 " : ""}${esc(n.nation)}</span><small>${ls.length} ${ls.length === 1 ? "campionato" : "campionati"}</small>`,
+        head: `<span>${n.international ? icon("trophy") : ""}${esc(n.nation)}</span><small>${ls.length} ${ls.length === 1 ? "campionato" : "campionati"}</small>`,
         body: `<div class="nation-leagues">${ls.length > 1 ? chip(`n:${n.country}`, "Tutti") : ""}${ls.map((l) => chip(l.id, l.name)).join("")}</div>` });
     }).join("");
     return `<section class="continent"><h3>${esc(c.name)}</h3>${items}</section>`;
