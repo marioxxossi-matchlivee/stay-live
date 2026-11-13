@@ -1,0 +1,35 @@
+# Stay Live — icone aggiornate
+
+Questo pacchetto segue la struttura e i nomi mostrati negli screenshot del repository.
+
+## Installazione da smartphone
+Estrai lo ZIP e carica/sostituisci i file mantenendo esattamente i percorsi:
+- `public/icons/*` nella cartella `public/icons/` del repository
+- `public/apple-touch-icon.png` nella cartella `public/`
+- `public/favicon.ico` nella cartella `public/`
+
+Non sostituire `manifest.webmanifest`: non è incluso perché va verificato prima che i suoi riferimenti corrispondano ai file esistenti.
+
+## File inclusi
+`public/icons/` contiene:
+- apple-touch-icon-120.png
+- apple-touch-icon-152.png
+- apple-touch-icon-167.png
+- apple-touch-icon-180.png
+- favicon-16.png
+- favicon-32.png
+- icon-48.png
+- icon-72.png
+- icon-96.png
+- icon-128.png
+- icon-144.png
+- icon-192.png
+- icon-256.png
+- icon-384.png
+- icon-512.png
+- icon-maskable-192.png
+- icon-maskable-512.png
+
+Nella cartella `public/` sono inclusi anche `apple-touch-icon.png` e `favicon.ico`.
+
+Nota: le icone sono derivate dal concept grafico approvato. Le versioni maskable centrano l'artwork in un'area di sicurezza; per un adaptive icon Android nativo a livelli separati serve un foreground dedicato e un background separato.
