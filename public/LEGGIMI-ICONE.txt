@@ -1,0 +1,14 @@
+# Stay Live — Dominance (crop corretto)
+
+Pacchetto rigenerato correggendo il ritaglio: ora l'intera icona centrale
+è inclusa, con tutti i bordi luminosi e gli angoli arrotondati integri.
+È stato aggiunto un sottile margine nero per evitare che il bordo esterno
+venga tagliato. Non sono incluse parti delle icone adiacenti.
+
+## Installazione
+Estrarre nella root del repository e sostituire:
+- `public/icons/`
+- `public/apple-touch-icon.png`
+- `public/favicon.ico`
+
+`manifest.webmanifest` non è incluso e resta invariato.
