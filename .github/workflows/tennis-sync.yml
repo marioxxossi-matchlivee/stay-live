@@ -25,6 +25,10 @@ on:
         description: "Solo backfill: quanti giorni di risultati scaricare (consigliato 120; ~8 richieste a giorno)"
         required: false
         default: "120"
+      backfill_dates:
+        description: "Solo backfill: ripasso mirato di date specifiche (AAAA-MM-GG separate da virgola); se compilato prevale sui giorni"
+        required: false
+        default: ""
 
 concurrency:
   group: tennis-sync-${{ github.event.inputs.mode || github.event.schedule }}
@@ -59,4 +63,5 @@ jobs:
           TENNIS_API_KEY: ${{ secrets.TENNIS_API_KEY }}
           TENNIS_API_BASE: ${{ secrets.TENNIS_API_BASE }}
           BACKFILL_DAYS: ${{ github.event.inputs.backfill_days }}
+          BACKFILL_DATES: ${{ github.event.inputs.backfill_dates }}
         run: node scripts/tennis-sync.js "${{ steps.mode.outputs.mode }}"
