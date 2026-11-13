@@ -23,20 +23,21 @@ test("parsePaths: predefinito, separatori e rifiuto di percorsi pericolosi", () 
   assert.throws(() => parsePaths("senza-slash"));
 });
 
-test("probeOne: chiave solo nelle intestazioni, errori senza segreti, timeout gestito", async () => {
+test("probeOne: chiave solo nell'intestazione, mai nell'URL; errori e timeout senza segreti", async () => {
   let seen;
-  const ok = await probeOne("h.example", "K1", "/x", async (url, opt) => { seen = { url, opt }; return new Response(JSON.stringify({ list: [1, 2, 3] }), { status: 200 }); });
-  assert.equal(ok.ok, true); assert.ok(!seen.url.includes("K1")); assert.equal(seen.opt.headers["X-RapidAPI-Key"], "K1");
-  const err = await probeOne("h.example", "K1", "/x", async () => new Response("chiave K1 non valida", { status: 403 }));
+  const ok = await probeOne("K1", "/x", async (url, opt) => { seen = { url, opt }; return new Response(JSON.stringify({ list: [1, 2, 3] }), { status: 200 }); }, 1000, { base: "https://b.example/v1/tennis/" });
+  assert.equal(ok.ok, true); assert.equal(seen.url, "https://b.example/v1/tennis/x");
+  assert.equal(seen.opt.headers["X-Gravitee-Api-Key"], "K1"); assert.ok(!seen.url.includes("K1"));
+  const err = await probeOne("K1", "/x", async () => new Response("chiave K1 non valida", { status: 403 }));
   assert.equal(err.ok, false); assert.ok(!JSON.stringify(err).includes("K1"));
-  const net = await probeOne("h.example", "K1", "/x", async () => { throw new Error("giù K1"); });
+  const net = await probeOne("K1", "/x", async () => { throw new Error("giù K1"); });
   assert.equal(net.status, 0); assert.ok(!JSON.stringify(net).includes("K1"));
 });
 
-test("probeOne direct: chiave in X-Gravitee-Api-Key, mai nell'URL, percorso dopo l'URL base", async () => {
-  let seen;
-  const r = await probeOne("", "K2", "/x", async (url, opt) => { seen = { url, opt }; return new Response("{}", { status: 200 }); }, 1000, { mode: "direct", base: "https://b.example/v1/tennis/" });
-  assert.equal(r.ok, true); assert.equal(seen.url, "https://b.example/v1/tennis/x");
-  assert.equal(seen.opt.headers["X-Gravitee-Api-Key"], "K2"); assert.equal(seen.opt.headers["X-RapidAPI-Key"], undefined);
-  assert.ok(!seen.url.includes("K2"));
+test("nessun riferimento a RapidAPI nel codice, nei workflow e nella sonda", async () => {
+  const fs = await import("node:fs");
+  for (const f of ["../scripts/tennis-probe.js", "../.github/workflows/tennis-probe.yml", "../functions/api/_tennis-provider.js", "../functions/api/_tennis-client.js"]) {
+    const txt = fs.readFileSync(new URL(f, import.meta.url), "utf8");
+    assert.doesNotMatch(txt, /X-RapidAPI|rapidapi\.com|TENNIS_API_HOST|TENNIS_API_MODE/i, f);
+  }
 });

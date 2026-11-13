@@ -156,3 +156,16 @@ test("Platt: pochi dati → nessuna calibrazione; dati ben calibrati → paramet
   const over = rows.map((x) => ({ p: Math.min(0.97, 0.5 + (x.p - 0.5) * 1.8), y: x.y }));
   assert.ok(fitPlatt(over).a < 0.8);
 });
+
+test("ranking: conta solo con Elo povero di dati; mancante dichiarato; nessun effetto con storico ricco", async () => {
+  const { RatingBook, predictMatch } = await import("../functions/api/_tennis-model.js");
+  const mk = (n) => { const b = new RatingBook(); for (let i = 0; i < n; i++) { b.update({ t: i * 86400e3, winnerId: "a", loserId: "x" + i, surface: "hard" }); b.update({ t: i * 86400e3, winnerId: "b", loserId: "y" + i, surface: "hard" }); } return b; };
+  const match = { t: 1e12, surface: "Hard", tour: "atp", p1: { id: "a" }, p2: { id: "b" } };
+  const thin = mk(14), rich = mk(60);
+  const base = predictMatch(thin, match, {}), withRank = predictMatch(thin, match, { rank: { p1: 5, p2: 200 } });
+  assert.ok(base.missing.includes("ranking")); assert.ok(withRank.components.rankAdj > 0); assert.ok(withRank.p1 > base.p1);
+  assert.ok(withRank.reasons.some((r) => /Ranking/.test(r)));
+  const r1 = predictMatch(rich, match, {}), r2 = predictMatch(rich, match, { rank: { p1: 5, p2: 200 } });
+  assert.equal(r2.components.rankAdj, 0); assert.equal(r1.p1, r2.p1);
+  assert.ok(Math.abs(withRank.p1 + withRank.p2 - 1) < 1e-9);
+});

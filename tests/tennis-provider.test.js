@@ -65,7 +65,7 @@ test("risultati: vincitore legato all'ID (player1 = vincitore), formato dal prov
 
 test("risultati: esito non 'completed' o vincitore ignoto NON diventa una vittoria normale", () => {
   const ret = normalizeResult({ ...resultSingles, result_type: "retired" }, "atp");
-  assert.equal(ret.winner, null); assert.equal(ret.status, "unknown"); assert.equal(ret.result_type, "retired");
+  assert.equal(ret.winner, null); assert.equal(ret.status, "ended_other"); assert.equal(ret.result_type, "retired");
   assert.equal(normalizeResult({ ...resultSingles, match_winner: 999 }, "atp").winner, null);
   assert.equal(normalizeResult({ ...resultSingles, best_of: "7" }, "atp").best_of, null);
 });
@@ -148,5 +148,5 @@ test("ranking per data: array senza involucro e campo pts; walkover non è una v
   const r = normalizeRankingPage([{ date: "2026-11-09T00:00:00.000Z", pts: 9550, position: 1, player: { id: 24008, name: "Alexander Zverev", countryAcr: "GER" } }], "atp");
   assert.equal(r.rows.length, 1); assert.equal(r.rows[0].points, 9550); assert.equal(r.hasNext, false);
   const wo = normalizeResult({ ...resultSingles, result_type: "walkover", result: "w/o" }, "atp");
-  assert.equal(wo.winner, null); assert.equal(wo.status, "unknown"); assert.equal(wo.result_type, "walkover");
+  assert.equal(wo.winner, null); assert.equal(wo.status, "ended_other"); assert.equal(wo.result_type, "walkover");
 });
