@@ -23,7 +23,7 @@ import { buildBoard } from "../functions/api/_tennis-snapshot.js";
 const H = 3600e3, DAY = 24 * H;
 export const LIMITS = { live: 6, refresh: 160, static: 450, backfill: 6000 };   // richieste massime per giro (la quota mensile è 200.000)
 export const QUOTA_RESERVE = 3000;                                              // sotto questa quota residua si lavora solo sull'essenziale
-export const CFG = { finishedWindowH: 48, historyDays: 400, statsTtlDays: 7, statsCapPerRun: 140, rankPages: 3, resultPages: 8, upcomingPages: 10, snapshotMaxAgeMin: 90 };
+export const CFG = { finishedWindowH: 48, historyDays: 400, statsTtlDays: 7, statsCapPerRun: 140, rankPages: 3, resultPages: 24, upcomingPages: 10, snapshotMaxAgeMin: 90 };
 const iso = (t) => new Date(t).toISOString();
 export const ymd = (t) => iso(t).slice(0, 10);
 /** Date UTC (YYYY-MM-DD) dei `n` giorni che finiscono a `now`, dal più recente. */
@@ -265,9 +265,9 @@ export async function runStatic({ api, db, now }) {
   return meta;
 }
 
-export async function runBackfill({ api, db, now, days }) {
+export async function runBackfill({ api, db, now, days, dates }) {
   const meta = {};
-  const results = await fetchResults(api, datesBack(now, days), TOURS, meta);
+  const results = await fetchResults(api, dates?.length ? dates : datesBack(now, days), TOURS, meta); // `dates`: ripasso mirato di giorni specifici
   meta.saved = await saveMatches(db, [], results, now);
   await buildAndStoreSnapshot(db, now, { job: "backfill", api, jobMeta: meta });
   return meta;
@@ -276,12 +276,12 @@ export async function runBackfill({ api, db, now, days }) {
 const JOBS = { live: { fn: runLive, lock: 600, id: "live" }, refresh: { fn: runRefresh, lock: 1500, id: "refresh" }, static: { fn: runStatic, lock: 3000, id: "static" }, backfill: { fn: runBackfill, lock: 3300, id: "backfill" } };
 
 /** Esegue un giro con blocco, stato e consumo. Restituisce { ok, skipped?, meta }. Mai segreti nei messaggi. */
-export async function runJob(mode, { api, db, now = Date.now(), days }) {
+export async function runJob(mode, { api, db, now = Date.now(), days, dates }) {
   const job = JOBS[mode]; if (!job) throw new Error(`Modalità sconosciuta: ${mode}`);
   if (!(await begin(db, job.id, job.lock))) return { ok: true, skipped: "un altro giro dello stesso tipo è ancora in corso", meta: {} };
   let meta = {};
   try {
-    meta = await job.fn({ api, db, now, days });
+    meta = await job.fn({ api, db, now, days, dates });
     meta.quota = api.stats.quota; meta.requests = api.stats.requests; meta.errorsHttp = api.stats.errors;
     await recordUsage(db, api, now).catch(() => {});
     await finish(db, job.id, Date.now(), { ok: true, meta });
@@ -301,7 +301,8 @@ async function main() {
   if (need.length) { console.error(`Variabili mancanti: ${need.join(", ")}`); process.exit(1); }
   const api = createClient({ key: process.env.TENNIS_API_KEY, base: process.env.TENNIS_API_BASE || DIRECT_BASE, maxRequests: Math.min(LIMITS[mode] ?? 200, Number(process.env.TENNIS_MAX_REQUESTS) || Infinity) });
   const days = Math.max(1, Math.min(400, Number(process.env.BACKFILL_DAYS) || 30));
-  const res = await runJob(mode, { api, db: makeDb(process.env), days });
+  const dates = String(process.env.BACKFILL_DATES ?? "").split(/[,\s]+/).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+  const res = await runJob(mode, { api, db: makeDb(process.env), days, dates });
   const line = res.skipped ? `Saltato: ${res.skipped}` : res.ok ? `OK ${mode}: ${api.stats.requests} richieste, quota residua ${api.stats.quota.remaining ?? "n.d."}` : `ERRORE ${mode}: ${res.error}`;
   console.log(line);
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Tennis — ${mode}\n${line}\n\n\`\`\`json\n${JSON.stringify(res.meta, null, 2).slice(0, 4000)}\n\`\`\`\n`);
