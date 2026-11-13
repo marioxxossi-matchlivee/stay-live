@@ -6,7 +6,7 @@
 export const DIRECT_BASE = "https://api.sportsapi365.com/v1/tennis";
 
 export class TennisApiError extends Error {
-  constructor(message, { status = 0, path = "", retryable = false } = {}) { super(message); this.name = "TennisApiError"; this.status = status; this.path = path; this.retryable = retryable; }
+  constructor(message, { status = 0, path = "", retryable = false, code = "" } = {}) { super(message); this.name = "TennisApiError"; this.status = status; this.path = path; this.retryable = retryable; this.code = code; }
 }
 const redact = (text, key) => (key ? String(text).split(key).join("***") : String(text));
 const sleepReal = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -30,7 +30,7 @@ export function createClient({ key, base = DIRECT_BASE, fetchImpl = fetch, sleep
     if (!String(path).startsWith("/") || /\s|\.\.|:\/\//.test(path)) throw new TennisApiError(`Percorso non valido: ${path}`, { path });
     let last;
     for (let attempt = 0; attempt <= retries; attempt++) {
-      if (stats.requests >= maxRequests) throw new TennisApiError(`Tetto di ${maxRequests} richieste per giro raggiunto`, { path });
+      if (stats.requests >= maxRequests) throw new TennisApiError(`Tetto di ${maxRequests} richieste per giro raggiunto`, { path, code: "cap" });
       const wait = minGapMs - (now() - lastCall); if (wait > 0) await sleep(wait);
       if (stats.rate.remaining !== null && stats.rate.remaining <= 2) await sleep(1500); // vicini al limite al minuto: si rallenta
       lastCall = now(); stats.requests++; stats.lastAt = new Date(now()).toISOString();
@@ -72,7 +72,13 @@ export function createClient({ key, base = DIRECT_BASE, fetchImpl = fetch, sleep
   async function paginate(pathFor, readPage, { maxPages = 12, idOf = (x) => x?.id ?? x?.matchId } = {}) {
     const items = []; const warnings = []; let prevFirst = null;
     for (let page = 1; page <= maxPages; page++) {
-      const body = await get(pathFor(page));
+      let body;
+      try { body = await get(pathFor(page)); }
+      catch (e) {
+        // Tetto di richieste raggiunto: NON è un errore del giro. Si tiene ciò che è già stato letto e si segnala (capped).
+        if (e instanceof TennisApiError && e.code === "cap") return { items, warnings: [...warnings, `Tetto di richieste raggiunto alla pagina ${page}: letto solo in parte`], complete: false, capped: true };
+        throw e;
+      }
       const r = readPage(body);
       if (r.problem) { if (page === 1) warnings.push(r.problem); break; }
       const first = r.items.length ? String(idOf(r.items[0])) : null;
