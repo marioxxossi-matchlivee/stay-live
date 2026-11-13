@@ -11,16 +11,18 @@
 // Se i dati sono insufficienti il modello si ASTIENE: nessun pronostico pubblicato.
 
 export const TENNIS_MODEL = {
-  version: "tennis-v1",
+  version: "tennis-v2",
   baseElo: 1500,
   kBase: 250, kOffset: 5, kShape: 0.4,        // K = kBase / (n + kOffset)^kShape
   surfaceWeightMax: 0.6, surfaceWeightHalf: 25, // peso dell'Elo di superficie: max * n / (n + half)
   formWindow: 10, formDecay: 0.85, formPoints: 60,   // punti Elo per 1.0 di scarto di forma
   h2hPoints: 40, h2hMinMeetings: 2, h2hShrink: 4,
   fatigueDays: 7, fatigueFree: 3, fatiguePerMatch: 12,
-  serveBlendMax: 0.35, serveMinMatches: 8,
+  serveBlendMax: 0.35, serveMinMatches: 8, serveMinPoints: 1500, // il provider non dà il numero di partite: la solidità si misura sui punti al servizio osservati
   // Valori di riferimento (da ricalibrare sui dati reali): quota di punti vinti al servizio in media sul circuito.
   tourServeAvg: { atp: 0.645, wta: 0.565 },
+  // Ranking ufficiale: contributo piccolo e SOLO dove l'Elo è ancora povero di dati (giocatori con poche partite nello storico).
+  rankPoints: 45, rankThinN: 30, rankMax: 250,   // punti Elo per 1.0 di differenza di ln(posizione); si applica solo se uno dei due ha < rankThinN partite
   minMatches: 12,        // sotto questa soglia (per uno dei due giocatori) il modello si astiene
   minEdge: 0.05,         // sotto 55% per il favorito il match è considerato equilibrato: nessun pronostico
   probClip: 0.02,
@@ -230,6 +232,17 @@ export function predictMatch(book, match, extras = {}, calibrator = null, cfg = 
     reasons.push(`Scontri diretti ${h.p1Wins}-${h.p2Wins}.`);
   } else missing.push("scontri diretti");
 
+  // 3b) Ranking: solo con Elo ancora povero di dati, per non duplicare l'informazione già nell'Elo. Dato corrente (nel backtest non c'è: extras.rank assente).
+  const rk = extras.rank;
+  let rankAdj = 0;
+  if (rk && Number(rk.p1) > 0 && Number(rk.p2) > 0) {
+    if (Math.min(v1.n, v2.n) < cfg.rankThinN) {
+      rankAdj = clamp(cfg.rankPoints * (Math.log(rk.p2) - Math.log(rk.p1)), -cfg.rankMax, cfg.rankMax);
+      diff += rankAdj;
+      reasons.push(`Ranking: n. ${rk.p1} contro n. ${rk.p2}.`);
+    }
+  } else missing.push("ranking");
+
   // 4) Carico recente (solo penalità)
   const l1 = book.load(id1, match.t), l2 = book.load(id2, match.t);
   const pen = (l) => Math.max(0, l - cfg.fatigueFree) * cfg.fatiguePerMatch;
@@ -241,7 +254,7 @@ export function predictMatch(book, match, extras = {}, calibrator = null, cfg = 
 
   // 5) Modello a punti (solo con dati completi di entrambi)
   const s1 = extras.stats1, s2 = extras.stats2;
-  const okStats = (s) => s && Number.isFinite(s.serve) && Number.isFinite(s.ret) && (s.matches ?? 0) >= cfg.serveMinMatches;
+  const okStats = (s) => s && Number.isFinite(s.serve) && Number.isFinite(s.ret) && ((s.matches ?? 0) >= cfg.serveMinMatches || (s.servePoints ?? 0) >= cfg.serveMinPoints);
   let pPoint = null;
   if (okStats(s1) && okStats(s2)) {
     pPoint = clamp(pointModelProb(s1, s2, { bestOf, tour: match.tour, cfg }), 0.02, 0.98);
@@ -269,7 +282,7 @@ export function predictMatch(book, match, extras = {}, calibrator = null, cfg = 
   const reliability = score >= 4 ? "alta" : score >= 2.5 ? "media" : "bassa";
 
   const common = { ...base, p1: p1r, p2: p2r, reliability, reasons, missing,
-    components: { ...base.components, eloDiff: Math.round(diff), formAdj: Math.round(formAdj), h2hAdj: Math.round(h2hAdj * 10) / 10, fatigueAdj, pElo: round4(pElo), pPoint: pPoint == null ? null : round4(pPoint), load1: l1, load2: l2 } };
+    components: { ...base.components, eloDiff: Math.round(diff), formAdj: Math.round(formAdj), rankAdj: Math.round(rankAdj), h2hAdj: Math.round(h2hAdj * 10) / 10, fatigueAdj, pElo: round4(pElo), pPoint: pPoint == null ? null : round4(pPoint), load1: l1, load2: l2 } };
 
   if (pFav - 0.5 < cfg.minEdge) {
     return { ...common, published: false, pick: null, abstainReason: "Partita equilibrata: nessun favorito netto, nessun pronostico." };

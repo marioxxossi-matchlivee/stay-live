@@ -34,6 +34,21 @@ export function canonicalMatchKey(tournamentId, roundId, idA, idB) {
   return `${tournamentId}|${roundId}|${lo}|${hi}`;
 }
 
+/** courtId dei risultati → superficie (verificato sui tornei: Knoxville Challenger indoor = 3, M25 Santa Cruz do Sul = 2, WTA Finals Indian Wells = 1; 5 = Grass dal riepilogo per superficie). Id non noti → null (mai indovinati). */
+export const COURT_ID_SURFACE = { 1: "Hard", 2: "Clay", 3: "I.hard", 5: "Grass" };
+export const surfaceFromCourtId = (id) => COURT_ID_SURFACE[Number(id)] ?? null;
+
+/** Esito di un risultato: solo "completed" è una conclusione regolare. Ritiri, walkover e altro NON sono vittorie normali e non entrano nel modello. */
+export function resultStatus(resultType) {
+  const t = String(resultType ?? "").toLowerCase();
+  if (t === "completed") return "finished";
+  if (/postpon|rinvi/.test(t)) return "postponed";
+  if (/cancel|annull|abandon/.test(t)) return "cancelled";
+  if (/interrupt|suspend|susp/.test(t)) return "interrupted";
+  if (/retir|ret\b|walk|w\/o|wo\b|default|disqual/.test(t)) return "ended_other";
+  return t ? "ended_other" : "unknown";
+}
+
 const isDoubles = (row) => Array.isArray(row?.player1?.members) || Array.isArray(row?.player2?.members) || /\//.test(`${row?.player1?.name ?? ""}${row?.player2?.name ?? ""}`);
 
 function baseRow(tour, tournament, t, p1, p2, round, bestOf) {
@@ -91,8 +106,10 @@ export function normalizeResult(row, tour) {
   const winner = normal && wid ? (wid === a.id ? 1 : wid === b.id ? 2 : null) : null;
   return {
     ...out, match_key: canonicalMatchKey(out.tournament_id, row.roundId, a.id, b.id), provider_id: idOf(row.matchId ?? row.id),
-    live_match_id: idOf(row.matchKey), surface: null, // la riga dei risultati non riporta la superficie: si completa dal programma/torneo
-    status: normal && winner ? "finished" : "unknown", winner, score: row.result ?? null, result_type: row.result_type ?? null,
+    live_match_id: idOf(row.matchKey), surface: surfaceFromCourtId(row.tournament?.courtId), // la riga dei risultati dà courtId, non il nome della superficie
+    status: normal ? (winner ? "finished" : "unknown") : resultStatus(row.result_type), winner, score: row.result ?? null, result_type: row.result_type ?? null,
+    court_id: Number.isFinite(Number(row.tournament?.courtId)) ? Number(row.tournament.courtId) : null,
+    closing_odds: validOdd(row.odd1) && validOdd(row.odd2) ? { [id1]: validOdd(row.odd1), [id2]: validOdd(row.odd2) } : null, // per ID giocatore; storico, mai usate per l'EV
   };
 }
 
@@ -192,4 +209,27 @@ export function normalizeSurfaceSummary(body) {
     byYear.push({ year: yr, ...rec });
   }
   return { byYear, total };
+}
+
+/**
+ * Tornei e superfici da /upcoming/filters?include=options. `tournaments`: [{id, name, type (atp|wta), rankId, surfaceId, country}],
+ * `surfaces`: elenco [{id, name}] (a volte avvolto in {_length,_example} solo nei campioni ridotti: qui si accetta solo l'elenco reale).
+ */
+export function normalizeTournamentFilters(body) {
+  const list = Array.isArray(body?.tournaments) ? body.tournaments : null;
+  if (!list) return { tournaments: [], problem: "elenco tornei non trovato" };
+  const surf = new Map((Array.isArray(body?.surfaces) ? body.surfaces : []).filter((x) => x?.id != null).map((x) => [Number(x.id), String(x.name ?? "")]));
+  const tournaments = [];
+  for (const t of list) {
+    const id = idOf(t?.id); if (!id || !TOURS.includes(t?.type)) continue;
+    const surface = surf.get(Number(t.surfaceId)) || surfaceFromCourtId(t.surfaceId);
+    tournaments.push({ id, tour: t.type, name: t.name ?? null, level_id: asInt(t.rankId), category: classifyCategory(t.rankId, t.name), surface: surface || null, country: t.country ?? null });
+  }
+  return { tournaments, problem: null };
+}
+
+/** Elenco di eventi del feed live (/extend/api/events/live): { success, results: [...], count }. */
+export function readLiveFeed(body) {
+  if (!body || body.success === false || !Array.isArray(body.results)) return { items: [], problem: "feed live non valido" };
+  return { items: body.results, problem: null };
 }
