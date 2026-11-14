@@ -69,6 +69,7 @@ export const SELECTIONS = [
   { key: "dc1x", market: "Doppia chance", label: "1X · Casa o pareggio" },
   { key: "dcx2", market: "Doppia chance", label: "X2 · Pareggio o trasferta" },
   { key: "dc12", market: "Doppia chance", label: "12 · Niente pareggio" },
+  { key: "over05", market: "Gol totali", label: "Over 0,5" },
   { key: "over15", market: "Gol totali", label: "Over 1,5" },
   { key: "under15", market: "Gol totali", label: "Under 1,5" },
   { key: "over25", market: "Gol totali", label: "Over 2,5" },
@@ -111,6 +112,7 @@ export function marketsFromMatrix(m) {
   m.forEach((row, i) => row.forEach((v, j) => {
     if (i > j) p.home += v; else if (i === j) p.draw += v; else p.away += v;
     const t = i + j;
+    if (t > 0) p.over05 += v;
     if (t > 1) p.over15 += v;
     if (t > 2) p.over25 += v;
     if (t > 3) p.over35 += v;
@@ -131,7 +133,7 @@ export function probabilities(lh, la, rho = MODEL.rho) {
   const n = MODEL.maxGoals;
   const ph = poissonPmf(lh, n), pa = poissonPmf(la, n);
   const c00 = rho ? Math.max(0, 1 - lh * la * rho) : 1, c01 = rho ? Math.max(0, 1 + lh * rho) : 1, c10 = rho ? Math.max(0, 1 + la * rho) : 1, c11 = rho ? Math.max(0, 1 - rho) : 1;
-  let total = 0, home = 0, draw = 0, away = 0, o15 = 0, o25 = 0, o35 = 0, btts = 0;
+  let total = 0, home = 0, draw = 0, away = 0, o05 = 0, o15 = 0, o25 = 0, o35 = 0, btts = 0;
   for (let i = 0; i <= n; i += 1) {
     for (let j = 0; j <= n; j += 1) {
       let v = ph[i] * pa[j];
@@ -139,6 +141,7 @@ export function probabilities(lh, la, rho = MODEL.rho) {
       total += v;
       if (i > j) home += v; else if (i === j) draw += v; else away += v;
       const t = i + j;
+      if (t > 0) o05 += v;
       if (t > 1) o15 += v;
       if (t > 2) o25 += v;
       if (t > 3) o35 += v;
@@ -147,7 +150,7 @@ export function probabilities(lh, la, rho = MODEL.rho) {
   }
   const p = { ...ZERO_MARKETS };
   p.home = home / total; p.draw = draw / total; p.away = away / total;
-  p.over15 = o15 / total; p.over25 = o25 / total; p.over35 = o35 / total; p.btts = btts / total;
+  p.over05 = o05 / total; p.over15 = o15 / total; p.over25 = o25 / total; p.over35 = o35 / total; p.btts = btts / total;
   p.dc1x = p.home + p.draw; p.dcx2 = p.draw + p.away; p.dc12 = p.home + p.away;
   p.under15 = 1 - p.over15; p.under25 = 1 - p.over25; p.under35 = 1 - p.over35;
   p.nobtts = 1 - p.btts;
@@ -268,7 +271,7 @@ export function outcomes(hg, ag) {
   const t = hg + ag;
   return {
     home: +(hg > ag), draw: +(hg === ag), away: +(hg < ag), dc1x: +(hg >= ag), dcx2: +(hg <= ag), dc12: +(hg !== ag),
-    over15: +(t > 1), under15: +(t <= 1), over25: +(t > 2), under25: +(t <= 2), over35: +(t > 3), under35: +(t <= 3),
+    over05: +(t > 0), over15: +(t > 1), under15: +(t <= 1), over25: +(t > 2), under25: +(t <= 2), over35: +(t > 3), under35: +(t <= 3),
     btts: +(hg > 0 && ag > 0), nobtts: +!(hg > 0 && ag > 0),
   };
 }
@@ -358,26 +361,34 @@ export function withMinOdds(value, fn) {
 export const minOddsParam = (src) => { const v = Number((src?.searchParams ?? src)?.get?.("minodds")); return v >= 1 && v <= 3 ? Math.round(v * 100) / 100 : null; };
 
 export function verdictFor(sel, sample, odds = null) {
-  if (sample < MODEL.betSample) return { verdict: "EVITA", reason: `Campione troppo piccolo (${sample} partite, ne servono ${MODEL.betSample}).` };
-  if (sel.agree === "contraddice") return { verdict: "EVITA", reason: `${sel.agreeBy ?? "API-Football"} non è d'accordo: stima ${((sel.pWorst ?? sel.pApi) * 100).toFixed(0)}% per questo esito.` };
+  if (sample < MODEL.betSample) return { verdict: "EVITA", code: "S", reason: `Campione troppo piccolo (${sample} partite, ne servono ${MODEL.betSample}).` };
+  if (sel.agree === "contraddice") return { verdict: "EVITA", code: "A", reason: `${sel.agreeBy ?? "API-Football"} non è d'accordo: stima ${((sel.pWorst ?? sel.pApi) * 100).toFixed(0)}% per questo esito.` };
   const real = sel.odds?.median > 1 ? sel.odds.median : null;     // quota reale di mercato per questa selezione (se il mercato la quota)
   if (!(Number.isFinite(odds) && odds > 1) && real) odds = real;
   if (Number.isFinite(odds) && odds > 1) {
     const ev = sel.pLow * odds;
-    if (odds < MODEL.minPlayOdds) return { verdict: "EVITA", reason: `Quota ${odds.toFixed(2).replace(".", ",")} sotto il minimo di ${MODEL.minPlayOdds.toFixed(2).replace(".", ",")}: il rischio non è ripagato.` };
-    if (sel.pLow < MODEL.longshotFloor) return { verdict: "EVITA", reason: "Probabilità prudente troppo bassa anche con quota alta." };
+    if (odds < MODEL.minPlayOdds) return { verdict: "EVITA", code: "Q", reason: `Quota ${odds.toFixed(2).replace(".", ",")} sotto il minimo di ${MODEL.minPlayOdds.toFixed(2).replace(".", ",")}: il rischio non è ripagato.` };
+    if (sel.pLow < MODEL.longshotFloor) return { verdict: "EVITA", code: "L", reason: "Probabilità prudente troppo bassa anche con quota alta." };
     return ev >= MODEL.edgeMargin
-      ? { verdict: "BET", reason: `Valore atteso prudente +${((ev - 1) * 100).toFixed(1).replace(".", ",")}%.` }
-      : { verdict: "EVITA", reason: `Quota troppo bassa: serve almeno ${sel.minOdds.toFixed(2).replace(".", ",")}.` };
+      ? { verdict: "BET", code: "B", reason: `Valore atteso prudente +${((ev - 1) * 100).toFixed(1).replace(".", ",")}%.` }
+      : { verdict: "EVITA", code: "E", reason: `Quota troppo bassa: serve almeno ${sel.minOdds.toFixed(2).replace(".", ",")}.` };
   }
-  if (MODEL.requireRealOdds) return { verdict: "EVITA", reason: `Quota reale non disponibile: senza non si può verificare il valore (si gioca solo da ${MODEL.minPlayOdds.toFixed(2).replace(".", ",")} in su e con valore atteso positivo).` };
+  if (MODEL.requireRealOdds) return { verdict: "EVITA", code: "R", reason: `Quota reale non disponibile: senza non si può verificare il valore (si gioca solo da ${MODEL.minPlayOdds.toFixed(2).replace(".", ",")} in su e con valore atteso positivo).` };
   const edgePts = sel.edge == null ? null : `${sel.edge >= 0 ? "+" : "−"}${Math.abs(sel.edge * 100).toFixed(0)}`;
   const edgeText = edgePts == null ? "" : ` (${edgePts} punti sulla media del campionato)`;
-  if (sel.pLow < MODEL.betThreshold) return { verdict: "EVITA", reason: `Probabilità prudente ${(sel.pLow * 100).toFixed(0)}% sotto la soglia ${(MODEL.betThreshold * 100).toFixed(0)}%.` };
+  if (sel.pLow < MODEL.betThreshold) return { verdict: "EVITA", code: "T", reason: `Probabilità prudente ${(sel.pLow * 100).toFixed(0)}% sotto la soglia ${(MODEL.betThreshold * 100).toFixed(0)}%.` };
   const edgeOk = MODEL.edgeMode === "ratio" ? sel.base > 0 && sel.pLow / sel.base - 1 >= MODEL.minEdgeRatio : sel.edge != null && sel.edge >= MODEL.minEdge;
-  if (sel.edge == null || !edgeOk) return { verdict: "EVITA", reason: `Esito probabile ma ${edgePts == null ? "in linea con la media del campionato" : `${edgePts} punti sulla media del campionato`}: niente di speciale in questa partita.` };
-  return { verdict: "BET", reason: `Probabilità prudente ${(sel.pLow * 100).toFixed(0)}%${edgeText}. Senza quota reale il valore NON è verificato: gioca solo se la quota è almeno ${sel.minOdds.toFixed(2).replace(".", ",")}.` };
+  if (sel.edge == null || !edgeOk) return { verdict: "EVITA", code: "M", reason: `Esito probabile ma ${edgePts == null ? "in linea con la media del campionato" : `${edgePts} punti sulla media del campionato`}: niente di speciale in questa partita.` };
+  return { verdict: "BET", code: "B", reason: `Probabilità prudente ${(sel.pLow * 100).toFixed(0)}%${edgeText}. Senza quota reale il valore NON è verificato: gioca solo se la quota è almeno ${sel.minOdds.toFixed(2).replace(".", ",")}.` };
 }
+
+/** Ordine di interesse di due selezioni (BET prima, poi vantaggio dimostrato su quota reale, conferma del provider, vantaggio sulla media, probabilità prudente). Lo usa il consiglio principale e la sintesi per mercato. */
+export const interestOrder = (x, y) => (y.verdict === "BET") - (x.verdict === "BET")
+  || (y.verified) - (x.verified)                                   // prima il vantaggio dimostrato su quota reale...
+  || (x.verified && y.verified ? y.evLow - x.evLow : 0)            // ...ordinato per valore atteso prudente
+  || (y.verdict === "BET" && isPreferred(y)) - (x.verdict === "BET" && isPreferred(x))
+  || afRank(x) - afRank(y)                                         // a parità, prima ciò che API-Football conferma
+  || (y.edge ?? -1) - (x.edge ?? -1) || y.pLow - x.pLow;
 
 const afRank = (s) => (s.agree === "conferma" ? 0 : s.agree === "contraddice" ? 2 : 1);
 
@@ -450,12 +461,7 @@ export function analyzeMatch(match, ctx, { n = 8, af = null, market = null, inj 
 
   // Con quota reale decide il valore atteso (nessun filtro sulla probabilità); senza quota resta il filtro "quota equa >= 1,25".
   const ranked = selections.filter((s) => s.odds || s.p <= MODEL.maxUsefulProb)
-    .sort((x, y) => (y.verdict === "BET") - (x.verdict === "BET")
-      || (y.verified) - (x.verified)                                   // prima il vantaggio dimostrato su quota reale...
-      || (x.verified && y.verified ? y.evLow - x.evLow : 0)            // ...ordinato per valore atteso prudente
-      || (y.verdict === "BET" && isPreferred(y)) - (x.verdict === "BET" && isPreferred(x))
-      || afRank(x) - afRank(y)                                         // a parità, prima ciò che API-Football conferma
-      || (y.edge ?? -1) - (x.edge ?? -1) || y.pLow - x.pLow);
+    .sort(interestOrder);
   const pick = ranked[0] ?? null;
   const scores = [];
   m.forEach((row, i) => row.forEach((v, j) => scores.push({ score: `${i}-${j}`, p: round(v) })));
@@ -486,6 +492,44 @@ export function compactPick(analysis) {
     basis: analysis.basis, pApi: s.pApi, pModel: s.pModel, pMarket: s.pMarket, agree: s.agree,
     odds: s.odds ? { median: s.odds.median, best: s.odds.best ?? null, book: s.odds.book ?? null } : null, ev: s.ev, evLow: s.evLow, verified: s.verified };
 }
+
+/** Gruppi di mercati della scheda partita. */
+export const MARKET_GROUPS = {
+  esito: ["home", "draw", "away"],
+  dc: ["dc1x", "dcx2", "dc12"],
+  gol: ["btts", "nobtts"],
+  ou: ["over05", "over15", "under15", "over25", "under25", "over35", "under35"],
+};
+const FORM_LETTER = (r) => (r.gf > r.ga ? "V" : r.gf < r.ga ? "P" : "N");
+
+/**
+ * Tutti i mercati di una partita in forma compatta, per la lista (stesse probabilità del consiglio principale: nessun secondo calcolo).
+ * x[chiave] = { p, l: prudente, e: vantaggio sulla media, o: quota reale, ev: valore atteso, g: 1 conferma / -1 contraddice / 0, v: 1 se BET, c: codice del verdetto, sp: distanza tra le fonti }
+ * b = esito più pronosticato per gruppo: 1X2 e gol/no gol = il più probabile; over/under e doppia chance = il più interessante secondo il motore.
+ * st = dati reali su cui poggiano le motivazioni (gol attesi, medie gol, forma). null se il campione è insufficiente.
+ */
+export function marketsOf(analysis) {
+  if (!analysis || analysis.confidence === "insufficiente") return null;
+  const sel = analysis.selections, byKey = new Map(sel.map((s) => [s.key, s]));
+  const useful = (s) => s.odds || s.p <= MODEL.maxUsefulProb;
+  const b = {};
+  for (const [g, keys] of Object.entries(MARKET_GROUPS)) {
+    const list = keys.map((k) => byKey.get(k)).filter(Boolean);
+    // 1X2 e gol/no gol: l'esito più probabile. Over/under e doppia chance: tra i lati favoriti (probabilità >= 50%) il più interessante per il motore.
+    const fav = list.filter((s) => s.p >= 0.5);
+    const top = g === "esito" || g === "gol" ? [...list].sort((x, y) => y.p - x.p)[0] : [...(fav.length ? fav : list)].filter(useful).sort(interestOrder)[0] ?? [...list].sort((x, y) => y.p - x.p)[0];
+    b[g] = top?.key ?? null;
+  }
+  const x = {};
+  for (const s of sel) x[s.key] = { p: s.p, l: s.pLow, e: s.edge, o: s.odds?.median ?? null, ev: s.ev, g: s.agree === "conferma" ? 1 : s.agree === "contraddice" ? -1 : 0, v: s.verdict === "BET" ? 1 : 0, c: s.code ?? null, sp: s.spread };
+  const i = analysis.inputs, side = (f) => ({ n: f.n, gf: f.gfAvg, ga: f.gaAvg, f: f.last.map(FORM_LETTER).join("") });
+  const pc = analysis.api?.used ? analysis.api.percent : null;
+  return { b, x, rec: analysis.recommended ?? [], s: analysis.sample, c: analysis.confidence, ba: analysis.basis,
+    st: { lh: analysis.lambda.home, la: analysis.lambda.away, tot: analysis.lambda.total, lg: i.baseline.avgGoals ?? (i.baseline.home + i.baseline.away), h: side(i.home), a: side(i.away), api: pc ? { h: pc.home, d: pc.draw, a: pc.away } : null, abs: analysis.fusion?.absent ?? null } };
+}
+
+/** Regole del motore che la lista deve conoscere per spiegare i verdetti (una volta sola per risposta, non per partita). */
+export const rulesOf = () => ({ thr: MODEL.betThreshold, maxUseful: MODEL.maxUsefulProb, minEdge: MODEL.minEdge, minPlay: MODEL.minPlayOdds, betSample: MODEL.betSample, margin: MODEL.edgeMargin });
 
 /** Over/Under 2,5 in breve (per la modalità personalizzata): i due lati e il migliore. null se il campione è insufficiente. */
 export function ou25Of(analysis) {

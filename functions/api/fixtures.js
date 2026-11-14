@@ -1,7 +1,7 @@
 import {
   CONTINENTS, LEAGUES, SEASON, errorMessage, isActiveLeague, json, loadFinals, missingConfig, supabaseGet, supabaseGetAll, syncDue,
 } from "./_lib.js";
-import { analyzeMatch, buildContext, compactPick, ou25Of } from "./model.js";
+import { analyzeMatch, buildContext, compactPick, marketsOf, ou25Of, rulesOf } from "./model.js";
 import { loadCornerOdds } from "./_corners.js";
 import { loadLogoIndex, needsTeamList, withLogos } from "./_crests.js";
 import { loadBrainInputs } from "./_brain.js";
@@ -72,19 +72,20 @@ export async function buildFixtures(env) {
     const byLeague = Object.fromEntries(states.map((s) => [s.league, s]));
     const matches = window.map((m) => {
       const open = m.status === "scheduled" || m.status === "in_progress";
-      let pick = null, ou = null;
+      let pick = null, ou = null, mk = null;
       if (open) {
         const extra = br?.byGame.get(m.game_id) ?? null;
         const key = `${sig}|${m.game_id}|${m.kickoff_at}|${m.status}|${extra ? JSON.stringify(extra) : ""}`;
         let hit = MEMO.get(key);
-        if (!hit) { const analysis = analyzeMatch(m, ctx, { n: 8, ...(extra ?? {}) }); hit = { pick: compactPick(analysis), ou: ou25Of(analysis) }; if (MEMO.size > 3000) MEMO.clear(); MEMO.set(key, hit); }
-        ({ pick, ou } = hit);
+        if (!hit) { const analysis = analyzeMatch(m, ctx, { n: 8, ...(extra ?? {}) }); hit = { pick: compactPick(analysis), ou: ou25Of(analysis), mk: marketsOf(analysis) }; if (MEMO.size > 3000) MEMO.clear(); MEMO.set(key, hit); }
+        ({ pick, ou, mk } = hit);
       }
       return {
         id: m.game_id, league: m.league, round: m.round, kickoffAt: m.kickoff_at, status: m.status,
         home: m.home_name, away: m.away_name, ...withLogos(m, logos), homeScore: m.home_score, awayScore: m.away_score,
         pick,
-        ou,                                                                       // modalità personalizzata: Over/Under 2,5
+        ou,                                                                       // Over/Under 2,5 in breve (compatibilità con le versioni precedenti dell'app)
+        mk,                                                                       // tutti i mercati della partita (1X2, doppia chance, gol, over/under) con le stesse probabilità del consiglio
         corner: cr?.byGame.get(m.game_id) ?? null,                                // corner (quote di API-Football), solo se già scaricati
         cornerModel: open && cctx && Date.parse(m.kickoff_at) < now + 7 * 86400e3 ? cornerModel(cctx, { league: m.league, kickoff_at: m.kickoff_at, home_id: m.home_id, away_id: m.away_id }) : null,   // modello Stay Live sui corner storici reali (distinto dalle quote)
       };
@@ -92,6 +93,7 @@ export async function buildFixtures(env) {
     return { ok: true, payload: {
       updatedAt: new Date(now).toISOString(),
       historyMatches: ctx.matchCount,
+      rules: rulesOf(),
       continents: CONTINENTS,
       leagues: LEAGUES.map((l) => ({ ...l, syncedAt: byLeague[l.id]?.synced_at ?? null, count: byLeague[l.id]?.matches_count ?? 0, error: byLeague[l.id]?.last_error ?? null })),
       needsCrests: LEAGUES.filter((l) => needsTeamList(l.id) && !logos.has(l.afId) && window.some((m) => m.league === l.id)).map((l) => l.id),   // campionati con partite ma senza scudetti in cache
