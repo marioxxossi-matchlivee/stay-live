@@ -171,3 +171,51 @@ dialog.sheet-drag{transition:none}
 @keyframes slshine{0%{background-position:100% 0}16%{background-position:0% 0}100%{background-position:0% 0}}
 @media (prefers-reduced-motion:reduce){.brand .word::after,.tn-brand>span::after{animation:none;display:none}}
 #tn-seg{grid-template-columns:repeat(2,1fr)}
+
+/* =====================================================================
+   Scheda partita unica · mercati (1X2, Gol, Over/Under, Corner) con tre stati: analizzato · interessante · BET
+   ===================================================================== */
+.row .mk-wrap{grid-column:2 / -1;position:relative;display:grid;gap:8px;margin-top:6px;padding-right:8px}
+.mk-open{position:absolute;inset:0 0 auto 0;height:calc(100% - 44px);z-index:0;border:0;background:none;padding:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.mkts{position:relative;z-index:1;display:grid;gap:5px;pointer-events:none}
+.mk{display:grid;grid-template-columns:62px auto minmax(0,1fr) auto;align-items:baseline;gap:4px 8px;padding:7px 10px;border-radius:12px;background:var(--sl-s2);border:1px solid var(--sl-line);font-size:12.5px;color:var(--sl-mute)}
+.mk-name{font-weight:700;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--sl-mute)}
+.mk-pick{display:inline-flex;align-items:baseline;gap:6px;white-space:nowrap}
+.mk-pick b{font:800 15px var(--sl-font);color:var(--sl-ink);letter-spacing:-.02em}
+.mk-pick em{font:800 14px var(--sl-font);font-style:normal;color:var(--sl-ink-2);font-variant-numeric:tabular-nums}
+.mk-rest{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+.mk-na{grid-column:2 / -1;color:var(--sl-faint);font-style:italic}
+.mk.none{background:transparent;border-style:dashed}
+.mk.interesting{background:var(--sl-accent-tint);border-color:var(--sl-accent-line)}
+.mk.interesting .mk-pick em{color:var(--sl-accent)}
+.mk.bet{background:var(--sl-bet-g-tint);border-color:var(--sl-bet-g-line)}
+.mk.bet .mk-pick em{color:var(--sl-bet-g-2)}
+.mk-tag{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:999px}
+.mk-tag .ic{font-size:11px;margin:0}
+.mk-tag.bet{background:var(--sl-bet-g);color:#fff}
+.mk-tag.int{background:var(--sl-accent);color:#fff}
+.mk-mot{position:relative;z-index:1;margin:0;font-size:12.5px;line-height:1.45;color:var(--sl-ink-2);pointer-events:none}
+.mk-mot b{color:var(--sl-ink)}
+.mk-rel{display:inline-block;margin-left:4px;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:800;background:var(--sl-s3);color:var(--sl-ink-2)}
+.mk-rel.alta{background:var(--sl-bet-g-tint);color:var(--sl-bet-g-2)}
+.mk-rel.bassa{background:var(--sl-warn-tint);color:var(--sl-warn)}
+.mk-more{position:relative;z-index:1}
+.mk-more summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:12px;border:1px solid var(--sl-line);background:var(--sl-s1);font:700 13px var(--sl-font);color:var(--sl-accent)}
+.mk-more summary::-webkit-details-marker{display:none}
+.mk-more summary::after{content:"";width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform var(--t-base) var(--ease-out)}
+.mk-more[open] summary::after{transform:rotate(-135deg) translateY(-2px)}
+.mk-body{display:grid;gap:12px;padding:12px 2px 2px}
+.mk-grp h5{margin:0 0 6px;font:800 13px var(--sl-font);color:var(--sl-ink)}
+.mk-grp h5 small{font-weight:600;color:var(--sl-mute);margin-left:6px}
+.mk-scroll{overflow-x:auto}
+.mk-table{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+.mk-table th,.mk-table td{padding:6px 6px;text-align:right;border-bottom:1px solid var(--sl-line);white-space:nowrap}
+.mk-table thead th{font-size:10.5px;font-weight:700;color:var(--sl-mute);text-transform:uppercase;letter-spacing:.04em}
+.mk-table tbody th{text-align:left;font-weight:800;color:var(--sl-ink)}
+.mk-table tr.top td,.mk-table tr.top th{background:var(--sl-s2)}
+.mk-whyh{margin:8px 0 4px;font:700 11px var(--sl-font);color:var(--sl-mute);text-transform:uppercase;letter-spacing:.05em}
+.mk-why{margin:0;padding-left:16px;font-size:12.5px;line-height:1.5;color:var(--sl-ink-2)}
+.mk-why b{color:var(--sl-ink)}
+.mk-note{margin:4px 0 0;font-size:12px;line-height:1.5;color:var(--sl-mute)}
+.mk-grp p{margin:3px 0;font-size:12.5px;color:var(--sl-ink-2)}
+@media (max-width:380px){.mk{grid-template-columns:54px auto minmax(0,1fr)}.mk .mk-tag{grid-column:2 / -1;justify-self:start}}
