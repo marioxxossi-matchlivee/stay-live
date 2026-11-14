@@ -47,16 +47,8 @@
         <div class="seg" id="mode-seg" role="group" aria-label="Filtro partite" style="--i:0">
           <button type="button" data-seg="all" aria-pressed="true">Tutte</button>
           <button type="button" data-seg="bet" aria-pressed="false">Solo BET</button>
-          <button type="button" data-seg="custom" aria-pressed="false">O/U + corner</button>
         </div>
         <div class="days" id="day-strip" aria-label="Giornata"></div>
-        <div class="custom-panel" id="custom-panel" hidden>
-          <div class="cp-row">
-            <label class="hist">Soglia minima
-              <select id="thr"><option value="0.55">55%</option><option value="0.6">60%</option><option value="0.65">65%</option><option value="0.7">70%</option><option value="0.75">75%</option></select></label>
-          </div>
-          <p class="api-note">Over/Under 2,5 dal modello (API-Football + ultime partite). Corner solo dalle quote di API-Football, cercate da sole ogni 4 ore: nessun modello.</p>
-        </div>
         <div class="listbar">
           <button class="chip-btn lg-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="league-nav"></button>
           <div class="menu-wrap">
@@ -93,6 +85,8 @@
             <select id="history-count"><option value="5">5 gare</option><option value="8" selected>8 gare</option><option value="10">10 gare</option></select></label>
           <label class="set-row"><span><b>Quota minima per giocare</b><small>Sotto questa quota l'esito diventa EVITA e le multiple non lo usano. Più è bassa, più BET vedi ma ciascuno rende meno (default 1,30)</small></span>
             <input id="min-odds" type="number" inputmode="decimal" min="1" max="3" step="0.05" value="1.3" /></label>
+          <label class="set-row"><span><b>Soglia dei pronostici interessanti</b><small>Un esito è «Interessante» quando la sua probabilità è almeno questa e API-Football non lo contraddice. Non cambia i BET.</small></span>
+            <select id="thr"><option value="0.55">55%</option><option value="0.6">60%</option><option value="0.65">65%</option><option value="0.7">70%</option><option value="0.75">75%</option></select></label>
         </div>
         <div class="set-group">
           <h2>Dati</h2>
