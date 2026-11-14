@@ -20,3 +20,8 @@ test("senza dati di oggi il rapporto non inventa nulla", () => {
   assert.equal(r.total, null); assert.equal(r.other, null);
   assert.match(reportMarkdown(r), /Nessun contatore per oggi/);
 });
+
+test("un recupero enorme al primo giro del giorno viene segnalato come tale", () => {
+  const r = usageReport({ usage: [{ day: "2026-11-14", requests: 3000, limit_day: 7500, remaining: 4500 }], runs: [{ ...run(0, "recover", 2185, "partial"), started_at: "2026-11-14T00:43:00Z" }, run(4, "full", 800)], now });
+  assert.ok(r.findings.some((f) => /00:43/.test(f) && /2185/.test(f) && /mezzanotte/.test(f)));
+});

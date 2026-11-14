@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runBudgetFor, FRESH_FAR, FRESH_NEAR, eligibleOpen, freshForAt, statusOf, summaryMarkdown, syncAll, tally } from "../scripts/full-refresh.js";
+import { baseUsage, runBudgetFor, FRESH_FAR, FRESH_MID, FRESH_NEAR, eligibleOpen, freshForAt, statusOf, summaryMarkdown, syncAll, tally } from "../scripts/full-refresh.js";
 import { LEAGUES } from "../functions/api/_lib.js";
 
 const H = 3600e3, now = Date.parse("2026-11-09T12:00:00Z");
@@ -8,7 +8,8 @@ const m = (id, h, status = "scheduled", league = "seriea") => ({ game_id: id, le
 
 test("freschezza: 3,5 ore entro 48 ore dal fischio, 11 ore oltre", () => {
   const f = freshForAt(now);
-  assert.equal(f(m("a", 5)), FRESH_NEAR); assert.equal(f(m("b", 47)), FRESH_NEAR); assert.equal(f(m("c", 60)), FRESH_FAR);
+  assert.equal(f(m("a", 5)), FRESH_NEAR); assert.equal(f(m("a2", 11.5)), FRESH_NEAR); assert.equal(f(m("b", 47)), FRESH_MID); assert.equal(f(m("c", 60)), FRESH_FAR);
+  assert.ok(FRESH_MID > 4 * H && FRESH_MID < 8 * H, "tra 12 e 48 ore si rinnova un giro su due");
   assert.ok(FRESH_NEAR < 4 * H, "deve essere minore della cadenza di 4 ore, altrimenti il giro salterebbe dati");
 });
 
@@ -68,4 +69,16 @@ test("budget del giro: i crediti restanti si dividono per i giri che mancano, co
   assert.equal(runBudgetFor(4000, at(12), "recover"), 250, "recupero: 5% ma mai sotto il minimo");
   assert.equal(runBudgetFor(7000, at(12), "recover"), 350);
   assert.equal(runBudgetFor(null, at(12)), Infinity, "senza dato sui crediti non si limita");
+});
+
+test("primo giro dopo la mezzanotte: il tetto non è infinito", () => {
+  const now = Date.parse("2026-11-14T00:43:00Z");
+  const last = { day: "2026-11-13", requests: 7271, limit_day: 7500, remaining: 262 };
+  const b = baseUsage(null, last, now);
+  assert.equal(b.remaining, 7500); assert.equal(b.requests, 0);
+  assert.equal(runBudgetFor(b.remaining, now, "recover"), 375, "recupero: 5% del limite, non tutto");
+  assert.equal(runBudgetFor(b.remaining, now), Math.floor(7500 * 0.85 / 6));
+  const today = { day: "2026-11-14", requests: 100, limit_day: 7500, remaining: 7400 };
+  assert.equal(baseUsage(today, last, now), today, "con il contatore di oggi non cambia nulla");
+  assert.equal(baseUsage(null, null, now), null, "primissima esecuzione: nessun dato, nessun tetto inventato");
 });
