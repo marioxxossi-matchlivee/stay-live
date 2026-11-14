@@ -1,8 +1,9 @@
 // Stay Live Tennis — HTML dell'interfaccia (stringhe pure, tutto passa da esc()).
-import { icon } from "../icons.js";
+import { icon, iconFill } from "../icons.js";
 import { esc, pct, num, fmtTime, dayKey, dayParts } from "../format.js";
-import { surfaceOf, surfaceLabel, SURFACE_LABEL, categoryLabel, flag, CATEGORY_LABEL, DEFAULT_HISTORY_FILTERS, PERIODS, OUTCOMES, filterHistory } from "./board.js";
-import { summarizeHistory } from "../../functions/api/_tennis-snapshot.js";
+import { crest, matchHeader } from "../ui.js";
+import { surfaceOf, surfaceLabel, categoryLabel, flag, CATEGORY_LABEL } from "./board.js";
+import { pickOdds } from "./plays.js";
 
 const timeOf = (iso) => fmtTime.format(new Date(iso));
 const dateLabel = (iso) => { const d = dayParts(dayKey(iso)); return `${d.wd} ${d.dm}`; };
@@ -19,45 +20,56 @@ const relTag = (r) => (r ? `<span class="tn-rel r-${esc(r)}" title="${esc(RELIAB
 const oddsText = (m) => (m.odds && (m.odds.p1 || m.odds.p2) ? `Quote ${num(m.odds.p1)} · ${num(m.odds.p2)}` : "");
 const nameOf = (m, slot) => (slot === 1 ? m.p1.name : m.p2.name);
 
-function pickBlock(m) {
-  const p = m.prediction;
-  if (!p) return `<div class="tn-pick none">In attesa di analisi</div>`;
-  if (!p.published) return `<div class="tn-pick none"><b>Nessun pronostico</b><span>${esc(p.abstainReason ?? "Dati insufficienti.")}</span></div>`;
-  const hit = m.status === "finished" && m.winner ? (p.pick === m.winner ? `<span class="tn-res ok">${icon("check")}Centrato</span>` : `<span class="tn-res ko">${icon("close")}Non centrato</span>`) : "";
-  const prob = p.pick === 1 ? p.p1 : p.p2;
-  return `<div class="tn-pick yes"><div class="tn-pick-head"><b>Pronostico ${p.pick}</b><span class="tn-pick-name">${esc(nameOf(m, p.pick))}</span><em>${pct(prob)}</em></div><div class="tn-pick-foot">${relTag(p.reliability)}${hit}</div></div>`;
-}
-
-
 const RESULT_TYPE_LABEL = (t) => (/walk|w\/o|wo\b/i.test(t ?? "") ? "walkover" : /retir/i.test(t ?? "") ? "ritiro" : t ? String(t) : "esito non regolare");
 const nm = (p) => `${flag(p.country) ? `<span class="tn-flag" aria-hidden="true">${flag(p.country)}</span>` : ""}${esc(p.name)}`;
-const initials = (n) => String(n ?? "?").split(/\s+/).filter(Boolean).slice(-2).map((w) => w[0]).join("").toUpperCase();
-const probOf = (m, slot) => (m.prediction?.published ? `<span class="tn-pp${m.prediction.pick === slot ? " lead" : ""}">${pct(slot === 1 ? m.prediction.p1 : m.prediction.p2)}</span>` : "");
-const pbar = (m) => (m.prediction?.published ? `<div class="tn-pbar" aria-hidden="true"><i style="flex:${m.prediction.p1}" class="${m.prediction.pick === 1 ? "lead" : ""}"></i><i style="flex:${m.prediction.p2}" class="${m.prediction.pick === 2 ? "lead" : ""}"></i></div>` : "");
 const catTag = (m) => `<span class="tn-cat c-${esc(m.category ?? "unknown")}">${esc(categoryLabel(m))}</span>`;
 const betTag = (m) => (m.bet ? `<span class="tn-bet ${m.bet.verdict === "BET" ? "yes" : "no"}" title="${esc((m.bet.reasons ?? []).join(" "))}">${esc(m.bet.verdict)}</span>` : "");
 const liveScore = (m) => (m.live?.sets?.length ? `<div class="tn-score live">${esc(m.live.sets.map(([a, b]) => `${a}-${b}`).join("  "))}${m.live.points ? ` <small>punti ${esc(m.live.points)}</small>` : ""}</div>` : m.status === "live" ? `<div class="tn-score live"><small>Punteggio non disponibile</small></div>` : "");
 
-export function matchCardHtml(m) {
-  const done = m.status === "finished";
-  const score = done && m.score ? `<div class="tn-score">${esc(m.score)}</div>` : m.status === "ended_other" ? `<div class="tn-score"><small>${esc(RESULT_TYPE_LABEL(m.resultType))}${m.score ? ` · ${esc(m.score)}` : ""}</small></div>` : "";
-  const win = (slot) => (done && m.winner === slot ? " win" : "");
-  return `<button class="tn-card s-${surfaceOf(m) ?? "nd"}" type="button" data-key="${esc(m.key)}">
-    <div class="tn-meta"><b>${esc(timeOf(m.startsAt))}</b><span>${esc(dateLabel(m.startsAt))}</span>${m.round ? `<span>${esc(m.round)}</span>` : ""}<span class="tn-grow"></span>${betTag(m)}${statusTag(m)}</div>
-    <div class="tn-players"><div class="tn-pl${win(1)}"><span class="tn-av">${esc(initials(m.p1.name))}</span><span class="tn-n">${nm(m.p1)}</span>${rank(m.p1.rank)}${probOf(m, 1)}</div><div class="tn-vs">contro</div><div class="tn-pl${win(2)}"><span class="tn-av">${esc(initials(m.p2.name))}</span><span class="tn-n">${nm(m.p2)}</span>${rank(m.p2.rank)}${probOf(m, 2)}</div></div>
-    ${pbar(m)}
-    ${liveScore(m)}${score}${pickBlock(m)}
-    <div class="tn-foot">${surfTag(m)}${catTag(m)}<span class="tn-odds">${esc(oddsText(m))}</span></div>
-  </button>`;
+const timeOf2 = (m) => fmtTime.format(new Date(m.startsAt));
+const pickName = (m, slot) => (slot === 1 ? m.p1.name : m.p2.name);
+
+/** Set giocati (uno per giocatore): dal feed live o dal punteggio finale "6-4 6-3". null se non ci sono. */
+export function setsOf(m) {
+  if (m.live?.sets?.length) return m.live.sets.map(([a, b]) => [a, b]);
+  if ((m.status === "finished" || m.status === "ended_other") && m.score) {
+    const out = [...String(m.score).matchAll(/(\d+)-(\d+)/g)].map((x) => [Number(x[1]), Number(x[2])]);
+    return out.length ? out : null;
+  }
+  return null;
+}
+const sideHtml = (m, slot) => {
+  const p = slot === 1 ? m.p1 : m.p2, sets = setsOf(m), win = m.status === "finished" && m.winner === slot;
+  return `<span class="side${win ? " win" : ""}">${crest(p.name, null)}<b>${flag(p.country) ? `<span class="tn-flag" aria-hidden="true">${flag(p.country)}</span>` : ""}${esc(p.name)}</b>${rank(p.rank)}${sets ? `<span class="score sets">${esc(sets.map((x) => x[slot - 1]).join(" "))}</span>` : ""}</span>`;
+};
+
+/** Il consiglio dentro la riga: lo stesso «chip» del calcio (esito in primo piano, BET o EVITA, quota reale o avviso). */
+export function pickChip(m) {
+  const p = m.prediction;
+  if (!p) return `<span class="pick none"><span class="pk-main"><span class="pk-label">In attesa di analisi</span></span></span>`;
+  if (!p.published) return `<span class="pick none"><span class="pk-main"><span class="pk-label">Nessun pronostico</span></span><span class="pk-sub"><span class="pk-q none">${esc(p.abstainReason ?? "Dati insufficienti.")}</span></span></span>`;
+  const bet = m.bet?.verdict === "BET", verdict = m.bet ? (bet ? "BET" : "EVITA") : null, odds = pickOdds(m), prob = p.pick === 1 ? p.p1 : p.p2;
+  const hit = m.status === "finished" && m.winner ? (p.pick === m.winner ? `<span class="tn-res ok">${icon("check")}Centrato</span>` : `<span class="tn-res ko">${icon("close")}Non centrato</span>`) : "";
+  return `<span class="pick ${bet ? "bet" : "skip"}"><span class="pk-main"><span class="pk-label">Vince ${esc(pickName(m, p.pick))}</span>${verdict ? `<b class="vd-pill">${bet ? icon("check") : ""}${verdict}</b>` : ""}</span><span class="pk-sub">${odds ? `<span class="pk-q real">quota ${num(odds)}</span>` : `<span class="pk-q none">quota reale non disponibile</span>`}${hit}<em class="pk-pct" title="Probabilità stimata">${pct(prob)}</em></span></span>`;
+};
+
+export const canSave = (m) => m.prediction?.published === true && (m.status === "scheduled" || m.status === "live");
+export function rowSaveHtml(m, saved) {
+  if (!canSave(m)) return "";
+  const label = `${saved ? "Giocata salvata" : "Salva giocata"}: ${pickName(m, m.prediction.pick)}`;
+  return `<button class="row-save${saved ? " done" : ""}" type="button" data-row-save="${esc(m.key)}" aria-label="${esc(label)}" aria-pressed="${saved}"${saved ? " disabled" : ""}>${saved ? iconFill("bookmark") : icon("bookmark")}</button>`;
 }
 
-export function listHtml(groups) {
-  return groups.map((g) => `<section class="tn-group"><h3 class="tn-gh"><span class="tn-tour">${esc(g.tour.toUpperCase())}</span>${esc(g.tournament)}<small>${esc(g.surface)}</small></h3><div class="tn-list">${g.matches.map(matchCardHtml).join("")}</div></section>`).join("");
-}
-
-/** Sezioni (In corso, Oggi, Prossimi giorni, Concluse): ognuna richiudibile, con il numero di partite. `groupFn` raggruppa per torneo. */
-export function sectionsHtml(secs, groupFn, openIds = new Set(["live", "today", "upcoming"])) {
-  return secs.map((sec) => `<details class="tn-sec" data-sec="${esc(sec.id)}"${openIds.has(sec.id) ? " open" : ""}><summary><b>${esc(sec.title)}</b><i>${sec.matches.length}</i>${icon("caret-down", "tn-chev")}</summary>${listHtml(groupFn(sec.matches))}</details>`).join("");
+/** Riga partita: identica a quella del calcio (stesse classi), con i due giocatori al posto delle squadre. */
+export function rowHtml(m, { saved = false, k = 0 } = {}) {
+  const live = m.status === "live" ? `<span class="live-tag">In corso</span>` : "";
+  const isBet = m.bet?.verdict === "BET" && m.prediction?.published;
+  return `<div class="row${isBet ? " is-bet" : ""}" style="--i:${Math.min(k, 9)}"><span></span>
+    <button class="row-main" type="button" data-key="${esc(m.key)}">
+      <span class="meta"><b>${esc(timeOf2(m))}</b><span>${esc(surfaceLabel(m))}</span><span class="tn-tourn">${esc(m.tournament ?? categoryLabel(m))}</span>${live}</span>
+      <span class="fx">${sideHtml(m, 1)}${sideHtml(m, 2)}</span>
+      ${pickChip(m)}
+    </button>${rowSaveHtml(m, saved)}</div>`;
 }
 
 export function emptyHtml(kind, detail = "") {
@@ -99,7 +111,7 @@ function betBlock(m) {
   return `${verdict}${rows.length ? `<table class="tn-table"><tbody>${rows.join("")}</tbody></table>` : ""}<p class="tn-note">Solo quote pre-partita reali del provider; mai stimate. A partita iniziata non si usano.</p>`;
 }
 
-export function detailHtml(m) {
+export function detailHtml(m, { saved = false } = {}) {
   const p = m.prediction;
   const s1 = m.stats?.p1, s2 = m.stats?.p2;
   const c = p?.components ?? {};
@@ -115,10 +127,13 @@ export function detailHtml(m) {
   const prov = m.provenance ? `<p class="tn-note">Fonte: SportsAPI365 (${esc(m.provenance.endpoint ?? "n.d.")}), letto il ${esc(ago(m.provenance.fetchedAt))}.</p>` : "";
   const live = m.status === "live" ? liveScore(m) : "";
   const final = (m.status === "finished" && m.score) || m.status === "ended_other" ? `<p class="tn-final"><b>${esc(m.score ?? RESULT_TYPE_LABEL(m.resultType))}</b>${m.status === "finished" && m.winner ? ` · ha vinto ${esc(nameOf(m, m.winner))}` : ` · ${esc(RESULT_TYPE_LABEL(m.resultType))}: non conta come vittoria regolare`}</p>` : "";
-  return `<h2 class="tn-dt">${esc(m.p1.name)} <i>contro</i> ${esc(m.p2.name)}</h2>
-    <p class="tn-ds">${esc(m.tour.toUpperCase())} · ${esc(categoryLabel(m))} · ${esc(m.tournament ?? "")}${m.round ? ` · ${esc(m.round)}` : ""} · ${esc(when(m.startsAt))}</p>
-    <div class="tn-chips">${surfTag(m)}${statusTag(m)}${catTag(m)}${betTag(m)}${m.p1.rank || m.p2.rank ? `<span class="tn-chip">Ranking ${esc(m.p1.rank ?? "n.d.")} · ${esc(m.p2.rank ?? "n.d.")}</span>` : ""}</div>
-    ${live}${final}${verdict}${bar}
+  const done = m.status === "finished" || m.status === "ended_other";
+  const centre = done && m.score ? `<strong class="af-big sm">${esc(m.score)}</strong>` : `<strong class="af-big">${esc(timeOf2(m))}</strong>`;
+  const hero = matchHeader({ home: m.p1.name, away: m.p2.name, chips: [`${m.tour.toUpperCase()} · ${categoryLabel(m)}`, surfaceLabel(m), m.tournament, m.round].filter(Boolean), centre, sub: dateLabel(m.startsAt) });
+  const saveBtn = canSave(m) ? `<button class="save${saved ? " done" : ""}" type="button" data-save-detail="${esc(m.key)}"${saved ? " disabled" : ""}>${saved ? "✓ Salvata" : "Salva giocata"}</button>` : "";
+  return `${hero}
+    <div class="tn-chips">${statusTag(m)}${betTag(m)}${relTag(p?.reliability)}${m.p1.rank || m.p2.rank ? `<span class="tn-chip">Ranking ${esc(m.p1.rank ?? "n.d.")} · ${esc(m.p2.rank ?? "n.d.")}</span>` : ""}</div>
+    ${live}${final}<section class="rec-sec"><h4>Cosa giocare</h4>${verdict}${bar}${saveBtn ? `<div class="pv-btns">${saveBtn}</div>` : ""}</section>
     ${sec("Motivazioni e dati usati", `${reasons}${comps}${missing}`, true)}
     ${sec("Quote, EV e BET / EVITA", betBlock(m), true)}
     ${sec("Giocatori", players)}
@@ -126,43 +141,6 @@ export function detailHtml(m) {
     ${sec("Scontri diretti", h2h)}
     ${sec("Provenienza dei dati", prov)}
     <p class="tn-disc">Stima statistica, non una garanzia di vittoria. ${p?.computedAt ? `Pronostico registrato il ${esc(when(p.computedAt))} (modello ${esc(p.modelVersion ?? "n.d.")}) e non modificato dopo l'inizio della partita.` : ""}</p>`;
-}
-
-// ───────── Storico e backtest ─────────
-const row = (label, s) => `<tr><th>${esc(label)}</th><td>${esc(s.n)}</td><td>${pct(s.accuracy, 1)}</td><td>${num(s.brier, 3)}</td><td>${num(s.logLoss, 3)}</td></tr>`;
-const groupTable = (title, obj, labelOf = (k) => k) => (obj && Object.keys(obj).length ? `<h4>${esc(title)}</h4><div class="tn-scroll"><table class="tn-table"><thead><tr><th></th><th>Partite</th><th>Esatti</th><th>Brier</th><th>Log loss</th></tr></thead><tbody>${Object.entries(obj).map(([k, v]) => row(labelOf(k), v)).join("")}</tbody></table></div>` : "");
-
-export function historyHtml(h) {
-  if (!h?.summary || !h.summary.n) return `<div class="tn-empty"><div class="tn-ball" aria-hidden="true"></div><h2>Storico non ancora disponibile</h2><p>Comparirà dopo le prime partite concluse con un pronostico registrato prima dell'inizio.${h?.abstained ? ` Finora il modello si è astenuto in ${esc(h.abstained)} partite.` : ""}</p></div>`;
-  const s = h.summary;
-  const bins = (s.calibration ?? []).filter((b) => b.n).map((b) => `<tr><th>${Math.round(b.from * 100)}–${Math.round(b.to * 100)}%</th><td>${b.n}</td><td>${pct(b.meanP, 1)}</td><td>${pct(b.hitRate, 1)}</td></tr>`).join("");
-  const bet = h.bet?.n ? `<p class="tn-note">BET conclusi: ${esc(h.bet.n)} · centrati ${esc(h.bet.hits)} · ritorno medio per unità puntata ${h.bet.roi == null ? "n.d." : `${h.bet.roi > 0 ? "+" : ""}${num(h.bet.roi * 100, 1)}%`} (${esc(h.bet.verdict)}).</p>` : "";
-  return `<div class="tn-kpis"><div><b>${s.n}</b><span>pronostici conclusi</span></div><div><b>${pct(s.accuracy, 1)}</b><span>esatti</span></div><div><b>${num(s.brier, 3)}</b><span>Brier</span></div><div><b>${num(s.logLoss, 3)}</b><span>Log loss</span></div></div>
-    <p class="tn-note">${h.hits != null ? `Corretti ${esc(h.hits)} · errati ${esc(h.misses)}${h.pending ? ` · in attesa ${esc(h.pending)}` : ""}. ` : ""}${esc(h.verdict ?? "")}. Riferimenti: un lancio di moneta dà Brier 0,250 e log loss 0,693. Sotto le 300 partite i numeri non dimostrano nulla.</p>
-    ${bet}${groupTable("Per superficie", h.bySurface, (k) => SURFACE_LABEL[k] ?? k)}${groupTable("ATP e WTA", h.byTour, (k) => k.toUpperCase())}${groupTable("Per categoria", h.byCategory, (k) => CATEGORY_LABEL[k] ?? k)}${groupTable("Per affidabilità", h.byReliability)}${groupTable("Per fascia di probabilità", h.byBand)}
-    ${bins ? `<h4>Calibrazione</h4><div class="tn-scroll"><table class="tn-table"><thead><tr><th>Fascia</th><th>Partite</th><th>Dichiarata</th><th>Reale</th></tr></thead><tbody>${bins}</tbody></table></div><p class="tn-note">Se “Dichiarata” e “Reale” si somigliano, le probabilità sono ben tarate.</p>` : ""}
-    ${h.abstained != null ? `<p class="tn-note">Partite in cui il modello si è astenuto: ${esc(h.abstained)}.</p>` : ""}`;
-}
-
-const chipRow = (attr, list, cur, label) => `<div class="tn-chips-row" role="group" aria-label="${esc(label)}">${list.map(([v, l]) => `<button type="button" ${attr}="${esc(v)}" aria-pressed="${cur === v}">${esc(l)}</button>`).join("")}</div>`;
-
-function historyRowHtml(r) {
-  const out = !r.published ? `<span class="tn-res na">Astenuto</span>` : r.hit === true ? `<span class="tn-res ok">${icon("check")}Centrato</span>` : r.hit === false ? `<span class="tn-res ko">${icon("close")}Errato</span>` : `<span class="tn-res na">In attesa</span>`;
-  const pick = r.published ? `${esc(r.pick === 1 ? r.p1Name : r.p2Name)} ${pct(r.pick === 1 ? r.p1 : 1 - r.p1)}` : esc(r.abstainReason ?? "Dati insufficienti");
-  return `<div class="tn-hrow"><div><b>${esc(r.p1Name ?? "?")} – ${esc(r.p2Name ?? "?")}</b><small>${esc(when(r.startsAt))} · ${esc(r.tournament ?? "")}${r.score ? ` · ${esc(r.score)}` : ""}</small><small>${r.published ? "Pronostico: " : "Motivo: "}${pick}${r.bet?.verdict === "BET" ? ` · BET` : ""}</small></div>${out}</div>`;
-}
-
-/** Storico interattivo: filtri periodo/categoria/circuito/esito, metriche ricalcolate sul filtro, elenco, backtest storico del modello. */
-export function historyViewHtml(h, f = DEFAULT_HISTORY_FILTERS, now = Date.now()) {
-  if (!h) return historyHtml(null);
-  const rows = h.rows ?? [];
-  const filtered = filterHistory(rows, f, now);
-  const sum = summarizeHistory(filterHistory(rows, { ...f, outcome: "all" }, now));
-  const cats = [["all", "Tutte"], ...Object.entries(CATEGORY_LABEL).filter(([k]) => rows.some((r) => r.category === k))];
-  const filters = `${chipRow("data-hperiod", PERIODS, f.period, "Periodo")}${chipRow("data-hcat", cats, f.category, "Categoria")}${chipRow("data-htour", [["all", "ATP+WTA"], ["atp", "ATP"], ["wta", "WTA"]], f.tour, "Circuito")}${chipRow("data-hout", OUTCOMES, f.outcome, "Esito")}`;
-  const list = filtered.length ? `<div class="tn-hlist">${filtered.slice(0, 200).map(historyRowHtml).join("")}</div>${filtered.length > 200 ? `<p class="tn-note">Mostrati i 200 più recenti su ${filtered.length}.</p>` : ""}` : `<div class="tn-empty"><div class="tn-ball" aria-hidden="true"></div><h2>Nessun pronostico con questi filtri</h2><p>Prova ad ampliare il periodo o a togliere un filtro.</p></div>`;
-  const bt = h.backtest && h.backtest.published ? `<details class="tn-dsec"><summary>Backtest cronologico del modello (${esc(h.backtest.published)} partite)</summary><div class="tn-dbody"><p class="tn-note">Ogni partita è prevista con i soli dati precedenti (nessun look-ahead) sullo storico scaricato. Modello ${esc(h.backtest.modelVersion ?? "n.d.")}, calcolato il ${esc(when(h.backtest.at))}: ${esc(h.backtest.verdict)}. Astenuto in ${esc(h.backtest.abstained)} partite.</p><table class="tn-table"><tbody><tr><th>Esatti</th><td>${pct(h.backtest.summary?.accuracy, 1)}</td></tr><tr><th>Brier</th><td>${num(h.backtest.summary?.brier, 3)}</td></tr><tr><th>Log loss</th><td>${num(h.backtest.summary?.logLoss, 3)}</td></tr></tbody></table></div></details>` : `<p class="tn-note">Backtest cronologico non ancora disponibile (serve storico sufficiente: ${esc(h.backtest?.matches ?? 0)} partite scaricate finora).</p>`;
-  return `<div class="tn-filters">${filters}</div>${historyHtml(sum)}<h4>Pronostici registrati (${filtered.length})</h4>${list}${bt}`;
 }
 
 // ───────── Diagnostica ─────────
