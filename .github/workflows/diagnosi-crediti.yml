@@ -1,0 +1,22 @@
+name: Diagnosi crediti
+
+# Capisce da dove vengono i crediti API-Football di oggi: aggiornamento completo, recupero ogni 30 minuti, app (schede aperte, corner).
+# Non fa richieste ad API-Football e non scrive nulla: legge solo le tabelle di Supabase. Il rapporto compare nel riepilogo dell'esecuzione.
+# Si avvia a mano: Actions → "Diagnosi crediti" → Run workflow. Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnosi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Rapporto consumi
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/usage-report.js | tee -a "$GITHUB_STEP_SUMMARY"
