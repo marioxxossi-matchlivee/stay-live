@@ -25,7 +25,8 @@ import { onRequest as snapshotPredictions } from "../functions/api/snapshot.js";
 
 export { statusOf };
 const H = 3600e3;
-export const FRESH_NEAR = 3.5 * H, FRESH_FAR = 11 * H;           // età massima accettata a ogni giro (cadenza 4 ore)
+export const FRESH_NEAR = 3.5 * H, FRESH_MID = 7.5 * H, FRESH_FAR = 11 * H;   // età massima accettata (cadenza dei giri: 4 ore)
+export const SOON_MS = 12 * H;                                   // entro 12 ore dal calcio d'inizio: dati rinnovati a ogni giro
 export const NEAR_MS = 48 * H;                                   // "vicine": quote e schede si riscaricano a ogni giro
 export const RESERVE_FOR_DETAILS = 1500;                         // sotto questi crediti restanti si salta la fase 4
 export const RESERVE_HISTORY = 2500;                             // e i corner storici (la parte meno urgente)
@@ -44,8 +45,22 @@ export function runBudgetFor(remaining, now = Date.now(), mode = "full") {
 const RATE_RE = /limite|richieste|too many|rate/i;
 const VOLATILE = new Set(["fixture", "injuries", "predictions", "oddsGoals", "oddsCorners", "odds1x2"]);
 
-/** Quanto vecchio può essere un dato di questa partita (ms): 3,5 ore se si gioca entro 48 ore, 11 ore altrimenti. */
-export const freshForAt = (now) => (m) => (Date.parse(m.kickoff_at) - now <= NEAR_MS ? FRESH_NEAR : FRESH_FAR);
+/**
+ * Quanto vecchio può essere un dato di questa partita (ms): 3,5 ore se si gioca entro 12 ore (quote e pronostici cambiano e la decisione è vicina),
+ * 7,5 ore tra 12 e 48 ore (un giro su due), 11 ore oltre. Prima le partite entro 48 ore si riscaricavano a ogni giro: ~6 volte al giorno
+ * per ognuna, ed era la voce più grande del consumo di crediti (il 14/11 il piano da 7.500 si è esaurito intorno alle 15).
+ */
+export const freshForAt = (now) => (m) => { const dt = Date.parse(m.kickoff_at) - now; return dt <= SOON_MS ? FRESH_NEAR : dt <= NEAR_MS ? FRESH_MID : FRESH_FAR; };
+
+/**
+ * Contatore di crediti di partenza. Al primo giro dopo la mezzanotte UTC la riga di oggi non esiste ancora: senza, il tetto del giro era infinito
+ * (il 14/11 un recupero delle 00:43 ha speso 2.185 richieste invece di ~375). Si riparte dal limite giornaliero noto: i crediti si azzerano al cambio giorno.
+ * `last` = riga più recente di af_usage. Senza alcuna riga resta null (nessun tetto: caso della primissima esecuzione).
+ */
+export function baseUsage(today, last, now = Date.now()) {
+  if (today) return today;
+  return last?.limit_day ? { day: dayKey(now), requests: 0, limit_day: last.limit_day, remaining: last.limit_day, assumed: true } : null;
+}
 
 /** Partite aperte (non finite) dei prossimi `days` giorni nei campionati coperti da API-Football. */
 export function eligibleOpen(window, now, days = 7) {
@@ -121,7 +136,7 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
     requests: { thisRun: null, today: null, remaining: null, limit: null }, errors: [], pending: [], verify: null, registry: null, notes: [],
   };
   const items = [];                                   // esiti di ogni operazione -> compiti da completare
-  const usage0 = await readUsage(env, now0);
+  const usage0 = baseUsage(await readUsage(env, now0), (await supabaseGet(env, "af_usage", { select: "*", order: "day.desc", limit: 1 }).catch(() => []))[0], now0);
   const prev = await loadTasks(env);
   if (prev === null) meta.notes.push("Tabelle di diagnostica assenti: applica la migrazione 202611110001_refresh_diagnostics.sql su Supabase (senza, il recupero automatico non può funzionare).");
   const prevTasks = prev ?? [];

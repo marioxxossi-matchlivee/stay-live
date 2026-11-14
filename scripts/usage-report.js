@@ -35,10 +35,12 @@ export function usageReport({ usage = [], runs = [], cache = [], tasks = [], now
   const share = (n) => (total ? Math.round((n / total) * 100) : null);
   const findings = [];
   const rec = byMode.recover;
-  if (total != null && rec && share(rec.requests) >= 35) findings.push(`Il **recupero automatico** (ogni 30 minuti) ha speso ${rec.requests} richieste, il ${share(rec.requests)}% di oggi, in ${rec.runs} giri. Se ci sono sempre compiti in sospeso, ogni giro ne spende almeno 250: conviene passare il cron a ogni ora o fermare i compiti che non si chiudono mai.`);
+  const recRuns = todayRuns.filter((r) => r.mode === "recover"), big = recRuns.sort((a, b) => spent(b) - spent(a))[0];
+  if (big && spent(big) >= 1000) findings.push(`Un giro di **recupero** delle ${hhmm(big.started_at)} UTC ha speso ${spent(big)} richieste (il tetto di un recupero è il 5% dei crediti, circa 375). Succede se è il primo giro dopo la mezzanotte UTC e il contatore del giorno non esiste ancora.`);
+  if (total != null && rec && share(rec.requests) >= 35 && !(big && spent(big) >= 1000)) findings.push(`Il **recupero automatico** (ogni 30 minuti) ha speso ${rec.requests} richieste, il ${share(rec.requests)}% di oggi, in ${rec.runs} giri. Se ci sono sempre compiti in sospeso, ogni giro ne spende almeno 250: conviene passare il cron a ogni ora.`);
   if (other != null && share(other) >= 30) findings.push(`**App e altro** pesano il ${share(other)}% (${other} richieste): aperture di schede partita, ricerca corner e anteprime fatte dall'app. Chiedi a chi usa l'app di non aprire molte schede, oppure di non premere «Aggiorna tutto ora».`);
   const full = byMode.full ?? byMode.manual;
-  if (total != null && full && share(full.requests) >= 50) findings.push(`Gli **aggiornamenti completi** pesano il ${share(full.requests)}%: con molti campionati le partite vicine costano parecchio. Riduci FIXTURES_DAYS (oggi 7) o i campionati coperti.`);
+  if (total != null && full && share(full.requests) >= 50) findings.push(`Gli **aggiornamenti completi** pesano il ${share(full.requests)}%: ogni giro riscarica pronostici, quote e corner delle partite vicine. Se resta alto, riduci FIXTURES_DAYS (oggi 7) o allunga le età massime in scripts/full-refresh.js (FRESH_NEAR, FRESH_MID, FRESH_FAR).`);
   const stuck = Object.entries(pending).filter(([, v]) => v.maxAttempts >= 5);
   if (stuck.length) findings.push(`Compiti che si ripetono da molti tentativi: ${stuck.map(([k, v]) => `${k} (${v.count}, fino a ${v.maxAttempts} tentativi)`).join(", ")}. Ogni tentativo può costare crediti.`);
   if (u?.remaining != null && u.limit_day && u.remaining < u.limit_day * 0.1) findings.push(`Restano solo ${u.remaining} crediti su ${u.limit_day}: gli script si fermano da soli sotto le riserve (1.500 per le schede, 2.500 per i corner storici).`);
