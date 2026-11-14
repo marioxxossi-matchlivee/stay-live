@@ -41,7 +41,7 @@ export function mountTennis(root) {
 
   root.innerHTML = `
     <header class="tn-top">
-      <a class="tn-brand" href="/" aria-label="Stay Live Tennis">${markSvg("tn-mark")}<span>Stay<b>Live</b></span></a>
+      <a class="tn-brand" href="/" aria-label="Stay Live Tennis">${markSvg("tn-mark")}<span data-text="StayLive">Stay<b>Live</b></span></a>
       <div class="tn-actions">${sportMenuHtml("tennis")}<button class="tn-ic" id="tn-refresh" type="button" aria-label="Aggiorna dati">${icon("refresh")}</button></div>
     </header>
     <main class="tn-main">
@@ -50,7 +50,7 @@ export function mountTennis(root) {
         <div id="tn-banner" class="banner" role="status" hidden></div>
         <div class="seg" id="tn-seg" role="group" aria-label="Filtro partite" style="--i:0"><button type="button" data-seg="all" aria-pressed="true">Tutte</button><button type="button" data-seg="bet" aria-pressed="false">Solo BET</button></div>
         <div class="days" id="tn-days" aria-label="Giornata"></div>
-        <div class="listbar"><button class="chip-btn" id="tn-ftoggle" type="button" aria-expanded="false" aria-controls="tn-fpanel">Filtri</button></div>
+        <div class="listbar"><button class="chip-btn lg-toggle" id="tn-ftoggle" type="button" aria-expanded="false" aria-controls="tn-fpanel">Filtri</button></div>
         <div class="tn-fpanel" id="tn-fpanel" hidden></div>
         <div id="tn-list" class="list"></div>
         <p class="foot">Stime statistiche sperimentali. Non sono garanzie né consigli finanziari.</p>
@@ -105,7 +105,7 @@ export function mountTennis(root) {
     const tours = `<div class="tn-seg2" role="group" aria-label="Genere e circuito">${btn("data-tour", "all", "Tutti", f.tour)}${fx.tours.map((t) => btn("data-tour", t, GENDER_LABEL[t] ?? t.toUpperCase(), f.tour)).join("")}</div>`;
     const cats = fx.categories.length > 1 ? `<div class="tn-chips-row" role="group" aria-label="Categoria">${btn("data-cat", "all", "Tutte", f.category)}${fx.categories.map((c) => btn("data-cat", c, CATEGORY_LABEL[c] ?? c, f.category)).join("")}</div>` : "";
     const surfaces = fx.surfaces.length > 1 ? `<div class="tn-chips-row" role="group" aria-label="Superficie">${btn("data-surface", "all", "Tutte", f.surface)}${fx.surfaces.map((s) => btn("data-surface", s, SURFACE_LABEL[s], f.surface)).join("")}</div>` : "";
-    const tourney = fx.tournaments.length > 1 ? `<div class="tn-row"><select id="tn-tournament" aria-label="Torneo"><option value="all">Tutti i tornei</option>${fx.tournaments.map((t) => `<option value="${esc(t)}"${t === f.tournament ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div>` : "";
+    const tourney = fx.tournaments.length > 1 ? `<div class="tn-row"><select id="tn-tournament" class="${f.tournament !== "all" ? "on" : ""}" aria-label="Torneo"><option value="all">Tutti i tornei</option>${fx.tournaments.map((t) => `<option value="${esc(t)}"${t === f.tournament ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div>` : "";
     return `${search}${tours}${cats}${surfaces}${tourney}`;
   }
   function listInner(shown) {
@@ -127,7 +127,13 @@ export function mountTennis(root) {
     for (const b of seg.querySelectorAll("[data-seg]")) b.setAttribute("aria-pressed", String(b.dataset.seg === cur));
     const f = state.filters, active = [f.tour !== "all", f.category !== "all", f.surface !== "all", f.tournament !== "all", Boolean(f.q)].filter(Boolean).length;
     const tg = $("#tn-ftoggle"); tg.textContent = active ? `Filtri · ${active}` : "Filtri"; tg.setAttribute("aria-expanded", String(state.fOpen));
-    const panel = $("#tn-fpanel"); panel.hidden = !state.fOpen || !state.matches.length; if (!panel.hidden && !panel.contains(document.activeElement)) panel.innerHTML = filtersHtml();
+    const panel = $("#tn-fpanel"); panel.hidden = !state.fOpen || !state.matches.length;
+    // Il pannello si ridisegna sempre (lo stato visivo segue quello reale); si lascia intatto solo il campo di testo mentre si scrive, e si conserva lo scorrimento delle file di chip.
+    if (!panel.hidden && document.activeElement?.id !== "tn-q") {
+      const scroll = [...panel.querySelectorAll(".tn-chips-row")].map((r) => r.scrollLeft);
+      panel.innerHTML = filtersHtml();
+      panel.querySelectorAll(".tn-chips-row").forEach((r, i) => { r.scrollLeft = scroll[i] ?? 0; });
+    }
     const el = $("#tn-list");
     if (state.animate) { el.classList.add("anim"); state.animate = false; clearTimeout(animTimer); animTimer = setTimeout(() => el.classList.remove("anim"), 700); } else el.classList.remove("anim");
     el.innerHTML = !state.matches.length ? (state.loading ? Array.from({ length: 4 }, () => `<div class="row skel" aria-hidden="true"><i></i><i></i><i></i></div>`).join("") : state.error && !state.fromCache ? emptyHtml("error", state.error) : emptyHtml("nodata")) : listInner(list);
