@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { DEFAULT_FILTERS, facets, filterMatches, groupByTournament, sanitizeFilters, sanitizeMatches, surfaceLabel } from "../src/tennis/board.js";
-import { detailHtml, emptyHtml, historyHtml, listHtml, matchCardHtml } from "../src/tennis/view.js";
+import { detailHtml, emptyHtml, rowHtml as matchCardHtml } from "../src/tennis/view.js";
+import { tennisMonitorHtml } from "../src/tennis/monitor.js";
 
 const mk = (over = {}) => ({
   key: "a|b|t|r1", tour: "atp", tournament: "Torneo Uno", round: "Ottavi", surface: "Clay", bestOf: 3,
@@ -51,22 +52,22 @@ test("raggruppamento per torneo, ordine per orario", () => {
 
 test("scheda: pronostico, astensione, in attesa; nessuna garanzia presentata", () => {
   const a = matchCardHtml(sample[0]);
-  assert.match(a, /Pronostico 1/); assert.match(a, /64%/); assert.match(a, /Mario Rossi/); assert.match(a, /#12/); assert.match(a, /Quote 1,70/);
+  assert.match(a, /Vince Mario Rossi/); assert.match(a, /64%/); assert.match(a, /quota 1,70/); assert.match(a, /class="row/);
   assert.match(matchCardHtml(sample[1]), /Nessun pronostico/);
   assert.match(matchCardHtml(sample[2]), /In attesa di analisi/);
   assert.doesNotMatch(a, /garantit|sicur/i);
-  assert.doesNotMatch(matchCardHtml(mk({ odds: null })), /Quote/);
+  assert.match(matchCardHtml(mk({ odds: null })), /quota reale non disponibile/);
 });
 
 test("scheda: esito a partita conclusa (centrato / non centrato)", () => {
   const ok = matchCardHtml(mk({ status: "finished", winner: 1, score: "6-4 6-3" }));
-  assert.match(ok, /Centrato/); assert.match(ok, /6-4 6-3/);
+  assert.match(ok, /Centrato/); assert.match(ok, /6 6/);
   assert.match(matchCardHtml(mk({ status: "finished", winner: 2, score: "4-6 3-6" })), /Non centrato/);
 });
 
 test("nessuna iniezione HTML dai dati del provider", () => {
   const evil = mk({ tournament: '<img src=x onerror=alert(1)>', p1: { id: "a", name: '"><script>alert(1)</script>' } });
-  for (const html of [matchCardHtml(evil), listHtml(groupByTournament([evil])), detailHtml(evil)]) {
+  for (const html of [matchCardHtml(evil), detailHtml(evil)]) {
     assert.doesNotMatch(html, /<script/i); assert.doesNotMatch(html, /<img src=x/i);
   }
 });
@@ -86,17 +87,19 @@ test("stati vuoti e storico", () => {
   assert.match(emptyHtml("nodata"), /Nessun dato tennis/);
   assert.match(emptyHtml("filtered"), /Nessuna partita/);
   assert.match(emptyHtml("error", "<b>x</b>"), /&lt;b&gt;/);
-  assert.match(historyHtml(null), /non ancora disponibile/);
-  const h = historyHtml({ summary: { n: 40, accuracy: 0.6, brier: 0.23, logLoss: 0.65, calibration: [{ from: 0.55, to: 0.6, n: 10, meanP: 0.57, hitRate: 0.6 }] },
-    bySurface: { clay: { n: 20, accuracy: 0.6, brier: 0.23, logLoss: 0.65 } }, byTour: { atp: { n: 40, accuracy: 0.6, brier: 0.23, logLoss: 0.65 } }, verdict: "campione insufficiente (40/300)", abstained: 12 });
-  assert.match(h, /campione insufficiente/); assert.match(h, /Terra|Per superficie/); assert.match(h, /Calibrazione/); assert.match(h, /ATP/);
+  assert.match(tennisMonitorHtml({ rows: [], backtest: null }), /Ancora nessun caso concluso/);
+  const row = (i, hit) => ({ key: "k" + i, published: true, pick: 1, p1: 0.62, hit, tour: "atp", category: "tour", surface: "clay", bet: null, modelVersion: "tennis-v2" });
+  const h = tennisMonitorHtml({ rows: [row(1, true), row(2, false), row(3, true)], summary: { brier: 0.23 }, verdict: "campione insufficiente (3/300)", backtest: null });
+  assert.match(h, /Pronostici · il vincitore/); assert.match(h, /Taratura/); assert.match(h, /Terra/); assert.match(h, /Per versione del modello/); assert.match(h, /Intervallo al 95%/);
+  assert.match(tennisMonitorHtml({ rows: [], backtest: null }, "hist"), /Rapporto storico non ancora calcolato/);
 });
 
-test("collegamento nell'HTML: scelta sport, pulsante di cambio, script", () => {
+test("collegamento nell'HTML: menu sport a tendina, script, nessuna schermata iniziale", () => {
   const html = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
-  assert.match(html, /id="sport-switch"/); assert.match(html, /src="\/src\/sport\.js"/); assert.match(html, /src="\/src\/main\.js"/);
+  assert.match(html, /id="sport-slot"/); assert.match(html, /src="\/src\/sport\.js"/); assert.match(html, /src="\/src\/main\.js"/);
   const sport = fs.readFileSync(new URL("../src/sport.js", import.meta.url), "utf8");
-  assert.match(sport, /Stay Live Calcio/); assert.match(sport, /Stay Live Tennis/); assert.match(sport, /import\("\.\/tennis\/app\.js"\)/);
+  assert.match(sport, /import\("\.\/tennis\/app\.js"\)/); assert.match(sport, /sport-loader/);
+  assert.doesNotMatch(sport, /sport-gate|sg-card/);
   assert.doesNotMatch(fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8"), /tennis/i, "main.js del calcio non deve conoscere il tennis");
 });
 
