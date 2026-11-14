@@ -57,7 +57,7 @@ html{background:var(--sl-bg);color-scheme:light}
 .tabbar .tab-ic,.sl-nav .tab-ic{position:relative;display:block;flex:none;width:28px;height:28px;margin:0}
 .tabbar .ic-pair,.sl-nav .ic-pair{position:absolute;left:0;top:0;display:block;width:28px;height:28px;font-size:25px}
 .tabbar .ic-pair .ic,.sl-nav .ic-pair .ic{position:absolute;left:50%;top:50%;width:25px;height:25px;margin:-12.5px 0 0 -12.5px;font-size:25px;vertical-align:baseline}
-.tab-ic .badge{position:absolute;top:-5px;left:calc(50% + 8px);right:auto;box-shadow:0 0 0 2px #fff;background:var(--sl-accent);color:#fff}
+.tab-ic .badge{position:absolute;top:-4px;left:calc(50% + 8px);right:auto;background:var(--sl-accent);color:#fff}
 .tab-item[aria-current=page],.sl-nav>button[aria-pressed=true]{color:var(--sl-ink)}
 
 /* ---------- Barra di selezione e avvisi (scuri, per staccare dal fondo chiaro) ---------- */
@@ -102,3 +102,72 @@ dialog.sheet-drag{transition:none}
 .tn-pane.enter{animation:slrise .38s var(--ease-out)}
 .tn-main .tn-group{margin:8px 0 14px}
 .ef-legacy{margin:0 0 10px;padding:9px 12px;border-radius:12px;background:var(--sl-warn-tint);color:var(--sl-warn)}
+
+/* =====================================================================
+   Rifinitura UI · verde per i BET, barra senza aloni, selettore sobrio, filtri tennis, riflesso sul logo
+   ===================================================================== */
+:root{--sl-bet-g:#12875a;--sl-bet-g-2:#0e7149;--sl-bet-g-tint:rgba(18,135,90,.09);--sl-bet-g-line:rgba(18,135,90,.34)}
+
+/* ---------- Card: il blu resta il colore dell'app, il verde segnala i BET ---------- */
+.row{background:var(--sl-s1)}
+.row.is-bet{background:linear-gradient(180deg,rgba(18,135,90,.05),var(--sl-s1) 60%);border-color:var(--sl-bet-g-line);box-shadow:var(--sh-2)}
+.row.is-bet::before{background:var(--sl-bet-g);box-shadow:none}
+.row.sel.is-bet{border-color:var(--sl-bet-g-line)}
+.row-main .pick,.row-main .pick.bet,.row-main .pick.skip,.row-main .pick.none{padding:9px 12px;gap:3px}
+.row-main .pick.bet{background:var(--sl-bet-g-tint);border:1px solid var(--sl-bet-g-line);color:var(--sl-ink)}
+.row-main .pick.skip{background:var(--sl-s2);border:1px solid var(--sl-line)}
+.row-main .pick .pk-label{font-size:21px;line-height:1.1;letter-spacing:-.03em}
+.row-main .pick .vd-pill,.row-main .pick.skip .vd-pill,.row-main .pick.none .vd-pill{font-size:10.5px;padding:3px 9px}
+.row-main .pick.bet .vd-pill{background:var(--sl-bet-g);color:#fff}
+.row-main .pick.skip .vd-pill{background:var(--sl-s3);color:var(--sl-ink-2)}
+.row-main .pick .pk-sub{align-items:baseline;gap:10px}
+.row-main .pick .pk-info{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;min-width:0}
+.row-main .pick .pk-parts{display:inline-flex;gap:12px}
+.row-main .pick .pk-part{font-size:12.5px;font-weight:600;color:var(--sl-mute);font-variant-numeric:tabular-nums}
+.row-main .pick .pk-part b{color:var(--sl-ink-2);font-weight:800;margin-right:2px}
+.row-main .pick .pk-q.real{color:var(--sl-ink-2);font-size:12.5px}
+.row-main .pick .pk-pct{margin-left:auto;white-space:nowrap;font-size:12.5px;font-weight:700;color:var(--sl-mute)}
+.row-main .pick.bet .pk-pct{color:var(--sl-bet-g-2)}
+.stat.bet{background:var(--sl-bet-g-tint);border-color:var(--sl-bet-g-line);color:var(--sl-bet-g-2)}
+.stat.bet b{color:var(--sl-bet-g-2)}
+.tn-bet.yes{background:var(--sl-bet-g)}
+.row-save.done{color:var(--sl-accent)}
+
+/* ---------- Barra inferiore: sfocatura e ombre restano dentro i bordi ---------- */
+.sl-nav,.tabbar{overflow:hidden;isolation:isolate;box-shadow:0 8px 20px -14px rgba(18,38,84,.35);-webkit-backdrop-filter:saturate(1.5) blur(14px);backdrop-filter:saturate(1.5) blur(14px);background:rgba(255,255,255,.9)}
+.sl-nav-ind,.sl-nav.tn .sl-nav-ind{box-shadow:none}
+.sl-nav-ind::before,.sl-nav.tn .sl-nav-ind::before{box-shadow:none;top:0;height:3px;border-radius:0 0 3px 3px}
+.badge,.tab-ic .badge{box-shadow:none;border:0}
+
+/* ---------- Selettori a segmenti: sollevamento leggero, nessuna ombra fuori dal contenitore ---------- */
+.seg,.mn-seg{background:var(--sl-s3);border:1px solid var(--sl-line);box-shadow:none;border-radius:14px;overflow:hidden;padding:3px}
+.seg::before,.mn-seg::before{top:3px;bottom:3px;left:3px;width:calc((100% - 6px) / var(--segn,3));background:var(--sl-s1);border:1px solid var(--sl-line);border-radius:11px;box-shadow:0 1px 2px rgba(18,38,84,.14);transition:transform .32s var(--ease-out)}
+#tn-seg,.mn-seg{--segn:2}
+#pl-seg{--segn:3}
+.seg button,.mn-seg button{color:var(--sl-mute)}
+.seg button[aria-pressed=true],.mn-seg button[aria-pressed=true]{color:var(--sl-ink)}
+
+/* ---------- Tennis: filtri, selezione chiara e uniforme ---------- */
+.tn-fpanel{gap:12px;padding:12px;margin-bottom:12px}
+.tn-seg2 button,.tn-chips-row button{background:var(--sl-s1);border:1px solid var(--sl-line-2);color:var(--sl-ink-2)}
+.tn-seg2{background:var(--sl-s2)}
+.tn-seg2 button{background:transparent;border-color:transparent}
+.tn-seg2 button[aria-pressed=true],.tn-chips-row button[aria-pressed=true]{background:var(--tn);border-color:var(--tn);color:#fff;font-weight:800;box-shadow:none}
+.tn-row select.on{border-color:var(--tn);box-shadow:0 0 0 1px var(--tn);color:var(--sl-ink)}
+.tn-search{background-color:var(--sl-s2)}
+/* intestazione tennis compatta: stessa scala del calcio, senza vuoti */
+#tn-pane-matches .intro{margin:0 0 2px}
+#tn-pane-matches .intro h1{margin:0 0 10px}
+#tn-pane-matches .summary{margin:0 0 14px}
+.tn-main{padding-top:14px}
+.listbar{margin:2px 0 10px}
+
+/* ---------- Riflesso occasionale sul logo (solo CSS, sopra le lettere, non sposta nulla) ---------- */
+.brand .word,.tn-brand>span{position:relative;display:inline-block}
+.brand .word::after,.tn-brand>span::after{content:attr(data-text);content:attr(data-text) / "";position:absolute;left:0;top:0;pointer-events:none;white-space:nowrap;
+  background:linear-gradient(105deg,transparent 44%,rgba(255,255,255,.95) 50%,transparent 56%) no-repeat;background-size:250% 100%;background-position:100% 0;
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;
+  animation:slshine 8s cubic-bezier(.45,0,.25,1) 2s infinite}
+@keyframes slshine{0%{background-position:100% 0}16%{background-position:0% 0}100%{background-position:0% 0}}
+@media (prefers-reduced-motion:reduce){.brand .word::after,.tn-brand>span::after{animation:none;display:none}}
+#tn-seg{grid-template-columns:repeat(2,1fr)}

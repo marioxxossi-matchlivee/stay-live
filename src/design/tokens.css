@@ -12,7 +12,7 @@
   --sl-ink:#0b1630; --sl-ink-2:#323f5e; --sl-mute:#56637f; --sl-faint:#7d89a3;
   /* Accenti: calcio = blu, tennis = azzurro petrolio; semantica BET / EVITA / avvisi */
   --sl-accent:#1c5fe0; --sl-accent-2:#1a52c4; --sl-accent-deep:#143f99; --sl-accent-ink:#ffffff; --sl-accent-tint:rgba(28,95,224,.1); --sl-accent-line:rgba(28,95,224,.34);
-  --sl-lime:#0c82a8; --sl-lime-ink:#ffffff; --sl-lime-tint:rgba(12,130,168,.11); /* accento Tennis (nome storico del token) */
+  --sl-lime:#0a7a9e; --sl-lime-ink:#ffffff; --sl-lime-tint:rgba(10,122,158,.11); /* accento Tennis (nome storico del token) */
   --sl-blue:#5a6f9c; --sl-blue-tint:rgba(90,111,156,.14);
   --sl-bet:var(--sl-accent); --sl-win:#0d8a5f; --sl-avoid:#66738f; --sl-warn:#a85f00; --sl-warn-tint:rgba(255,170,0,.17); --sl-danger:#cf3347; --sl-danger-tint:rgba(207,51,71,.1); --sl-live:#e0364a;
   /* Tipografia */
