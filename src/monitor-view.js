@@ -1,8 +1,8 @@
 // Sezione «Affidabilità»: solo HTML (funzioni pure, testabili). I calcoli sono in functions/api/_monitor.js.
 import { esc, pct, num } from "./format.js";
 
-const P = (v, d = 0) => (v == null || !Number.isFinite(v) ? "—" : pct(v, d));
-const pt = (v) => (v == null || !Number.isFinite(v) ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v * 100).toFixed(1).replace(".", ",")} pt`);
+export const P = (v, d = 0) => (v == null || !Number.isFinite(v) ? "—" : pct(v, d));
+export const pt = (v) => (v == null || !Number.isFinite(v) ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v * 100).toFixed(1).replace(".", ",")} pt`);
 const ci = (s) => (s.ci ? `tra ${P(s.ci.lo)} e ${P(s.ci.hi)}` : "");
 const dateIt = (iso) => (iso ? new Date(iso).toLocaleDateString("it-IT", { timeZone: "Europe/Rome", day: "numeric", month: "short", year: "numeric" }) : "—");
 
@@ -14,13 +14,13 @@ export function groupCard(title, s, { note = "", verdict = "", min = 300 } = {})
   return `<section class="mn-card"><h3>${esc(title)}</h3>
     <div class="mn-big"><b>${P(s.rate)}</b><span>${s.won} centrati su ${s.n}</span></div>
     ${bar(s.rate, s.claimed, `Percentuale reale ${P(s.rate)}`)}
-    <dl class="mn-kv"><div><dt>Intervallo al 95%</dt><dd>${esc(ci(s))}</dd></div><div><dt>Dichiarato dal modello</dt><dd>${P(s.claimed)}</dd></div><div><dt>Soglia prudente</dt><dd>${P(s.floor)}</dd></div><div><dt>Scarto reale − dichiarato</dt><dd>${esc(pt(s.gap))}</dd></div>${s.roi != null ? `<div><dt>Rendimento a quota reale (${s.roiN} quotate)</dt><dd>${esc(pt(s.roi))}</dd></div>` : ""}</dl>
+    <dl class="mn-kv"><div><dt>Intervallo al 95%</dt><dd>${esc(ci(s))}</dd></div>${s.claimed != null ? `<div><dt>Dichiarato dal modello</dt><dd>${P(s.claimed)}</dd></div>` : ""}${s.floor != null ? `<div><dt>Soglia prudente</dt><dd>${P(s.floor)}</dd></div>` : ""}${s.gap != null ? `<div><dt>Scarto reale − dichiarato</dt><dd>${esc(pt(s.gap))}</dd></div>` : ""}${s.roi != null ? `<div><dt>Rendimento a quota reale (${s.roiN} quotate)</dt><dd>${esc(pt(s.roi))}</dd></div>` : ""}</dl>
     ${s.n < min ? `<p class="mn-prog">Campione: ${s.n} su ${min} necessari per un giudizio solido.<span><i style="width:${Math.min(100, (s.n / min) * 100).toFixed(0)}%"></i></span></p>` : ""}
     ${verdict ? `<p class="mn-verdict">${esc(verdict)}</p>` : ""}${note ? `<p class="mn-note">${esc(note)}</p>` : ""}</section>`;
 }
 
 const calRows = (cal) => cal.filter((b) => b.n).map((b) => `<tr><th>${P(b.lo)}–${P(b.hi)}</th><td>${b.n}</td><td>${P(b.claimed, 1)}</td><td>${P(b.rate, 1)}</td><td class="${b.rate - b.claimed < -0.05 ? "bad" : b.rate - b.claimed > 0.05 ? "good" : ""}">${esc(pt(b.rate - b.claimed))}</td></tr>`).join("");
-const calTable = (cal) => (cal.some((b) => b.n) ? `<div class="mn-scroll"><table class="mn-table"><thead><tr><th>Fascia</th><th>Casi</th><th>Dichiarato</th><th>Reale</th><th>Scarto</th></tr></thead><tbody>${calRows(cal)}</tbody></table></div>` : "");
+export const calTable = (cal) => (cal.some((b) => b.n) ? `<div class="mn-scroll"><table class="mn-table"><thead><tr><th>Fascia</th><th>Casi</th><th>Dichiarato</th><th>Reale</th><th>Scarto</th></tr></thead><tbody>${calRows(cal)}</tbody></table></div>` : "");
 
 export function liveHtml(d) {
   const r = d.registered, concluded = d.picks.bet.n + d.picks.evita.n;

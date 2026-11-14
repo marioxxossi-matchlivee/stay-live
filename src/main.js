@@ -2,6 +2,7 @@ import "./style.css";
 import "./design/tokens.css";
 import "./design/shell.css";
 import "./design/football.css";
+import "./design/chrome.css";
 import { MODEL, verdictFor } from "../functions/api/model.js";
 import { MIN_ODDS_DEFAULT, adjustPick, clampMinOdds } from "./rules.js";
 import { computePlan, isBetItem } from "./plan.js";
@@ -16,6 +17,7 @@ import { icon, iconFill } from "./icons.js";
 import { enableSwipe } from "./gestures.js";
 import { accordionHtml, filterRows, groupByDay, playHeadHtml } from "./playlist.js";
 import { showToast } from "./toast.js";
+import { enableSheet } from "./sheet.js";
 
 hideBrokenCrests();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -847,7 +849,10 @@ const reliabilityState = { html: `<section class="ef-card"><h3>Affidabilità dei
 async function loadReliability() {
   if (Date.now() - reliabilityState.at < 60e3) return;
   try {
-    reliabilityState.html = reliabilityHtml(await getJson("/api/reliability"), { esc, pct });
+    let data = await getJson("/api/reliability"), legacy = false;
+    // Il modello attuale non ha ancora BET conclusi ma ce ne sono di versioni precedenti: si mostrano, ben etichettati, invece di nasconderli.
+    if (!data.total?.n && data.olderVersions) { try { data = await getJson("/api/reliability?all=1"); legacy = true; } catch { /* resta il messaggio */ } }
+    reliabilityState.html = reliabilityHtml(data, { esc, pct }, { legacy });
     reliabilityState.at = Date.now();
   } catch (e) { reliabilityState.html = `<section class="ef-card"><h3>Affidabilità dei BET dell'app</h3><p class="ef-empty">Non disponibile: ${esc(e.message)}</p></section>`; }
   const el = $("#reliability"); if (el) el.innerHTML = reliabilityState.html;
@@ -918,11 +923,9 @@ async function sharePdf(btn) {
 /* ---------- Eventi ---------- */
 document.addEventListener("click", (e) => {
   const t = e.target;
-  if (t.closest("[data-close]")) closeDialog(t.closest("dialog"));
   if (t.closest("[data-af-retry]") && detailState) { detailState.afTries = 0; loadAf(detailState.id, 0); }
   if (t.closest("[data-af-extra]") && detailState) { detailState.extra = true; detailState.afTries = 0; t.closest("[data-af-extra]").textContent = "Scarico gli altri dati…"; t.closest("[data-af-extra]").disabled = true; loadAf(detailState.id, 0); }
   if (t.closest("[data-af-refresh]") && detailState) { detailState.afTries = 0; t.closest("[data-af-refresh]").textContent = "Aggiorno…"; loadAf(detailState.id, 0, { refresh: true }); }
-  else if (t.tagName === "DIALOG") closeDialog(t);
   const chip = t.closest("[data-league]");
   if (chip) {
     state.league = chip.dataset.league;
@@ -982,26 +985,8 @@ async function openDetailKeep() {
   detailState = { ...detailState, id, data: await getJson(`/api/analysis?id=${encodeURIComponent(id)}&n=${state.n}&minodds=${state.minOdds}`) };
   renderDetail();
 }
-/* Fogli: chiusura animata, Esc e sfondo passano da qui; sul telefono si chiudono anche trascinando la maniglia verso il basso (solo la maniglia: lo scroll del contenuto non c'entra). */
-function closeDialog(d) {
-  if (!d?.open || d.classList.contains("closing")) return;
-  if (reduceMotion()) { d.close(); return; }
-  d.classList.add("closing");
-  let done = false;
-  const fin = () => { if (done) return; done = true; d.classList.remove("closing"); d.style.removeProperty("--sheet-dy"); d.close(); };
-  d.addEventListener("animationend", (e) => { if (e.target === d) fin(); });
-  setTimeout(fin, 360);
-}
-for (const d of document.querySelectorAll("dialog")) {
-  d.addEventListener("cancel", (e) => { e.preventDefault(); closeDialog(d); });
-  const g = d.querySelector(".grab");
-  if (!g) continue;
-  let y0 = null, dy = 0, pid = null;
-  g.addEventListener("pointerdown", (e) => { y0 = e.clientY; dy = 0; pid = e.pointerId; g.setPointerCapture?.(pid); d.style.transition = "none"; });
-  g.addEventListener("pointermove", (e) => { if (y0 == null || e.pointerId !== pid) return; dy = Math.max(0, e.clientY - y0); d.style.setProperty("--sheet-dy", `${dy}px`); });
-  const end = (e) => { if (y0 == null || e.pointerId !== pid) return; const go = dy > 90; y0 = null; d.style.transition = ""; if (go) closeDialog(d); else d.style.removeProperty("--sheet-dy"); };
-  g.addEventListener("pointerup", end); g.addEventListener("pointercancel", end);
-}
+/* Fogli (dettaglio e preview): chiusura animata, Esc, sfondo e trascinamento verso il basso sono in sheet.js. */
+for (const d of document.querySelectorAll("dialog")) enableSheet(d);
 $("#detail").addEventListener("close", () => { clearTimeout(afTimer); clearTimeout(anTimer); });
 $("#preview").addEventListener("close", () => clearTimeout(pvTimer));
 updatePlaysBadge();

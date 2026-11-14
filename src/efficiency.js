@@ -92,15 +92,18 @@ export function efficiencyHtml(eff, fmt) {
 /**
  * Scheda "Affidabilità dei BET" su TUTTI i BET registrati dall'app (non solo quelli salvati).
  * data = risposta di /api/reliability: { total, byMarket, byKey, byBasis, calibration, pending, olderVersions, since }.
+ * `legacy`: i numeri contano anche versioni precedenti del modello (si usa quando quella attuale non ha ancora BET conclusi):
+ * sono casi veri, registrati prima della partita, ma non misurano il modello attuale e lo si dice in cima alla scheda.
  */
-export function reliabilityHtml(data, fmt) {
+export function reliabilityHtml(data, fmt, { legacy = false } = {}) {
   const { esc, pct } = fmt, t = data?.total;
   const head = `<h3>Affidabilità dei BET dell'app</h3>`;
   if (!t?.n) return `<section class="ef-card">${head}<p class="ef-empty">${data?.olderVersions ? `${data.olderVersions} BET già conclusi, ma registrati con versioni precedenti del modello e quindi non contati qui: tutti i numeri sono nella sezione Affidabilità.` : data?.pending ? `${data.pending} BET registrati, in attesa del risultato.` : "Nessun BET ancora concluso."} I pronostici si registrano da soli prima del calcio d'inizio: le percentuali compaiono man mano che le partite finiscono.</p></section>`;
   const gap = t.expected != null ? t.rate - t.expected : null;
   const verdict = gap == null || t.n < 30 ? "" : gap < -0.05 ? `<p class="ef-note">Il modello promette più di quanto mantiene: ${esc(pct(t.expected))} dichiarato contro ${esc(pct(t.rate))} reale. Le probabilità vanno riviste.</p>` : gap > 0.05 ? `<p class="ef-hint">Il modello è più prudente della realtà: ${esc(pct(t.rate))} reale contro ${esc(pct(t.expected))} dichiarato.</p>` : `<p class="ef-hint">Dichiarato e reale sono vicini: il modello è ben tarato su questi BET.</p>`;
   const cal = (data.calibration ?? []).map((b) => `<li><span class="ef-name">${esc(pct(b.lo))}–${esc(pct(b.hi))}</span><span class="ef-pair">dichiarato <b>${esc(pct(b.expected))}</b> · reale <b>${esc(pct(b.rate))}</b></span><small>${b.won}/${b.n}</small></li>`).join("");
-  return `<section class="ef-card">${head}
+  const legacyNote = legacy ? `<p class="ef-note ef-legacy">Il modello attuale non ha ancora BET conclusi. Questi numeri vengono da versioni precedenti: sono casi veri, registrati prima del calcio d'inizio, ma non misurano il modello di oggi e non vanno letti come la sua affidabilità.</p>` : "";
+  return `<section class="ef-card">${head}${legacyNote}
     <div class="ef-head"><b>${esc(pct(t.rate))}</b><span>${t.won} BET centrati su ${t.n}${range(t, fmt)}</span></div>
     <p class="ef-line">Dichiarato dal modello <b>${t.expected != null ? esc(pct(t.expected)) : "—"}</b> · soglia prudente <b>${t.floor != null ? esc(pct(t.floor)) : "—"}</b>${t.roi != null ? ` · rendimento a quota reale <b class="${t.roi >= 0 ? "pl-gain" : "pl-loss"}">${t.roi >= 0 ? "+" : ""}${esc(pct(t.roi, 1))}</b> <small>(${t.roiN} BET con quota)</small>` : ""}</p>
     ${verdict}
@@ -109,5 +112,5 @@ export function reliabilityHtml(data, fmt) {
     ${cal ? `<h4>Taratura: dichiarato contro reale</h4><ul class="ef-list ef-cal">${cal}</ul>` : ""}
     ${data.byBasis?.length ? `<h4>Per fonti usate</h4><ul class="ef-list">${data.byBasis.map((r) => row(r, fmt)).join("")}</ul>` : ""}
     ${t.n < 30 ? `<p class="ef-note">Campione ancora piccolo (${t.n} BET): sotto i 30 le percentuali dicono poco; guarda l'intervallo.</p>` : ""}
-    <p class="ef-foot">${data.pending ? `${data.pending} BET in attesa del risultato · ` : ""}${data.since ? `dal ${esc(data.since)} · ` : ""}solo modello attuale${data.olderVersions ? ` (${data.olderVersions} BET di versioni precedenti esclusi)` : ""}</p></section>`;
+    <p class="ef-foot">${data.pending ? `${data.pending} BET in attesa del risultato · ` : ""}${data.since ? `dal ${esc(data.since)} · ` : ""}${legacy ? "versioni precedenti del modello" : `solo modello attuale${data.olderVersions ? ` (${data.olderVersions} BET di versioni precedenti esclusi)` : ""}`}</p></section>`;
 }
