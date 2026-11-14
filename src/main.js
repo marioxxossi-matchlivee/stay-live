@@ -18,7 +18,7 @@ import { enableSwipe } from "./gestures.js";
 import { accordionHtml, filterRows, groupByDay, playHeadHtml } from "./playlist.js";
 import { showToast } from "./toast.js";
 import { enableSheet } from "./sheet.js";
-import { partsHtml, shortPick } from "./pickview.js";
+import { THR_DEFAULT, marketsHtml } from "./markets.js";
 
 hideBrokenCrests();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -32,13 +32,12 @@ const state = {
   matches: [], leagues: [], continents: [], league: "all", navOpen: false, day: null, onlyBet: false, selected: new Set(),
   n: 8, minOdds: MIN_ODDS_DEFAULT, loading: false, error: null, banner: null, syncTried: false, updatedAt: null,
 };
-// Modalità personalizzata: solo Over/Under 2,5 o corner sopra una soglia di probabilità.
-const MODE_KEY = "stayLive.customMode", THR_KEY = "stayLive.customThr", MINODDS_KEY = "stayLive.minOdds";
+// Soglia dei pronostici «interessanti» (probabilità minima): impostazione dell'utente. Era la soglia della vecchia modalità «O/U + corner».
+const THR_KEY = "stayLive.customThr", MINODDS_KEY = "stayLive.minOdds";
 try { const mo = localStorage.getItem(MINODDS_KEY); if (mo != null) state.minOdds = clampMinOdds(mo); } catch { /* quota minima di default */ }
-try { state.mode = localStorage.getItem(MODE_KEY) === "1" ? "custom" : "standard"; const t = Number(localStorage.getItem(THR_KEY)); state.thr = t >= 0.5 && t <= 0.9 ? t : 0.6; } catch { state.mode = "standard"; state.thr = 0.6; }
-const isCustom = () => state.mode === "custom";
-/** In modalità personalizzata una partita passa se Over/Under 2,5 (non contraddetto da API-Football) o un corner ha probabilità >= soglia. */
-const qualifies = (m) => { const o = m.ou?.best, c = m.corner?.best; return Boolean((o && o.p >= state.thr && o.agree !== "contraddice") || (c && c.p >= state.thr)); };
+try { const t = Number(localStorage.getItem(THR_KEY)); state.thr = t >= 0.5 && t <= 0.9 ? t : THR_DEFAULT; } catch { state.thr = THR_DEFAULT; }
+state.openMk = new Set();      // schede «Mercati e motivazioni» aperte: sopravvivono ai ridisegni
+state.rules = null;            // regole del motore (soglie) inviate con l'elenco, per spiegare i verdetti
 const leagueName = (id, short = false) => state.leagues.find((l) => l.id === id)?.[short ? "short" : "name"] ?? id;
 /** Filtro campionato: "all", id campionato oppure "n:<country>" per tutta una nazione. */
 const inScope = (leagueId) => {
@@ -70,7 +69,7 @@ async function fetchBoard() {
   return { data: { ...j.payload, needsSync: [], needsCrests: [] }, board: { builtAt: j.built_at, meta: j.meta ?? null } };
 }
 function applyData(data, board = null) {
-  Object.assign(state, { matches: data.matches, leagues: data.leagues, continents: data.continents ?? [], updatedAt: data.updatedAt, board });
+  Object.assign(state, { matches: data.matches, leagues: data.leagues, continents: data.continents ?? [], updatedAt: data.updatedAt, board, rules: data.rules ?? state.rules });
   writeCache(data, board);
   if (data.needsCrests?.length) fillCrests(data.needsCrests);
 }
@@ -147,49 +146,21 @@ async function fillCrests(leagueIds) {
 const basisTag = (b) => (!b || b === "storico" ? "" : `<i class="api-tag" title="${b === "mercato" ? "Calcolato con le quote di mercato" : b === "api" ? "Calcolato con il pronostico di API-Football" : "Calcolato con il pronostico di API-Football e le quote di mercato"}">${b === "api+mercato" ? "API+Q" : b === "api" ? "API" : "Q"}</i>`);
 /** Scelta della partita con la quota minima scelta dall'utente (Impostazioni). */
 const pk = (m) => adjustPick(m.pick, state.minOdds);
-function pickChip(p) {
-  if (!p) return "";
-  if (p.confidence === "insufficiente") return `<span class="pick none"><span class="pk-main"><span class="pk-label">Pochi dati</span></span><span class="pk-sub"><span class="pk-q none">${p.sample} gare di storico</span></span></span>`;
-  const bet = p.verdict === "BET";
-  // Esito in primo piano e verdetto; sotto, discrete, le percentuali delle opzioni (se disponibili), la quota reale (solo se c'è) e la probabilità prudente.
-  const q = p.odds?.median > 1 ? `<span class="pk-q real">quota ${num(p.odds.median)}</span>` : "";
-  return `<span class="pick ${bet ? "bet" : "skip"}"><span class="pk-main"><span class="pk-label">${esc(shortPick(p))}</span><b class="vd-pill">${bet ? icon("check") : ""}${p.verdict}</b></span><span class="pk-sub"><span class="pk-info">${partsHtml(p)}${q}</span><em class="pk-pct" title="Probabilità prudente">prudente ${pct(p.pLow)}</em></span></span>`;
-}
-function customChips(m) {
-  const cm = m.corner ?? cornerCache.get(m.id) ?? null;
-  const o = m.ou?.best, c = cm?.best;
-  const ou = o ? `<span class="cm ${o.p >= state.thr && o.agree !== "contraddice" ? "hi" : "lo"}"><b>${icon(o.side === "over" ? "trending-up" : "trending-down")}${o.side === "over" ? "Over" : "Under"} 2,5</b><em>${pct(o.p)}</em>${o.pApi != null ? `<small>API ${pct(o.pApi)}</small>` : ""}</span>` : `<span class="cm none"><b>Over/Under 2,5</b><small>dati insufficienti</small></span>`;
-  const none = m.cornerState === "none" || m.cornerState === "missing";
-  const co = c ? `<span class="cm ${c.p >= state.thr ? "hi" : "lo"}"><b>${icon("flag")}Corner ${c.side === "over" ? "Over" : "Under"} ${num(c.line, 1)}</b><em>${pct(c.p)}</em><small>quota ${num(c.odd)} · mercato</small></span>` : `<span class="cm none"><b>${icon("flag")}Corner</b><small>${none ? "nessuna quota" : "non cercati"}</small></span>`;
-  return `<span class="cm-row">${ou}${co}</span>${cornerBarHtml({ ...m, corner: cm })}`;
-}
 function visibleMatches() {
   return state.matches.filter((m) => {
     if (!inScope(m.league)) return false;
     if (state.day === "results") return m.status === "final";
     if (!isOpen(m) || dayKey(m.kickoffAt) !== state.day) return false;
-    if (isCustom()) return qualifies(m);
     return !state.onlyBet || pk(m)?.verdict === "BET";
   });
 }
 const sideHtml = (name, logo, goals) => `<span class="side">${crest(name, logo)}<b>${esc(name)}</b>${goals != null ? `<span class="score">${goals}</span>` : ""}</span>`;
 let animateNext = true, animTimer = null;
-/** Filtro a tre voci: Tutte / Solo BET / O/U + corner (sostituisce interruttore e pulsanti separati). */
-const segValue = () => (isCustom() ? "custom" : state.onlyBet ? "bet" : "all");
-function setSeg(v) {
-  state.onlyBet = v === "bet"; state.mode = v === "custom" ? "custom" : "standard";
-  try { localStorage.setItem(MODE_KEY, isCustom() ? "1" : "0"); } catch { /* preferenza non salvata */ }
-  animateNext = true; render();
-}
-/** Selezione che la riga mostra e si può salvare: il consiglio principale; in "O/U + corner" l'Over/Under 2,5 migliore (i corner non sono giocabili: nessun modello). */
+/** Filtro a due voci: Tutte (tutti i mercati) / Solo BET (le partite che il motore seleziona tra quelle di Tutte). */
+const segValue = () => (state.onlyBet ? "bet" : "all");
+function setSeg(v) { state.onlyBet = v === "bet"; animateNext = true; render(); }
+/** Selezione che la riga si può salvare: il consiglio principale del motore (se i dati bastano). */
 function listSel(m) {
-  if (isCustom()) {
-    const o = m.ou?.best;
-    if (!o) return null;
-    return { key: o.key, label: o.side === "over" ? "Over 2,5" : "Under 2,5", market: "Gol totali", preferred: false, p: o.p, pLow: o.pLow, minOdds: o.minOdds ?? null,
-      verdict: o.p >= state.thr && o.agree !== "contraddice" ? "BET" : "EVITA", reason: o.agree === "contraddice" ? "API-Football non conferma." : `Probabilità prudente ${pct(o.pLow)}.`,
-      confidence: m.ou.confidence, basis: m.ou.basis ?? null, pApi: o.pApi ?? null, agree: o.agree ?? null, odds: null, ev: null };
-  }
   const p = pk(m);
   return p && p.confidence !== "insufficiente" ? p : null;
 }
@@ -209,13 +180,15 @@ function rowSaveHtml(m) {
 function rowHtml(m, k = 0) {
   const time = fmtTime.format(new Date(m.kickoffAt));
   const live = m.status === "in_progress" ? `<span class="live-tag">In corso</span>` : "";
-  const check = isOpen(m) ? `<label class="chk"><input type="checkbox" data-sel="${esc(m.id)}" ${state.selected.has(m.id) ? "checked" : ""} aria-label="Seleziona ${esc(m.home)} – ${esc(m.away)}" /></label>` : `<span></span>`;
-  return `<div class="row ${state.selected.has(m.id) ? "sel" : ""}${!isCustom() && pk(m)?.verdict === "BET" && m.pick.confidence !== "insufficiente" ? " is-bet" : ""}" style="--i:${Math.min(k, 9)}">${check}
+  const open = isOpen(m);
+  const check = open ? `<label class="chk"><input type="checkbox" data-sel="${esc(m.id)}" ${state.selected.has(m.id) ? "checked" : ""} aria-label="Seleziona ${esc(m.home)} – ${esc(m.away)}" /></label>` : `<span></span>`;
+  // Le due modalità condividono lo stesso motore e gli stessi dati: «Solo BET» mostra, delle partite di «Tutte», solo i mercati BET.
+  const markets = open ? `<div class="mk-wrap"><button class="mk-open" type="button" data-open="${esc(m.id)}" aria-label="Apri la scheda ${esc(m.home)} – ${esc(m.away)}"></button>${marketsHtml({ ...m, corner: m.corner ?? cornerCache.get(m.id) ?? null }, { mode: state.onlyBet ? "bet" : "all", thr: state.thr, rules: state.rules ?? undefined, open: state.openMk.has(m.id) })}</div>` : "";
+  return `<div class="row ${state.selected.has(m.id) ? "sel" : ""}${pk(m)?.verdict === "BET" && m.pick.confidence !== "insufficiente" ? " is-bet" : ""}" style="--i:${Math.min(k, 9)}">${check}
     <button class="row-main" type="button" data-open="${esc(m.id)}">
       <span class="meta"><b>${time}</b><span>${esc(leagueName(m.league, true))}</span>${live}</span>
       <span class="fx">${sideHtml(m.home, m.homeLogo, m.homeScore)}${sideHtml(m.away, m.awayLogo, m.awayScore)}</span>
-      ${isCustom() ? customChips(m) : pickChip(pk(m))}
-    </button>${rowSaveHtml(m)}</div>`;
+    </button>${rowSaveHtml(m)}${markets}</div>`;
 }
 function renderDays() {
   const pool = state.matches.filter((m) => inScope(m.league));
@@ -265,20 +238,16 @@ function render() {
   renderDays();
   const list = visibleMatches();
   const bets = list.filter((m) => pk(m)?.verdict === "BET").length;
-  document.body.classList.toggle("mode-custom", isCustom());
   const seg = segValue();
   const segEl = $("#mode-seg");
-  segEl.style.setProperty("--i", String(["all", "bet", "custom"].indexOf(seg)));
+  segEl.style.setProperty("--i", String(["all", "bet"].indexOf(seg)));
   for (const b of segEl.querySelectorAll("[data-seg]")) b.setAttribute("aria-pressed", String(b.dataset.seg === seg));
-  $("#select-bets").textContent = isCustom() ? "Le filtrate" : "I BET";
-  $("#custom-panel").hidden = !isCustom() || state.day === "results";
   $("#thr").value = String(state.thr);
   const long = state.day && state.day !== "results" ? dayParts(state.day).long : "";
   $("#day-title").textContent = state.day === "results" ? "Ultimi risultati" : long ? long[0].toUpperCase() + long.slice(1) : "Partite";
   const n = list.length, one = n === 1;
   $("#summary").innerHTML = (state.loading && !state.matches.length ? `<span class="stat">Caricamento…</span>`
     : state.error ? `<span class="stat">Dati non disponibili</span>`
-    : isCustom() && state.day !== "results" ? `<span class="stat"><b>${n}</b> ${one ? "partita" : "partite"} con O/U 2,5 o corner ≥ ${pct(state.thr)}</span>`
     : `<span class="stat"><b>${n}</b> ${one ? "partita" : "partite"}</span>${state.day === "results" ? "" : `<span class="stat bet"><b>${bets}</b> con BET</span>`}`)
     + (state.cornerNote && !state.loading && !state.error ? `<span class="stat note">${esc(state.cornerNote)}</span>` : "")
     + (state.error ? "" : freshChipHtml());
@@ -291,7 +260,7 @@ function render() {
   if (animateNext) { listEl.classList.add("anim"); animateNext = false; clearTimeout(animTimer); animTimer = setTimeout(() => listEl.classList.remove("anim"), 700); } else listEl.classList.remove("anim");   // un ridisegno senza cambio di filtro non rilancia l'ingresso delle righe
   listEl.innerHTML = state.loading && !state.matches.length ? Array.from({ length: 4 }, () => `<div class="row skel" aria-hidden="true"><i></i><i></i><i></i></div>`).join("")
     : list.length ? list.map((m, k) => rowHtml(m, k)).join("")
-    : `<div class="empty">${state.loading ? "Carico i dati…" : state.error ? "" : isCustom() ? "Nessuna partita sopra la soglia. Abbassa la soglia: i corner si cercano da soli ogni 4 ore." : state.onlyBet ? "Nessun BET in questa giornata con i filtri scelti." : "Nessuna partita per questa selezione."}</div>`;
+    : `<div class="empty">${state.loading ? "Carico i dati…" : state.error ? "" : state.onlyBet ? "Nessun BET in questa giornata con i filtri scelti." : "Nessuna partita per questa selezione."}</div>`;
   $("#refresh").disabled = state.loading;
   $("#refresh").classList.toggle("spin", state.loading || Boolean(state.syncing));
   const stamps = state.leagues.map((l) => l.syncedAt).filter(Boolean).sort();
@@ -560,7 +529,7 @@ const pvOdds = new Map(); // quote inserite a mano nel resoconto: id partita -> 
 const BANK_KEY = "stayLive.bankroll";
 let bankroll = (() => { try { const v = Number(localStorage.getItem(BANK_KEY)); return v > 0 ? v : 100; } catch { return 100; } })();
 const parsePos = (v) => { const n = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) && n > 0 ? n : null; };
-const previewUrl = (ids) => `/api/preview?ids=${ids.map(encodeURIComponent).join(",")}&n=${state.n}&minodds=${state.minOdds}${isCustom() ? `&mode=ou25&thr=${state.thr}` : ""}`;
+const previewUrl = (ids) => `/api/preview?ids=${ids.map(encodeURIComponent).join(",")}&n=${state.n}&minodds=${state.minOdds}`;
 async function makePreview() {
   const ids = [...state.selected];
   if (!ids.length) return;
@@ -1162,6 +1131,8 @@ async function autoCorners({ force = false } = {}) {
   } finally { cornerBusy = false; state.cornerNote = ""; render(); }
 }
 { const mi = $("#min-odds"); if (mi) mi.value = String(state.minOdds); }
+// «Mercati e motivazioni»: si ricorda quali schede sono aperte, così non si richiudono a ogni ridisegno.
+$("#list").addEventListener("toggle", (e) => { const d = e.target; if (d instanceof HTMLDetailsElement && d.dataset.mk) (d.open ? state.openMk.add(d.dataset.mk) : state.openMk.delete(d.dataset.mk)); }, true);
 $("#thr").addEventListener("change", (e) => { state.thr = Number(e.target.value); try { localStorage.setItem(THR_KEY, String(state.thr)); } catch { /* preferenza non salvata */ } render(); });
 /* Swipe a destra su una partita = la seleziona, a sinistra = la deseleziona (solo touch; col mouse resta la casella). */
 enableSwipe($("#list"), {
@@ -1169,7 +1140,7 @@ enableSwipe($("#list"), {
   onSwipe: (row, dir) => { const id = row.querySelector("[data-sel]").dataset.sel; if (dir === "right") state.selected.add(id); else state.selected.delete(id); navigator.vibrate?.(12); render(); },
 });
 $("#select-bets").addEventListener("click", () => {
-  visibleMatches().filter((m) => isOpen(m) && (isCustom() || pk(m)?.verdict === "BET")).forEach((m) => state.selected.add(m.id));
+  visibleMatches().filter((m) => isOpen(m) && pk(m)?.verdict === "BET").forEach((m) => state.selected.add(m.id));
   closeSelMenu(); render();
 });
 $("#sel-clear").addEventListener("click", () => { state.selected.clear(); render(); });
