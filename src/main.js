@@ -18,6 +18,7 @@ import { enableSwipe } from "./gestures.js";
 import { accordionHtml, filterRows, groupByDay, playHeadHtml } from "./playlist.js";
 import { showToast } from "./toast.js";
 import { enableSheet } from "./sheet.js";
+import { partsHtml, shortPick } from "./pickview.js";
 
 hideBrokenCrests();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -150,9 +151,9 @@ function pickChip(p) {
   if (!p) return "";
   if (p.confidence === "insufficiente") return `<span class="pick none"><span class="pk-main"><span class="pk-label">Pochi dati</span></span><span class="pk-sub"><span class="pk-q none">${p.sample} gare di storico</span></span></span>`;
   const bet = p.verdict === "BET";
-  // In primo piano l'esito consigliato; poi verdetto, quota reale (o l'avviso che manca) e, piccola, la probabilità prudente.
-  const q = p.odds?.median > 1 ? `<span class="pk-q real">quota ${num(p.odds.median)}</span>` : `<span class="pk-q none">quota reale non disponibile</span>`;
-  return `<span class="pick ${bet ? "bet" : "skip"}"><span class="pk-main"><span class="pk-label">${esc(p.label)}${basisTag(p.basis)}</span><b class="vd-pill">${bet ? icon("check") : ""}${p.verdict}</b></span><span class="pk-sub">${q}<em class="pk-pct" title="Probabilità prudente">prudente ${pct(p.pLow)}</em></span></span>`;
+  // Esito in primo piano e verdetto; sotto, discrete, le percentuali delle opzioni (se disponibili), la quota reale (solo se c'è) e la probabilità prudente.
+  const q = p.odds?.median > 1 ? `<span class="pk-q real">quota ${num(p.odds.median)}</span>` : "";
+  return `<span class="pick ${bet ? "bet" : "skip"}"><span class="pk-main"><span class="pk-label">${esc(shortPick(p))}</span><b class="vd-pill">${bet ? icon("check") : ""}${p.verdict}</b></span><span class="pk-sub"><span class="pk-info">${partsHtml(p)}${q}</span><em class="pk-pct" title="Probabilità prudente">prudente ${pct(p.pLow)}</em></span></span>`;
 }
 function customChips(m) {
   const cm = m.corner ?? cornerCache.get(m.id) ?? null;
