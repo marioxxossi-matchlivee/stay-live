@@ -219,3 +219,29 @@ dialog.sheet-drag{transition:none}
 .mk-note{margin:4px 0 0;font-size:12px;line-height:1.5;color:var(--sl-mute)}
 .mk-grp p{margin:3px 0;font-size:12.5px;color:var(--sl-ink-2)}
 @media (max-width:380px){.mk{grid-template-columns:54px auto minmax(0,1fr)}.mk .mk-tag{grid-column:2 / -1;justify-self:start}}
+
+/* ---------- Le due squadre una accanto all'altra, orario o risultato al centro ---------- */
+.row-main .meta{margin-bottom:2px}
+.fx.vs{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:start;gap:6px 10px;margin-top:8px}
+.fx.vs .tm{display:grid;gap:7px;min-width:0;align-content:start}
+.fx.vs .tm.home{justify-items:start;text-align:left}
+.fx.vs .tm.away{justify-items:end;text-align:right}
+.fx.vs .tm b{font:700 14.5px/1.2 var(--sl-font);color:var(--sl-ink);letter-spacing:-.01em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.fx.vs .crest.vs{width:46px;height:46px;font-size:15px;flex:none}
+.fx.vs .crest.vs img{width:68%;height:68%}
+.vs-mid{display:grid;justify-items:center;gap:6px;padding-top:6px;min-width:64px}
+.vs-time,.vs-score{font:800 22px/1 var(--sl-font);letter-spacing:-.03em;color:var(--sl-ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.vs-score i{font-style:normal;margin:0 5px;color:var(--sl-faint)}
+.vs-st{font:700 11px var(--sl-font);padding:3px 10px;border-radius:999px;background:var(--sl-s3);color:var(--sl-ink-2);white-space:nowrap}
+.vs-st.live{background:rgba(224,54,74,.12);color:#c42036}
+
+/* ---------- Righe dei mercati: niente testo tagliato ---------- */
+.mk{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"name pick tag" "rest rest rest";gap:2px 8px;padding:7px 10px;overflow:hidden}
+.mk-name{grid-area:name;min-width:56px}
+.mk-pick{grid-area:pick;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.mk .mk-tag{grid-area:tag;justify-self:end;font-size:9.5px;padding:3px 7px;white-space:nowrap}
+.mk-rest{grid-area:rest;grid-column:1 / -1;white-space:normal;overflow:visible;text-overflow:clip;font-size:12px;line-height:1.35}
+.mk-rest:empty{display:none}
+.mk-na{grid-area:pick;grid-column:2 / -1;white-space:normal}
+.mk-wait{font-style:italic;color:var(--sl-faint)}
+@media (max-width:380px){.mk{grid-template-columns:auto minmax(0,1fr) auto}.mk .mk-tag{grid-column:auto}}
