@@ -11,7 +11,7 @@
  */
 import { esc, num, pct } from "./format.js";
 import { icon } from "./icons.js";
-import { SHORT_PICK } from "./pickview.js";
+import { SHORT_PICK, shortPick } from "./pickview.js";
 
 export const THR_DEFAULT = 0.6;
 const MARKET_GROUPS = [
@@ -154,8 +154,17 @@ function cornerDetail(m, cv) {
 export function marketsHtml(m, { mode = "all", thr = THR_DEFAULT, rules = RULES, open = false, cornerOverride = null } = {}) {
   const mk = m.mk, opts = { thr, rules }, cv = cornerView(m, thr, rules, cornerOverride);
   if (!mk) {
-    const reason = m.pick?.confidence === "insufficiente" ? `Pochi dati: ${m.pick.sample} gare di storico, mercati non valutabili.` : "Mercati non ancora disponibili per questa partita.";
-    return `<div class="mkts"><div class="mk none"><span class="mk-name">Mercati</span><span class="mk-na">${esc(reason)}</span></div>${cv.state !== "none" ? cornerRow(m, cv) : ""}</div>`;
+    // Elenco partite non ancora rigenerato (o pochi dati): resta visibile il consiglio principale del motore, con le sue cifre reali.
+    const pick = m.pick && m.pick.confidence !== "insufficiente" ? m.pick : null;
+    const corner = cv.state !== "none" ? cornerRow(m, cv) : "";
+    if (!pick) {
+      const reason = m.pick?.confidence === "insufficiente" ? `Pochi dati: ${m.pick.sample} gare di storico, mercati non valutabili.` : "Mercati non ancora disponibili per questa partita.";
+      return `<div class="mkts"><div class="mk none"><span class="mk-name">Mercati</span><span class="mk-na">${esc(reason)}</span></div>${corner}</div>`;
+    }
+    const bet = pick.verdict === "BET";
+    const row = `<div class="mk ${bet ? "bet" : "analysed"}" data-g="rec"><span class="mk-name">${bet ? "Consigliato" : "Pronostico"}</span><span class="mk-pick"><b>${esc(shortPick(pick))}</b><em>${pct(pick.p)}</em></span><span class="mk-rest">prudente ${pct(pick.pLow)}${pick.odds?.median > 1 ? ` · quota ${num(pick.odds.median)}` : ""}</span>${bet ? tag("bet") : ""}</div>`;
+    const why = bet && pick.reason ? `<p class="mk-mot"><b>Perché</b> ${esc(pick.reason)}</p>` : "";
+    return `<div class="mkts">${row}${mode === "bet" ? "" : corner}</div>${why}<p class="mk-mot mk-wait">Gli altri mercati (1X2, Gol, Over/Under) compaiono dopo il prossimo aggiornamento completo.</p>`;
   }
   const dcKey = bestOf(mk, "dc"), recDc = mk.rec.some((k) => MARKET_GROUPS.every((g) => !g.keys.includes(k)));
   if (mode === "bet") {

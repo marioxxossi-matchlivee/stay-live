@@ -177,17 +177,24 @@ function rowSaveHtml(m) {
   const saved = isSaved(cand);
   return `<button class="row-save${saved ? " done" : ""}" type="button" data-row-save="${esc(m.id)}" aria-label="${saved ? `Giocata salvata: ${esc(cand.label)}` : `Salva giocata: ${esc(cand.label)}`}" aria-pressed="${saved}"${saved ? " disabled" : ""}>${saved ? iconFill("bookmark") : icon("bookmark")}</button>`;
 }
+/** Le due squadre una accanto all'altra (stemma e nome), con l'orario o il risultato al centro. */
+function versusHtml(m) {
+  const played = m.homeScore != null && m.awayScore != null;
+  const live = m.status === "in_progress", done = m.status === "final";
+  const centre = played ? `<strong class="vs-score">${esc(m.homeScore)}<i>–</i>${esc(m.awayScore)}</strong>` : `<strong class="vs-time">${esc(fmtTime.format(new Date(m.kickoffAt)))}</strong>`;
+  const state = live ? `<span class="vs-st live">In corso</span>` : done ? `<span class="vs-st">Terminata</span>` : "";
+  const team = (side, name, logo) => `<span class="tm ${side}">${crest(name, logo, "crest vs")}<b>${esc(name)}</b></span>`;
+  return `<span class="fx vs">${team("home", m.home, m.homeLogo)}<span class="vs-mid">${centre}${state}</span>${team("away", m.away, m.awayLogo)}</span>`;
+}
 function rowHtml(m, k = 0) {
-  const time = fmtTime.format(new Date(m.kickoffAt));
-  const live = m.status === "in_progress" ? `<span class="live-tag">In corso</span>` : "";
   const open = isOpen(m);
   const check = open ? `<label class="chk"><input type="checkbox" data-sel="${esc(m.id)}" ${state.selected.has(m.id) ? "checked" : ""} aria-label="Seleziona ${esc(m.home)} – ${esc(m.away)}" /></label>` : `<span></span>`;
   // Le due modalità condividono lo stesso motore e gli stessi dati: «Solo BET» mostra, delle partite di «Tutte», solo i mercati BET.
   const markets = open ? `<div class="mk-wrap"><button class="mk-open" type="button" data-open="${esc(m.id)}" aria-label="Apri la scheda ${esc(m.home)} – ${esc(m.away)}"></button>${marketsHtml({ ...m, corner: m.corner ?? cornerCache.get(m.id) ?? null }, { mode: state.onlyBet ? "bet" : "all", thr: state.thr, rules: state.rules ?? undefined, open: state.openMk.has(m.id) })}</div>` : "";
   return `<div class="row ${state.selected.has(m.id) ? "sel" : ""}${pk(m)?.verdict === "BET" && m.pick.confidence !== "insufficiente" ? " is-bet" : ""}" style="--i:${Math.min(k, 9)}">${check}
     <button class="row-main" type="button" data-open="${esc(m.id)}">
-      <span class="meta"><b>${time}</b><span>${esc(leagueName(m.league, true))}</span>${live}</span>
-      <span class="fx">${sideHtml(m.home, m.homeLogo, m.homeScore)}${sideHtml(m.away, m.awayLogo, m.awayScore)}</span>
+      <span class="meta"><span>${esc(leagueName(m.league, true))}</span></span>
+      ${versusHtml(m)}
     </button>${rowSaveHtml(m)}${markets}</div>`;
 }
 function renderDays() {
