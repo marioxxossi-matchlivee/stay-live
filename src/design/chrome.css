@@ -1,0 +1,104 @@
+/* =====================================================================
+   Stay Live · tema chiaro, barra inferiore, fogli, menu dello sport, caricamento al cambio sport.
+   Caricato per ultimo: ridefinisce i pochi colori scritti a mano nelle altre regole e corregge l'allineamento.
+   ===================================================================== */
+html{background:var(--sl-bg);color-scheme:light}
+
+/* ---------- Testata e marchio (chiari) ---------- */
+.top,.tn-top{background:rgba(255,255,255,.88);-webkit-backdrop-filter:saturate(1.4) blur(16px);backdrop-filter:saturate(1.4) blur(16px);border-bottom:1px solid var(--sl-line)}
+.brand .word,.tn-brand>span{background:linear-gradient(180deg,#0b1630 10%,#3a4a73 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
+.brand .word .live,.tn-brand b{background:linear-gradient(180deg,#3f86ff 0%,#1450cc 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;filter:none}
+.brand .mark,.tn-brand .tn-mark{box-shadow:0 0 0 1px rgba(18,38,84,.14),0 6px 14px -6px rgba(28,95,224,.55)}
+.icon-btn,.tn-ic{background:var(--sl-s1);border-color:var(--sl-line-2)}
+.icon-btn:active,.tn-ic:active{background:var(--sl-s3)}
+.ptr{background:var(--sl-s1)}
+
+/* ---------- Menu dello sport (accordion in alto a destra) ---------- */
+.top-actions,.tn-actions{align-items:center}
+.sport-menu{position:relative}
+.sport-pill{background:var(--sl-s1);box-shadow:var(--sh-1)}
+.sport-pill .ic-caret-down{transition:transform var(--t-base) var(--ease-out)}
+.sport-menu.open .sport-pill .ic-caret-down{transform:rotate(180deg)}
+.sport-menu.open .sport-pill{border-color:var(--sl-accent-line);background:var(--sl-s2)}
+.sport-acc{position:absolute;right:0;top:calc(100% + 8px);width:204px;z-index:var(--z-top);display:grid;grid-template-rows:0fr;opacity:0;visibility:hidden;pointer-events:none;background:var(--sl-s1);border:1px solid var(--sl-line-2);border-radius:var(--rad-md);box-shadow:var(--sh-3);transform-origin:top right;transform:scale(.97);transition:grid-template-rows var(--t-base) var(--ease-out),opacity var(--t-base) var(--ease-out),transform var(--t-base) var(--ease-out),visibility 0s linear var(--t-base)}
+.sport-menu.open .sport-acc{grid-template-rows:1fr;opacity:1;visibility:visible;pointer-events:auto;transform:none;transition-delay:0s}
+.sport-acc-in{min-height:0;overflow:hidden;border-radius:inherit}
+.sport-acc-list{display:grid;gap:2px;padding:6px}
+.sport-acc button{display:flex;align-items:center;gap:11px;width:100%;padding:11px 12px;border:0;border-radius:12px;background:none;color:var(--sl-ink);font:700 14.5px var(--sl-font);text-align:left;transition:background var(--t-fast),transform var(--t-fast) var(--ease-out)}
+.sport-acc button .ic{font-size:21px;color:var(--sl-accent)}
+.sport-acc button[data-sport-pick=tennis] .ic{color:var(--sl-lime)}
+.sport-acc button:active{transform:scale(.97);background:var(--sl-s3)}
+.sport-acc button[aria-checked=true]{background:var(--sl-s2)}
+.sport-acc .sport-ck{margin-left:auto;font-size:17px;color:var(--sl-win)}
+
+/* ---------- Caricamento al cambio sport: palla che rimbalza + skeleton ---------- */
+#sport-loader{position:fixed;left:0;right:0;bottom:0;top:var(--ld-top,0px);z-index:var(--z-sheet);display:grid;grid-template-rows:minmax(220px,38vh) 1fr;justify-items:center;padding:0 16px;background:var(--sl-bg);opacity:0;visibility:hidden;pointer-events:none;transition:opacity .2s linear,visibility 0s linear .2s;overflow:hidden}
+#sport-loader.on{opacity:1;visibility:visible;pointer-events:auto;transition-delay:0s}
+.ld-stage{align-self:center;position:relative;width:120px;height:150px;display:grid;justify-items:center;align-content:end}
+.ld-ball{position:absolute;bottom:14px;font-size:68px;color:var(--ld-color,var(--sl-accent));line-height:0;animation:ldbounce .72s cubic-bezier(.3,0,.7,1) infinite}
+.ld-ball .ic{width:1em;height:1em;margin:0;display:block;animation:ldspin 1.44s linear infinite}
+#sport-loader[data-sport=tennis] .ld-ball{color:#9fbf00}
+.ld-shadow{width:58px;height:10px;border-radius:50%;background:rgba(18,38,84,.22);animation:ldshadow .72s cubic-bezier(.3,0,.7,1) infinite}
+.ld-skel{width:100%;max-width:560px;display:grid;gap:10px;align-content:start}
+.ld-skel .row.skel{margin:0}
+@keyframes ldbounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-84px)}}
+@keyframes ldshadow{0%,100%{transform:scale(1);opacity:.9}50%{transform:scale(.5);opacity:.35}}
+@keyframes ldspin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.ld-ball,.ld-ball .ic,.ld-shadow{animation:none!important}}
+
+/* ---------- Barra inferiore: icone sempre centrate sul pulsante ---------- */
+.sl-nav,.tabbar{background:rgba(255,255,255,.93);border:1px solid var(--sl-line-2);box-shadow:0 14px 34px -14px rgba(18,38,84,.4),0 1px 0 rgba(255,255,255,.9) inset}
+.sl-nav-ind{background:var(--sl-accent-tint);border:1px solid var(--sl-accent-line);box-shadow:none}
+.sl-nav.tn .sl-nav-ind{background:var(--sl-lime-tint);border-color:rgba(12,130,168,.35);box-shadow:none}
+.sl-nav.n4{--n:4}
+.sl-nav.tn:has(button:nth-of-type(4)[aria-pressed=true]){--i:3}
+.tab-item,.sl-nav>button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0;padding:6px 2px 5px;text-align:center}
+.tab-item .tab-lb,.sl-nav>button .tab-lb{display:block;width:100%;text-align:center;font:700 11px/1.1 var(--sl-font);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tabbar .tab-ic,.sl-nav .tab-ic{position:relative;display:block;flex:none;width:28px;height:28px;margin:0}
+.tabbar .ic-pair,.sl-nav .ic-pair{position:absolute;left:0;top:0;display:block;width:28px;height:28px;font-size:25px}
+.tabbar .ic-pair .ic,.sl-nav .ic-pair .ic{position:absolute;left:50%;top:50%;width:25px;height:25px;margin:-12.5px 0 0 -12.5px;font-size:25px;vertical-align:baseline}
+.tab-ic .badge{position:absolute;top:-5px;left:calc(50% + 8px);right:auto;box-shadow:0 0 0 2px #fff;background:var(--sl-accent);color:#fff}
+.tab-item[aria-current=page],.sl-nav>button[aria-pressed=true]{color:var(--sl-ink)}
+
+/* ---------- Barra di selezione e avvisi (scuri, per staccare dal fondo chiaro) ---------- */
+.selbar{background:#12234a;color:#fff;border-color:transparent;box-shadow:0 18px 40px -14px rgba(18,38,84,.6)}
+.selbar #sel-count{color:#fff}
+.selbar .primary{background:#fff;color:#12234a;box-shadow:none}
+.selbar .primary:hover{background:#fff}
+.toast{background:#12234a;color:#fff;border-color:transparent}
+.toast button{color:#9cc4ff}
+
+/* ---------- Fogli (dettaglio e preview): una sola maniglia, X centrata, chiusura trascinando ---------- */
+dialog::backdrop{background:rgba(11,22,48,.46)}
+dialog{background:var(--sl-bg)}
+.grab{display:none}
+@media (max-width:640px){
+  .grab{display:flex;justify-content:center;align-items:flex-start;flex:none;width:100%;height:36px;margin:0;padding:10px 0 0;background:none;border-radius:0;touch-action:none;cursor:grab;position:relative;z-index:1}
+  .grab::after{content:"";position:static;display:block;left:auto;top:auto;width:44px;height:5px;margin:0;border-radius:3px;background:var(--sl-s4)}
+  .grab:active{cursor:grabbing}
+}
+.close{display:grid;place-items:center;padding:0;font-size:0;line-height:0;top:10px;right:12px;z-index:3;background:var(--sl-s1);box-shadow:var(--sh-1)}
+.close .ic{display:block;margin:0;vertical-align:baseline;font-size:18px;width:1em;height:1em}
+dialog.sheet-drag{transition:none}
+
+/* ---------- Dettagli che usavano colori fissi ---------- */
+.pl-sum .good b,.pl-pick b,.pl-leg.won .pl-pick b,.pl-gain{color:var(--sl-win)}
+.pl-sum .bad b,.pl-leg.lost .pl-pick b,.pl-loss{color:var(--sl-danger)}
+.pv-sum span{color:var(--sl-ink-2)}
+.skel i{background:linear-gradient(90deg,var(--sl-s2) 25%,var(--sl-s3) 50%,var(--sl-s2) 75%);background-size:200% 100%}
+.pv-corner{background:var(--sl-s2)}
+.pc-bar .draw{background:var(--sl-s4)}
+.acc.pl{--stripe:var(--sl-s4)}
+.acc.pl.st-won{--stripe:var(--sl-win)}
+.acc.pl.st-lost{--stripe:var(--sl-danger)}
+.acc-head:active{background:rgba(18,38,84,.05)}
+
+/* ---------- Tennis: righe come quelle del calcio ---------- */
+.meta .tn-tourn{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side.win b{color:var(--sl-accent)}
+.side .score.sets{margin-left:auto;font:800 16px var(--sl-font);letter-spacing:.08em;font-variant-numeric:tabular-nums}
+.side .tn-rank{margin-left:6px}
+.af-big.sm{font-size:22px}
+.tn-pane.enter{animation:slrise .38s var(--ease-out)}
+.tn-main .tn-group{margin:8px 0 14px}
+.ef-legacy{margin:0 0 10px;padding:9px 12px;border-radius:12px;background:var(--sl-warn-tint);color:var(--sl-warn)}
