@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { bestCombo, buildReport, byConfidence, globalCalibration, judgeEvita, pickBreakdown, pickFor, summarize, sweep } from "../scripts/backtest-evita.js";
 import { normalize, predict, withModel } from "../scripts/backtest.js";
+import { SELECTIONS } from "../functions/api/model.js";
 
 let seed = 11; const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
 const pois = (l) => { let k = 0, p = 1; const L = Math.exp(-l); do { k += 1; p *= rnd(); } while (p > L); return k - 1; };
@@ -26,9 +27,9 @@ test("summarize: percentuali coerenti e rendimento teorico finito", () => {
   const s = summarize(pickBreakdown(preds).edge);
   assert.ok(s.rate >= 0 && s.rate <= 1 && Number.isFinite(s.proxyRoi) && s.ci.lo <= s.rate && s.rate <= s.ci.hi);
 });
-test("taratura globale: tutti i 14 esiti, ECE finita", () => {
+test("taratura globale: tutti gli esiti del modello, ECE finita", () => {
   const c = globalCalibration(preds);
-  assert.equal(c.per.length, 14);
+  assert.equal(c.per.length, SELECTIONS.length);
   assert.ok(Number.isFinite(c.total.ece) && c.per.every((r) => r.n > 0));
 });
 test("fiducia e griglia soglie producono righe e una combinazione consigliata o nessuna", () => {
