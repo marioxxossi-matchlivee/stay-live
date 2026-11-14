@@ -74,3 +74,11 @@ test("Solo BET: mostra solo i mercati BET della stessa analisi, con motivazione"
   const h = marketsHtml({ ...item, mk: bet }, { mode: "bet", thr: 0.6 });
   assert.match(h, /data-g="rec"/); assert.match(h, /Over 2,5/); assert.match(h, /Perché/); assert.doesNotMatch(h, /data-g="esito"/);
 });
+
+test("elenco non ancora rigenerato: il consiglio principale (es. X2) resta visibile con le sue cifre", () => {
+  const pick = { key: "dcx2", label: "X2 · Pareggio o trasferta", p: 0.72, pLow: 0.63, verdict: "BET", confidence: "media", reason: "Probabilità prudente 63% (+11 punti sulla media del campionato).", odds: null };
+  const h = marketsHtml({ id: "a", home: "A", away: "B", pick, mk: null, corner: null, cornerModel: null }, { mode: "all", thr: 0.6 });
+  assert.match(h, /X2/); assert.match(h, /72%/); assert.match(h, /prudente 63%/); assert.match(h, /mk-tag bet/); assert.match(h, /dopo il prossimo aggiornamento/);
+  assert.match(marketsHtml({ id: "a", home: "A", away: "B", pick, mk: null }, { mode: "bet" }), /Perché[^]*Probabilità prudente 63%/);
+  assert.match(marketsHtml({ id: "a", home: "A", away: "B", pick: { ...pick, confidence: "insufficiente", sample: 2 }, mk: null }, { mode: "all" }), /Pochi dati/);
+});
