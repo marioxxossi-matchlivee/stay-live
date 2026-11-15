@@ -68,7 +68,9 @@ test("budget del giro: i crediti restanti si dividono per i giri che mancano, co
   assert.equal(runBudgetFor(100, at(21)), 250, "minimo garantito");
   assert.equal(runBudgetFor(4000, at(12), "recover"), 250, "recupero: 5% ma mai sotto il minimo");
   assert.equal(runBudgetFor(7000, at(12), "recover"), 350);
-  assert.equal(runBudgetFor(null, at(12)), Infinity, "senza dato sui crediti non si limita");
+  assert.equal(runBudgetFor(null, at(12)), runBudgetFor(7500, at(12)), "senza contatore si parte dal limite giornaliero: mai senza tetto");
+  assert.ok(Number.isFinite(runBudgetFor(null, at(12), "recover")) && runBudgetFor(null, at(0), "recover") === 375);
+  assert.equal(runBudgetFor(undefined, at(12), "full", 10000), runBudgetFor(10000, at(12)), "limite del piano configurabile");
 });
 
 test("primo giro dopo la mezzanotte: il tetto non è infinito", () => {
@@ -81,4 +83,11 @@ test("primo giro dopo la mezzanotte: il tetto non è infinito", () => {
   const today = { day: "2026-11-14", requests: 100, limit_day: 7500, remaining: 7400 };
   assert.equal(baseUsage(today, last, now), today, "con il contatore di oggi non cambia nulla");
   assert.equal(baseUsage(null, null, now), null, "primissima esecuzione: nessun dato, nessun tetto inventato");
+});
+
+test("ogni scaricamento si riduce quando il tetto sta finendo (nessun giro supera il tetto di centinaia di richieste)", async () => {
+  const fs = await import("node:fs");
+  const src = fs.readFileSync(new URL("../scripts/full-refresh.js", import.meta.url), "utf8");
+  assert.match(src, /const left = runBudget - await spentNow\(\)/); assert.match(src, /maxLive: live/);
+  assert.match(src, /tetto di questo giro/, "il log dichiara il tetto di partenza");
 });

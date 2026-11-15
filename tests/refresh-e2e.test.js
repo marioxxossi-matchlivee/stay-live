@@ -95,7 +95,7 @@ function makeWorld() {
   return { db, log, knobs, fetchMock, now };
 }
 
-const env = { SUPABASE_URL: SB, SUPABASE_SERVICE_ROLE_KEY: "sr", API_FOOTBALL_KEY: "k", SYNC_SECRET: "s", API_FOOTBALL_MIN_GAP_MS: "0", FIXTURES_DAYS: "7" };
+const env = { SUPABASE_URL: SB, SUPABASE_SERVICE_ROLE_KEY: "sr", API_FOOTBALL_KEY: "k", SYNC_SECRET: "s", API_FOOTBALL_MIN_GAP_MS: "0", FIXTURES_DAYS: "7", API_FOOTBALL_DAILY_LIMIT: "1000000" };   // il mondo finto ha 70 campionati: tetto del giro alto, qui non si prova il budget
 
 test("giro completo + recupero automatico, con API-Football come unica fonte", async () => {
   const w = makeWorld(), real = globalThis.fetch;
