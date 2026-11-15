@@ -1,0 +1,97 @@
+/* =====================================================================
+   Stay Live · scheda partita compatta e dimensioni complessive.
+   Caricato per ultimo. Le classi della scheda hanno il prefisso mc- / mx- (nessun nome condiviso con altri componenti:
+   «.mk» era usato anche dall'elenco di Impostazioni e ne sfalsava le icone).
+   ===================================================================== */
+
+/* ---------- Dimensioni complessive: più compatte, senza testi minuscoli ---------- */
+main{padding-top:12px}
+.top{padding-top:max(8px,var(--safe-t));padding-bottom:8px}
+.brand{font-size:18px;gap:8px}
+.brand .mark{width:28px;height:28px}
+.sport-pill{height:34px;padding:0 10px 0 11px;font-size:12.5px}
+.icon-btn,.tn-ic{width:34px;height:34px}
+.eyebrow{margin:0 0 3px;font-size:10px}
+.intro h1,.vtitle{font-size:24px;line-height:1.08;margin:0 0 8px}
+.summary{gap:6px;margin:0 0 10px}
+.stat{padding:4px 10px;font-size:12px}
+.stat b{font-size:13px}
+.banner{padding:8px 12px;font-size:12.5px;margin-bottom:10px;border-radius:12px}
+.days{gap:6px;padding:2px 16px 8px}
+.day{min-width:60px;padding:6px 6px;border-radius:12px}
+.day b{font-size:9.5px}
+.day span{font-size:14px;margin:1px 0}
+.day small{font-size:10.5px}
+.chip-btn{padding:8px 12px;font-size:13px;border-radius:12px}
+.listbar{margin:0 0 8px}
+.list{gap:8px}
+
+/* ---------- Tutte / Solo BET: due metà uguali, testo centrato, indicatore discreto ---------- */
+.seg{--segn:2;grid-template-columns:repeat(var(--segn),minmax(0,1fr));padding:3px;margin:0 0 10px;border-radius:12px}
+.seg:has(> button:nth-child(3)){--segn:3}
+.seg::before{top:3px;bottom:3px;left:3px;width:calc((100% - 6px) / var(--segn));border-radius:9px}
+.seg button{height:32px;padding:0 6px;display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1;white-space:nowrap}
+
+/* ---------- Impostazioni: marcatori di stato centrati nel cerchio ---------- */
+.st-list .mk{display:grid;place-items:center;width:22px;height:22px;padding:0;font:800 12px/1 var(--sl-font);text-align:center}
+
+/* ---------- Scheda partita ---------- */
+.row.mc{display:grid;grid-template-columns:30px minmax(0,1fr) 34px;grid-template-areas:"chk lg sv" "vs vs vs" "bd bd bd";align-items:center;gap:0 6px;padding:6px 8px 10px 6px;margin:0;background:var(--sl-s1);border:1px solid var(--sl-line);border-radius:16px;box-shadow:var(--sh-1);overflow:hidden}
+.row.mc::before{top:10px;bottom:10px}
+.row.mc.is-bet{background:linear-gradient(180deg,rgba(18,135,90,.05),var(--sl-s1) 50%);border-color:var(--sl-bet-g-line);box-shadow:var(--sh-2)}
+.row.mc.is-bet::before{background:var(--sl-bet-g);box-shadow:none}
+.row.mc.sel{background:linear-gradient(180deg,rgba(28,95,224,.06),var(--sl-s1));border-color:var(--sl-accent-line)}
+.row.mc.sel.is-bet{border-color:var(--sl-bet-g-line)}
+.row.mc .chk{grid-area:chk;width:30px;height:30px;margin:0;display:grid;place-items:center}
+.row.mc .chk input{width:20px;height:20px;margin:0}
+.row.mc .mc-league{grid-area:lg;justify-self:start;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:700 10px var(--sl-font);letter-spacing:.06em;text-transform:uppercase;color:var(--sl-mute);background:var(--sl-s3);padding:3px 9px;border-radius:999px}
+.row.mc .row-save{grid-area:sv;width:34px;height:34px;margin:0}
+.row.mc .row-save .ic,.row.mc .row-save svg{font-size:19px;width:19px;height:19px}
+
+/* squadre: stemma sopra il nome, nome sempre leggibile (si va a capo solo tra le parole) */
+.row.mc .mc-vs{grid-area:vs;all:unset;box-sizing:border-box;grid-area:vs;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:4px 6px;align-items:start;padding:6px 2px 2px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.row.mc .mc-vs:focus-visible{outline:2px solid var(--sl-accent);outline-offset:2px;border-radius:10px}
+.mc-t{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0;text-align:center}
+.mc-t b{display:block;max-width:100%;font:700 13px/1.2 var(--sl-font);letter-spacing:-.01em;color:var(--sl-ink);overflow-wrap:break-word;word-break:normal;hyphens:auto;text-wrap:balance}
+.mc-t .crest{width:38px;height:38px;flex:none}
+.mc-t .crest em{font-size:12px}
+.mc-t .crest img{padding:5px}
+.mc-mid{display:grid;justify-items:center;gap:4px;min-width:56px;padding-top:6px}
+.mc-time,.mc-score{font:800 19px/1 var(--sl-font);letter-spacing:-.03em;color:var(--sl-ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.mc-score i{font-style:normal;margin:0 4px;color:var(--sl-faint)}
+.mc-st{font:700 10px var(--sl-font);padding:2px 8px;border-radius:999px;background:var(--sl-s3);color:var(--sl-ink-2);white-space:nowrap}
+.mc-st.live{background:rgba(224,54,74,.12);color:#c42036}
+
+/* mercati: etichetta + opzioni con la loro probabilità; l'esito evidenziato è il più probabile (verde se BET) */
+.mc-body{grid-area:bd;display:grid;gap:7px;padding:6px 2px 0 4px;min-width:0}
+.mcm{display:grid;gap:4px;min-width:0}
+.mx{display:grid;grid-template-columns:50px minmax(0,1fr);align-items:center;gap:6px}
+.mx-l{font:700 9.5px/1.15 var(--sl-font);letter-spacing:.05em;text-transform:uppercase;color:var(--sl-mute)}
+.mx-c{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;min-width:0}
+.mx .c{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:center;gap:0 4px;min-width:0;padding:5px 3px;border-radius:9px;background:var(--sl-s2);font-size:12px;line-height:1.25;text-align:center}
+.mx .c i{font-style:normal;font-weight:600;color:var(--sl-mute);white-space:nowrap}
+.mx .c b{font-weight:800;color:var(--sl-ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.mx .c small{flex-basis:100%;font-size:10.5px;font-weight:600;opacity:.9}
+.mx .c.top{background:var(--sl-accent)}
+.mx .c.top i,.mx .c.top b,.mx .c.top small{color:#fff}
+.mx .c.top.bet{background:var(--sl-bet-g)}
+.mx.none{grid-template-columns:50px minmax(0,1fr)}
+.mx-na{padding:5px 8px;border-radius:9px;border:1px dashed var(--sl-line-2);font-size:11.5px;color:var(--sl-faint);font-style:italic}
+.mc-why{margin:0;font-size:12px;line-height:1.4;color:var(--sl-ink-2);overflow-wrap:break-word}
+.mc-why b{color:var(--sl-ink)}
+.mc-wait{color:var(--sl-faint);font-style:italic}
+
+/* tendina «Mercati e motivazioni»: fisarmonica esistente (altezza dal contenuto, apribile e richiudibile) */
+.acc.mcd{background:none;border:0;box-shadow:none;border-radius:10px}
+.acc.mcd>.acc-head{padding:7px 10px;border-radius:10px;background:var(--sl-s2);font:700 12px var(--sl-font);color:var(--sl-accent);justify-content:space-between}
+.acc.mcd .acc-chev{width:16px;height:16px;color:var(--sl-accent)}
+.acc.mcd>.acc-panel>.acc-inner{overflow:hidden}
+.mcd-body{display:grid;gap:10px;padding:10px 2px 2px;min-width:0}
+.dt h5{margin:0 0 3px;font:800 12px var(--sl-font);color:var(--sl-ink);display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.dt h5 small{font-weight:600;font-size:11px;color:var(--sl-mute)}
+.dt p{margin:0 0 3px;font-size:12px;line-height:1.4;color:var(--sl-ink-2);overflow-wrap:break-word}
+.dt ul{margin:0;padding-left:16px;font-size:12px;line-height:1.45;color:var(--sl-ink-2)}
+.dt li b{color:var(--sl-ink)}
+.dt .dt-note,.dt-foot{font-size:11px;color:var(--sl-mute)}
+.dt-foot{margin:0;padding-top:6px;border-top:1px solid var(--sl-line)}
+@media (max-width:340px){.mx{grid-template-columns:44px minmax(0,1fr)}.mx .c{font-size:11.5px}}
