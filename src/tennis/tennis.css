@@ -141,7 +141,8 @@
 .tn-verdict.bet b{color:var(--sl-bet)}
 .tn-bar{display:flex;height:38px;border-radius:12px;overflow:hidden;gap:2px;font:800 14px var(--sl-font);margin-bottom:16px}
 .tn-bar span{display:grid;place-items:center;min-width:42px}
-.tn-bar .a{background:var(--sl-blue);color:#fff}.tn-bar .b{background:var(--tn);color:var(--tn-ink)}
+#tennis-root .tn-bar .a{background:#1a2f9c;color:#fff}#tennis-root .tn-bar .b{background:#c2410c;color:#fff}
+#tennis-root .tn-bar span{text-shadow:0 1px 1px rgba(0,0,0,.25)}
 .tn-dsec{border:1px solid var(--sl-line);border-radius:var(--rad-md);margin:10px 0;background:var(--sl-s2);overflow:hidden}
 .tn-dsec>summary{display:flex;align-items:center;justify-content:space-between;padding:13px 14px;font:700 14.5px var(--sl-font);cursor:pointer;list-style:none;letter-spacing:-.01em}
 .tn-dsec>summary::-webkit-details-marker{display:none}
