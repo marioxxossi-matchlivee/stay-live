@@ -22,8 +22,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400..800;1,700..800&display=swap" rel="stylesheet" />
-    <style>html{background:#f3f6fc;color-scheme:light}html[data-boot="tennis"] body>:not(#tennis-root):not(#sport-loader):not(script):not(style):not(.toast){display:none!important}</style>
-    <script>try{if(localStorage.getItem("sl-sport")==="tennis")document.documentElement.setAttribute("data-boot","tennis")}catch(e){}setTimeout(function(){document.documentElement.removeAttribute("data-boot")},8000)</script>
+    <style>html{background:#f3f6fc;color-scheme:light}html[data-gate] body>:not(#sport-gate):not(script):not(style):not(.toast){display:none!important}html[data-boot="tennis"] body>:not(#tennis-root):not(#sport-loader):not(script):not(style):not(.toast){display:none!important}</style>
+    <script>try{var s=sessionStorage.getItem("sl-sport");if(s==="tennis")document.documentElement.setAttribute("data-boot","tennis");else if(s!=="football")document.documentElement.setAttribute("data-gate","")}catch(e){document.documentElement.setAttribute("data-gate","")}setTimeout(function(){document.documentElement.removeAttribute("data-boot");document.documentElement.removeAttribute("data-gate")},8000)</script>
     <title>Stay Live — Analisi partite</title>
   </head>
   <body>
@@ -44,7 +44,7 @@
           <p id="summary" class="summary" aria-live="polite">Caricamento…</p>
         </section>
         <div id="banner" class="banner" role="status" hidden></div>
-        <div class="seg" id="mode-seg" role="group" aria-label="Filtro partite" style="--i:0">
+        <div class="seg" id="mode-seg" role="group" aria-label="Filtro partite" style="--segn:2;--i:0">
           <button type="button" data-seg="all" aria-pressed="true">Tutte</button>
           <button type="button" data-seg="bet" aria-pressed="false">Solo BET</button>
         </div>
