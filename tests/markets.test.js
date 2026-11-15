@@ -53,7 +53,8 @@ test("scheda: una riga per mercato, un solo esito evidenziato, niente tag né ba
 });
 test("percentuali: tutte quelle mostrate sono quelle del motore", () => {
   const h = marketsHtml(item, { mode: "all" });
-  for (const [, label, p] of h.matchAll(/<i>([^<]+)<\/i><b>(\d+)%<\/b>/g)) {
+  for (const [, rawLabel, p] of h.matchAll(/<i>([^<]+)<\/i><b>(\d+)%<\/b>/g)) {
+    const label = rawLabel.replace(/^★ /, "");
     const key = Object.entries({ 1: "home", X: "draw", 2: "away", GG: "btts", NG: "nobtts", "1X": "dc1x", X2: "dcx2", 12: "dc12", "Over 1,5": "over15", "Under 1,5": "under15", "Over 2,5": "over25", "Under 2,5": "under25", "Over 3,5": "over35", "Under 3,5": "under35" }).find(([l]) => l === label)?.[1];
     assert.ok(key, `etichetta sconosciuta ${label}`);
     assert.equal(Number(p), Math.round(mk.x[key].p * 100), `${label}`);
@@ -92,7 +93,7 @@ test("Solo BET: solo i mercati con un BET della stessa analisi, evidenziati in v
   const bet = { ...mk, x: { ...mk.x, over25: { ...mk.x.over25, v: 1, c: "B", l: 0.64, p: 0.7 } }, rec: ["over25"] };
   const h = marketsHtml({ ...item, mk: bet }, { mode: "bet" });
   assert.match(h, /data-g="ou"/); assert.doesNotMatch(h, /data-g="esito"|data-g="corner"/);
-  assert.match(h, /class="c top bet"><i>Over 2,5/);
+  assert.match(h, /class="c top bet rec"><i>★ Over 2,5/);
 });
 test("elenco non ancora rigenerato: il consiglio principale (es. X2) resta visibile con le sue cifre", () => {
   const pick = { key: "dcx2", label: "X2 · Pareggio o trasferta", p: 0.72, pLow: 0.63, verdict: "BET", confidence: "media", reason: "Probabilità prudente 63% (+11 punti sulla media del campionato).", odds: null };
@@ -133,4 +134,43 @@ test("stemmi: ogni squadra ha il suo (per id), solo https, sigla se manca o non 
   assert.doesNotMatch(crest("<b>X</b>", "https://a/b.png\" onerror=\"x"), /onerror="x"/, "nessuna iniezione");
   const css = fs.readFileSync(new URL("../src/design/matchcard.css", import.meta.url), "utf8");
   assert.doesNotMatch(css, /\.crest[^{]*img\{[^}]*(width|height):\s*\d+%/, "l'immagine copre tutto lo stemma: niente sigla che spunta ai bordi");
+});
+
+/* ---------- Mercato consigliato e resoconto ---------- */
+const withPick = (key) => ({ ...item, pick: { ...item.pick, key } });
+test("mercato consigliato dal motore: un solo esito con la stella, anche se non è il più probabile", () => {
+  const key = mk.b.dc;
+  const h = marketsHtml(withPick(key), { mode: "all" });
+  assert.equal((h.match(/class="c[^"]* rec/g) ?? []).length, 1, "uno solo tra tutti i mercati");
+  assert.match(h.match(/<div class="mx" data-g="dc">[^]*?<\/div>/)[0], /rec"><i>★ /);
+  assert.match(h, /★ Consigliato · /);
+  const other = Object.keys(mk.x).find((k) => k.startsWith("over") && k !== "over05" && !["over15", "over25", "over35"].includes(k) === false && mk.x[k].p < mk.x[k.replace("over", "under")].p);
+  if (other) assert.match(marketsHtml(withPick(other), { mode: "all" }), new RegExp(`★ ${other === "over15" ? "Over 1,5" : other === "over25" ? "Over 2,5" : "Over 3,5"}`), "il consiglio è sempre visibile");
+});
+test("resoconto: pronosticato contro uscito, con ✓/✗ e celle segnate", () => {
+  const final = { h: 2, a: 1, corners: 11 };
+  const h = marketsHtml(item, { mode: "all", result: final, idPrefix: "pk" });
+  assert.match(h, /Resoconto · finale 2–1/); assert.match(h, /data-acc="pk:x1"/);
+  const rows = [...h.matchAll(/<div class="rc-r (ok|ko|)"><span>([^<]+)<\/span><b>([^<]*)<\/b><span>([^<]*)<\/span><i>([^<]*)<\/i>/g)];
+  assert.ok(rows.length >= 4, "una riga per mercato");
+  const esito = rows.find((r) => r[2] === "1X2");
+  assert.equal(esito[4], "1", "uscito: 1 (2–1)");
+  assert.equal(esito[1] === "ok", esito[3] === "1", "✓ solo se il pronostico coincide");
+  const gol = rows.find((r) => r[2] === "Gol"); assert.equal(gol[4], "GG");
+  const ou = rows.find((r) => r[2] === "Over/Under"); assert.equal(ou[4], "3 gol");
+  assert.equal((h.match(/class="c[^"]* ok/g) ?? []).length > 0, true);
+  assert.doesNotMatch(marketsHtml(item, { mode: "all" }), /Resoconto|rc-r/, "senza risultato nessun resoconto");
+  const cm = { ...item, cornerModel: { ok: true, lambda: { home: 5, away: 4, total: 9 }, mainLine: 9.5, lines: [8.5, 9.5, 10.5].map((l) => ({ line: l, over: 0.6, under: 0.4 })), sample: { home: 9, away: 9 } } };
+  assert.match(marketsHtml(cm, { mode: "all", result: final }), /11 corner/);
+  assert.match(marketsHtml(cm, { mode: "all", result: { h: 1, a: 0, corners: null } }), /non disponibile/, "corner reali ignoti: nessun esito inventato");
+});
+test("ogni esito mostrato come uscito è coerente con il punteggio", () => {
+  const final = { h: 0, a: 0, corners: 8 };
+  const h = marketsHtml(item, { mode: "all", result: final });
+  for (const c of h.matchAll(/<span class="c([^"]*)"><i>(?:★ )?([^<]+)<\/i>/g)) {
+    const ok = c[1].includes(" ok"), l = c[2];
+    if (l === "GG") assert.equal(ok, false); if (l === "NG") assert.equal(ok, true);
+    if (l === "X") assert.equal(ok, true); if (l === "1" || l === "2") assert.equal(ok, false);
+    if (l.startsWith("Over") && /\d/.test(l) && !l.includes("corner")) assert.equal(ok, false, `0–0: ${l} non esce`);
+  }
 });

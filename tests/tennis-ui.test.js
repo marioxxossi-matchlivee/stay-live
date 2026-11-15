@@ -94,12 +94,15 @@ test("stati vuoti e storico", () => {
   assert.match(tennisMonitorHtml({ rows: [], backtest: null }, "hist"), /Rapporto storico non ancora calcolato/);
 });
 
-test("collegamento nell'HTML: menu sport a tendina, script, nessuna schermata iniziale", () => {
+test("collegamento nell'HTML: menu sport a tendina, schermata iniziale con le due schede, script", () => {
   const html = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
   assert.match(html, /id="sport-slot"/); assert.match(html, /src="\/src\/sport\.js"/); assert.match(html, /src="\/src\/main\.js"/);
+  assert.match(html, /sessionStorage\.getItem\("sl-sport"\)[^]*data-gate/, "senza scelta di sessione parte la schermata iniziale");
   const sport = fs.readFileSync(new URL("../src/sport.js", import.meta.url), "utf8");
   assert.match(sport, /import\("\.\/tennis\/app\.js"\)/); assert.match(sport, /sport-loader/);
-  assert.doesNotMatch(sport, /sport-gate|sg-card/);
+  assert.match(sport, /sg-tab football[^]*Calcio/); assert.match(sport, /sg-tab tennis[^]*Tennis/); assert.match(sport, /icon-192\.png/);
+  assert.match(sport, /sessionStorage/); assert.match(sport, /dataset\.sportScope = "tennis"/);
+  assert.match(sport, /else showGate\(\)/, "senza scelta: schermata iniziale");
   assert.doesNotMatch(fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8"), /tennis/i, "main.js del calcio non deve conoscere il tennis");
 });
 
