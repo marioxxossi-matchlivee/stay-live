@@ -41,10 +41,14 @@ export function usageReport({ usage = [], runs = [], cache = [], tasks = [], now
   if (other != null && share(other) >= 30) findings.push(`**App e altro** pesano il ${share(other)}% (${other} richieste): aperture di schede partita, ricerca corner e anteprime fatte dall'app. Chiedi a chi usa l'app di non aprire molte schede, oppure di non premere «Aggiorna tutto ora».`);
   const full = byMode.full ?? byMode.manual;
   if (total != null && full && share(full.requests) >= 50) findings.push(`Gli **aggiornamenti completi** pesano il ${share(full.requests)}%: ogni giro riscarica pronostici, quote e corner delle partite vicine. Se resta alto, riduci FIXTURES_DAYS (oggi 7) o allunga le età massime in scripts/full-refresh.js (FRESH_NEAR, FRESH_MID, FRESH_FAR).`);
+  const over = todayRuns.filter((r) => r.meta?.requests?.budget && spent(r) > r.meta.requests.budget * 1.5);
+  if (over.length) findings.push(`Giri sopra il proprio tetto: ${over.map((r) => `${hhmm(r.started_at)} (${spent(r)} contro ${r.meta.requests.budget})`).join(", ")}.`);
+  const noBudget = todayRuns.filter((r) => r.meta?.requests && r.meta.requests.budget == null);
+  if (noBudget.length && todayRuns.length) findings.push(`${noBudget.length} giri non registrano il tetto: stanno girando con una versione di scripts/full-refresh.js precedente alla correzione. Controlla di aver caricato il file aggiornato.`);
   const stuck = Object.entries(pending).filter(([, v]) => v.maxAttempts >= 5);
   if (stuck.length) findings.push(`Compiti che si ripetono da molti tentativi: ${stuck.map(([k, v]) => `${k} (${v.count}, fino a ${v.maxAttempts} tentativi)`).join(", ")}. Ogni tentativo può costare crediti.`);
   if (u?.remaining != null && u.limit_day && u.remaining < u.limit_day * 0.1) findings.push(`Restano solo ${u.remaining} crediti su ${u.limit_day}: gli script si fermano da soli sotto le riserve (1.500 per le schede, 2.500 per i corner storici).`);
-  return { today, usage: u, total, runsTotal, other, byMode, runs: todayRuns.map((r) => ({ at: hhmm(r.started_at), mode: r.mode, status: r.status, requests: spent(r), remaining: r.meta?.requests?.remaining ?? null, notes: (r.meta?.notes ?? []).length })), endpoints, pending, findings, history: usage.slice().sort((a, b) => (a.day < b.day ? 1 : -1)).slice(0, 7) };
+  return { today, usage: u, total, runsTotal, other, byMode, runs: todayRuns.map((r) => ({ at: hhmm(r.started_at), mode: r.mode, status: r.status, requests: spent(r), budget: r.meta?.requests?.budget ?? null, remaining: r.meta?.requests?.remaining ?? null, notes: (r.meta?.notes ?? []).length })), endpoints, pending, findings, history: usage.slice().sort((a, b) => (a.day < b.day ? 1 : -1)).slice(0, 7) };
 }
 
 export function reportMarkdown(r) {
@@ -55,7 +59,7 @@ export function reportMarkdown(r) {
   const pc = (n) => (r.total ? `${Math.round((n / r.total) * 100)}%` : "—");
   for (const [m, v] of Object.entries(r.byMode)) L.push(`| ${m === "full" ? "Aggiornamento completo" : m === "recover" ? "Recupero (ogni 30 min)" : m === "manual" ? "Aggiornamento manuale" : m} | ${v.runs} (${v.partial} non riusciti) | ${v.requests} | ${pc(v.requests)} |`);
   L.push(`| App e altro (schede aperte, corner, anteprime) | — | ${r.other ?? "—"} | ${r.other == null ? "—" : pc(r.other)} |`);
-  if (r.runs.length) { L.push("", "### Giri di oggi (UTC)", "", "| Ora | Tipo | Esito | Richieste | Restanti dopo |", "|---|---|---|---:|---:|"); for (const x of r.runs) L.push(`| ${x.at} | ${x.mode} | ${x.status} | ${x.requests} | ${x.remaining ?? "—"} |`); }
+  if (r.runs.length) { L.push("", "### Giri di oggi (UTC)", "", "| Ora | Tipo | Esito | Richieste | Tetto del giro | Restanti dopo |", "|---|---|---|---:|---:|---:|"); for (const x of r.runs) L.push(`| ${x.at} | ${x.mode} | ${x.status} | ${x.requests} | ${x.budget ?? "n.d."}${x.budget && x.requests > x.budget * 1.5 ? " ⚠" : ""} | ${x.remaining ?? "—"} |`); }
   const ep = Object.entries(r.endpoints).sort((a, b) => b[1] - a[1]);
   if (ep.length) { L.push("", "### Dati scaricati oggi per tipo (stima per difetto)", "", ...ep.map(([k, n]) => `- ${k}: ${n}`)); }
   const pe = Object.entries(r.pending);

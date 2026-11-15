@@ -36,8 +36,9 @@ export const HISTORY_CAP = { full: 400, recover: 150 };          // richieste ma
  * il resto è riserva per i recuperi. Con 70+ campionati nei weekend le partite vicine costano più di 7.500 richieste al giorno se non si
  * dosano: così le partite più vicine (ordinate per orario) hanno la precedenza e il resto riprende al giro successivo.
  */
-export function runBudgetFor(remaining, now = Date.now(), mode = "full") {
-  if (remaining == null) return Infinity;
+export const DAILY_LIMIT = 7500;                      // piano API-Football in uso (env API_FOOTBALL_DAILY_LIMIT per cambiarlo)
+export function runBudgetFor(remaining, now = Date.now(), mode = "full", limit = DAILY_LIMIT) {
+  if (remaining == null) remaining = limit;           // contatore sconosciuto: si parte dal limite giornaliero, mai «senza tetto»
   const d = new Date(now), hour = d.getUTCHours() + d.getUTCMinutes() / 60;
   const runsLeft = Math.max(1, Math.ceil((24 - hour) / 4));
   return Math.max(250, Math.floor(remaining * (mode === "recover" ? 0.05 : 0.85 / runsLeft)));
@@ -140,7 +141,8 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
   const prev = await loadTasks(env);
   if (prev === null) meta.notes.push("Tabelle di diagnostica assenti: applica la migrazione 202611110001_refresh_diagnostics.sql su Supabase (senza, il recupero automatico non può funzionare).");
   const prevTasks = prev ?? [];
-  const runBudget = runBudgetFor(usage0?.remaining, now0, mode === "recover" ? "recover" : "full");
+  const runBudget = runBudgetFor(usage0?.remaining, now0, mode === "recover" ? "recover" : "full", Number(env.API_FOOTBALL_DAILY_LIMIT) || DAILY_LIMIT);
+  log(`Crediti di partenza: ${usage0?.remaining ?? "sconosciuti"}${usage0?.assumed ? " (contatore di oggi non ancora creato: si parte dal limite giornaliero)" : ""} · tetto di questo giro: ${runBudget} richieste`);
   const spentNow = async () => ((await readUsage(env, Date.now()))?.requests ?? 0) - (usage0?.requests ?? 0);
   const attemptsOf = new Map(prevTasks.map((t) => [t.task_key, t.attempts]));
   const due = mode === "recover" ? prevTasks.filter((t) => Date.parse(t.next_try_at) <= now0) : [];
@@ -199,8 +201,12 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
     let br = null, cr = null, lastPending = Infinity, stalled = 0;
     if (target.length) for (let round = 1; round <= 14; round += 1) {
       const t = Date.now();
-      br = await loadBrainInputs(env, target, t, { live: true, maxMap: 25, maxLive: 80, freshFor, maps: br?.maps });
-      cr = await loadCornerOdds(env, target, t, { live: true, maxMap: 25, maxLive: 80, freshFor, maps: br.maps });
+      // Ogni scaricamento spende fino a `live` richieste per tipo (pronostici/quote e corner): si riduce quando il tetto del giro sta finendo, così non lo si supera di centinaia.
+      const left = runBudget - await spentNow();
+      if (round > 1 && left <= 0) { meta.notes.push(`Budget di crediti del giro raggiunto (${runBudget}): il resto al prossimo giro.`); break; }
+      const live = Number.isFinite(left) ? Math.max(10, Math.min(80, Math.floor((left - 25) / 2))) : 80;
+      br = await loadBrainInputs(env, target, t, { live: true, maxMap: 25, maxLive: live, freshFor, maps: br?.maps });
+      cr = await loadCornerOdds(env, target, t, { live: true, maxMap: 25, maxLive: live, freshFor, maps: br.maps });
       const pending = (br.retry?.pending ?? 0) + (cr.retry?.pending ?? 0);
       const usage = await readUsage(env, t);
       if (usage?.remaining != null && usage.remaining < 300) { meta.budgetStop = true; meta.notes.push(`Crediti giornalieri quasi esauriti (${usage.remaining} restanti): scarico interrotto, riprende da solo.`); break; }
@@ -319,7 +325,7 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
     const built = await buildFixtures(env);
     if (!built.ok) throw new Error(built.error);
     const usage1 = await readUsage(env, Date.now());
-    meta.requests = { thisRun: usage1 && usage0 ? Math.max(0, (usage1.requests ?? 0) - (usage0.requests ?? 0)) : usage1?.requests ?? null, today: usage1?.requests ?? null, remaining: usage1?.remaining ?? null, limit: usage1?.limit_day ?? null };
+    meta.requests = { thisRun: usage1 && usage0 ? Math.max(0, (usage1.requests ?? 0) - (usage0.requests ?? 0)) : usage1?.requests ?? null, today: usage1?.requests ?? null, remaining: usage1?.remaining ?? null, limit: usage1?.limit_day ?? null, budget: Number.isFinite(runBudget) ? runBudget : null };
 
     const tasks = buildTasks(items, prevTasks, Date.now());
     const waitingGames = new Set(tasks.filter((t) => t.component !== "league" && t.component !== "cornerStats").map((t) => t.scope));
