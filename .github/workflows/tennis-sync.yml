@@ -22,9 +22,9 @@ on:
         options: [refresh, live, static, backfill]
         default: refresh
       backfill_days:
-        description: "Solo backfill: quanti giorni di risultati scaricare (consigliato 120; ~8 richieste a giorno)"
+        description: "Solo backfill: quanti giorni di risultati scaricare (consigliato 365 per avere storico anche dei tornei minori; ~8 richieste a giorno, massimo 400)"
         required: false
-        default: "120"
+        default: "365"
       backfill_dates:
         description: "Solo backfill: ripasso mirato di date specifiche (AAAA-MM-GG separate da virgola); se compilato prevale sui giorni"
         required: false
