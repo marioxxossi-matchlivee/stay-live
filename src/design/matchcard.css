@@ -149,5 +149,26 @@ main,.tn-main{position:relative;isolation:isolate}
 .tn-facc.open>.tn-fclip{opacity:1;visibility:visible;transition:opacity .28s var(--ease-out) .05s,visibility 0s}
 .tn-facc .tn-fpanel{margin:0;animation:none}
 /* Tennis: i due giocatori in colori ben distinti (blu e arancio) */
-.tn-bar .a{background:#2347c5;color:#fff}
+.tn-bar .a{background:#1a2f9c;color:#fff}
 .tn-bar .b{background:#c2410c;color:#fff}
+
+/* Calcio: ricerca di partite e campionati */
+.searchbar{position:relative;display:flex;align-items:center;margin:0 0 10px}
+.searchbar .sb-ic{position:absolute;left:13px;font-size:18px;color:var(--sl-mute);pointer-events:none}
+.searchbar input{width:100%;height:42px;padding:0 42px 0 40px;border-radius:14px;border:1px solid var(--sl-line-2);background:var(--sl-s1);color:var(--sl-ink);font:600 14.5px var(--sl-font);box-shadow:var(--sh-1);-webkit-appearance:none;appearance:none}
+.searchbar input::placeholder{color:var(--sl-faint);font-weight:500}
+.searchbar input:focus{outline:none!important;border-color:var(--sl-accent);box-shadow:0 0 0 3px var(--sl-accent-tint)}
+.searchbar input::-webkit-search-cancel-button{display:none}
+.searchbar .sb-clear{position:absolute;right:6px;width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:10px;background:var(--sl-s3);color:var(--sl-ink-2);font-size:16px}
+.searchbar .sb-clear[hidden]{display:none}
+
+/* Impostazioni: crediti API-Football */
+.cr{display:grid;gap:10px;padding:6px 0 2px}
+.cr-top{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.cr-big{font:800 30px/1 var(--sl-font);letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--sl-ink)}
+.cr-top span{font:600 13.5px var(--sl-font);color:var(--sl-mute)}
+.cr-meter{height:10px;border-radius:999px;background:var(--sl-s3);overflow:hidden}
+.cr-meter i{display:block;height:100%;min-width:4px;border-radius:999px;background:var(--sl-win);transition:width .5s var(--ease-out)}
+.cr.warn .cr-meter i{background:#e0900f}.cr.warn .cr-big{color:var(--sl-warn)}
+.cr.bad .cr-meter i{background:var(--sl-danger)}.cr.bad .cr-big{color:var(--sl-danger)}
+.cr-foot{margin:0;font:500 12.5px var(--sl-font);color:var(--sl-mute)}
