@@ -95,3 +95,59 @@ main{padding-top:12px}
 .dt .dt-note,.dt-foot{font-size:11px;color:var(--sl-mute)}
 .dt-foot{margin:0;padding-top:6px;border-top:1px solid var(--sl-line)}
 @media (max-width:340px){.mx{grid-template-columns:44px minmax(0,1fr)}.mx .c{font-size:11.5px}}
+
+/* =====================================================================
+   Rifinitura 3 · sovrapposizione sulla barra, mercato consigliato, resoconto, segnalibro, barra del tennis, filtri, schermata iniziale
+   ===================================================================== */
+
+/* La barra in alto sta sempre sopra il contenuto: il contenuto vive in un proprio livello (prima i riquadri blu la attraversavano). */
+.top,.tn-top{z-index:var(--z-top)}
+main,.tn-main{position:relative;isolation:isolate}
+
+/* Mercato consigliato dal motore tra tutti: anello ambra e stella (il verde resta dei BET, il blu del più probabile) */
+.mx .c.rec{box-shadow:0 0 0 2px #f4a300;position:relative}
+.mx .c.rec i{color:#a35f00;font-weight:800}
+.mx .c.top.rec i{color:#ffe08a}
+
+/* Resoconto a partita finita */
+.mx .c.ok{outline:2px solid var(--sl-win);outline-offset:-2px}
+.mx .c.ok b::after{content:"✓";margin-left:3px;color:var(--sl-win);font-weight:800}
+.mx .c.top.ok b::after{color:#fff}
+.mx .c.top.ko{background:var(--sl-danger)}
+.rc{display:grid;gap:3px;padding:8px 10px;border-radius:12px;background:var(--sl-s2);min-width:0}
+.rc h5{margin:0 0 3px;font:800 12px var(--sl-font);color:var(--sl-ink);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline}
+.rc h5 small{font-weight:600;font-size:10.5px;color:var(--sl-mute)}
+.rc-r{display:grid;grid-template-columns:82px minmax(0,1fr) minmax(0,1fr) 16px;gap:6px;align-items:baseline;font-size:12px;color:var(--sl-ink-2)}
+.rc-r b{color:var(--sl-ink)}
+.rc-r i{font-style:normal;font-weight:800;text-align:center;color:var(--sl-faint)}
+.rc-r.ok i{color:var(--sl-win)}
+.rc-r.ko i{color:var(--sl-danger)}
+.pl-mk{display:grid;gap:7px;min-width:0}
+
+/* Segnalibro: pieno e piatto quando la giocata è salvata (niente cerchio) */
+.row-save:hover{background:transparent}
+@media (hover:hover){.row-save:not(.done):hover{background:var(--sl-s3)}}
+.row-save.done,.row-save:disabled,.row-save.done:hover,.row-save.done:active{background:transparent!important;box-shadow:none;border-radius:0;transform:none;color:var(--sl-accent)}
+.row-save.done svg{fill:currentColor}
+.row-save:focus{outline:none}
+.row-save:focus-visible{outline:2px solid var(--sl-accent);outline-offset:-2px;border-radius:10px}
+
+/* Selettori a segmenti: geometria esplicita (numero di voci nel markup) e scorrimento fluido */
+.seg,.mn-seg{--segn:2}
+.seg::before,.mn-seg::before{transform:none;left:calc(3px + (100% - 6px) / var(--segn) * var(--i,0));width:calc((100% - 6px) / var(--segn));transition:left .34s var(--ease-out)}
+
+/* Barra del tennis: stesse animazioni delle icone del calcio */
+.sl-nav>button[data-tab=plays][aria-pressed=true] .ic-f{animation:slwiggle .6s var(--ease-out)}
+.sl-nav>button[data-tab=reliability][aria-pressed=true] .ic-f{animation:slgrow .55s var(--ease-spring);transform-origin:50% 100%}
+.sl-nav>button[data-tab=settings][aria-pressed=true] .ic-f{animation:slcog .7s var(--ease-out)}
+
+/* Tennis: filtri piccoli e a tendina */
+.listbar #tn-ftoggle{flex:0 0 auto;width:auto;max-width:none;padding:6px 12px;font-size:12.5px;border-radius:999px;gap:6px}
+.tn-facc{display:grid;grid-template-rows:0fr;transition:grid-template-rows .32s var(--ease-out),margin .32s var(--ease-out);margin:0}
+.tn-facc.open{grid-template-rows:1fr;margin:0 0 10px}
+.tn-fclip{min-height:0;overflow:hidden;opacity:0;visibility:hidden;transition:opacity .2s linear,visibility 0s linear .32s}
+.tn-facc.open>.tn-fclip{opacity:1;visibility:visible;transition:opacity .28s var(--ease-out) .05s,visibility 0s}
+.tn-facc .tn-fpanel{margin:0;animation:none}
+/* Tennis: i due giocatori in colori ben distinti (blu e arancio) */
+.tn-bar .a{background:#2347c5;color:#fff}
+.tn-bar .b{background:#c2410c;color:#fff}
