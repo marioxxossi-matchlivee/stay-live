@@ -20,15 +20,13 @@ body[data-sport="gate"] > :not(#sport-gate):not(script):not(style):not(.toast) {
 @media (prefers-reduced-motion: reduce) { .sg-word::after { animation: none; display: none; } .sg-icon, .sg-word { animation: none; } }
 .sg-brand p { margin: 2px 0 0; color: var(--sl-mute); font-weight: 600; }
 .sg-tabs { display: grid; gap: 14px; }
-.sg-tab { position: relative; overflow: hidden; isolation: isolate; display: grid; align-content: end; gap: 3px; min-height: 148px; padding: 18px 18px 16px; border: 0; border-radius: 24px; color: #fff; text-align: left; box-shadow: 0 18px 34px -18px rgba(18,38,84,.55); transition: transform .2s var(--ease-out); animation: slrise .6s var(--ease-out) backwards; -webkit-tap-highlight-color: transparent; }
+.sg-tab { position: relative; overflow: hidden; isolation: isolate; display: grid; align-content: end; gap: 3px; min-height: 132px; padding: 18px 18px 16px; border: 0; border-radius: 24px; color: #fff; text-align: left; box-shadow: 0 18px 34px -18px rgba(18,38,84,.55); transition: transform .2s var(--ease-out); animation: slrise .6s var(--ease-out) backwards; -webkit-tap-highlight-color: transparent; }
 .sg-tab:nth-child(2) { animation-delay: .08s; }
 .sg-tab:active { transform: scale(.98); }
 .sg-tab:focus-visible { outline: 3px solid var(--sl-accent); outline-offset: 3px; }
 .sg-art { position: absolute; inset: 0; z-index: -1; background-size: cover; background-position: center; }
 .sg-tab.football .sg-art { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 160' preserveAspectRatio='xMidYMid slice' fill='none' stroke='white' stroke-opacity='.30' stroke-width='2'%3E%3Crect x='10' y='10' width='380' height='140' rx='6'/%3E%3Cpath d='M200 10v140'/%3E%3Ccircle cx='200' cy='80' r='28'/%3E%3Crect x='10' y='45' width='52' height='70'/%3E%3Crect x='338' y='45' width='52' height='70'/%3E%3Ccircle cx='200' cy='80' r='3' fill='white'/%3E%3C/svg%3E"), repeating-linear-gradient(90deg, rgba(255,255,255,.06) 0 38px, rgba(255,255,255,0) 38px 76px), linear-gradient(155deg, #12945a 0%, #0a5f3a 100%); }
 .sg-tab.tennis .sg-art { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 160' preserveAspectRatio='xMidYMid slice' fill='none' stroke='white' stroke-opacity='.30' stroke-width='2'%3E%3Crect x='20' y='14' width='360' height='132'/%3E%3Cpath d='M20 36h360M20 124h360M200 14v132M110 36v88M290 36v88M110 80h180'/%3E%3C/svg%3E"), linear-gradient(155deg, #1a9ccb 0%, #0a5f86 100%); }
-.sg-ico { position: absolute; top: 14px; right: 16px; font-size: 54px; line-height: 0; color: #fff; filter: drop-shadow(0 6px 10px rgba(0,0,0,.28)); }
-.sg-ico .ic { margin: 0; width: 1em; height: 1em; }
-.sg-tab.tennis .sg-ico { color: #e9f54f; }
+.sg-ico { position: absolute; top: 50%; right: 20px; transform: translateY(-50%); font-size: 76px; line-height: 0; filter: drop-shadow(0 8px 12px rgba(0,0,0,.32)); }
+.sg-ico .ic { margin: 0; width: 1em; height: 1em; display: block; }
 .sg-tab b { font: 800 30px/1.05 var(--sl-font); letter-spacing: -.03em; }
-.sg-tab small { font-size: 13px; font-weight: 600; opacity: .92; }

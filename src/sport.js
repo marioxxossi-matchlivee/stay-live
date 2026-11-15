@@ -4,7 +4,7 @@
 // Dopo la scelta, il cambio sport avviene dal menu a tendina in alto a destra e mostra un finto caricamento (palla che rimbalza + skeleton).
 import "./sport.css";
 import "./monitor-tab.js";
-import { icon } from "./icons.js";
+import { ball } from "./balls.js";
 import { SPORTS, sportMenuHtml } from "./sportmenu.js";
 
 const KEY = "sl-sport";
@@ -31,8 +31,8 @@ gate.hidden = true;
 gate.innerHTML = `<div class="sg-inner">
   <div class="sg-brand"><img class="sg-icon" src="/icons/icon-192.png" width="84" height="84" alt="" decoding="async" /><h1 class="sg-word" data-text="StayLive">Stay<span>Live</span></h1><p>Scegli lo sport</p></div>
   <div class="sg-tabs" role="group" aria-label="Sport">
-    <button type="button" class="sg-tab football" data-sport-pick="football"><span class="sg-art" aria-hidden="true"></span><span class="sg-ico" aria-hidden="true">${icon("soccer-ball")}</span><b>Calcio</b><small>Mercati, probabilità e BET</small></button>
-    <button type="button" class="sg-tab tennis" data-sport-pick="tennis"><span class="sg-art" aria-hidden="true"></span><span class="sg-ico" aria-hidden="true">${icon("tennis-ball")}</span><b>Tennis</b><small>ATP e WTA, pronostico del vincitore</small></button>
+    <button type="button" class="sg-tab football" data-sport-pick="football"><span class="sg-art" aria-hidden="true"></span><span class="sg-ico" aria-hidden="true">${ball("football")}</span><b>Calcio</b></button>
+    <button type="button" class="sg-tab tennis" data-sport-pick="tennis"><span class="sg-art" aria-hidden="true"></span><span class="sg-ico" aria-hidden="true">${ball("tennis")}</span><b>Tennis</b></button>
   </div></div>`;
 const loader = document.createElement("div");
 loader.id = "sport-loader";
@@ -49,7 +49,7 @@ function showLoader(sport) {
   const header = document.querySelector(body.dataset.sport === "tennis" ? ".tn-top" : ".top");
   loader.style.setProperty("--ld-top", `${Math.max(0, Math.round(header?.getBoundingClientRect().bottom ?? 0))}px`);
   loader.dataset.sport = sport;
-  loader.innerHTML = `<div class="ld-stage"><span class="ld-ball">${icon(SPORTS[sport].icon)}</span><span class="ld-shadow"></span></div><div class="ld-skel">${skeletonRows(3)}</div>`;
+  loader.innerHTML = `<div class="ld-stage"><span class="ld-ball">${ball(sport)}</span><span class="ld-shadow"></span></div><div class="ld-skel">${skeletonRows(3)}</div>`;
   void loader.offsetWidth;
   loader.classList.add("on");
 }

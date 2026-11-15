@@ -30,7 +30,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const openAcc = new Set();
 const reduceMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 const state = {
-  matches: [], leagues: [], continents: [], league: "all", navOpen: false, day: null, onlyBet: false, selected: new Set(),
+  matches: [], leagues: [], continents: [], league: "all", navOpen: false, day: null, onlyBet: false, q: "", usage: null, selected: new Set(),
   n: 8, minOdds: MIN_ODDS_DEFAULT, loading: false, error: null, banner: null, syncTried: false, updatedAt: null,
 };
 const MINODDS_KEY = "stayLive.minOdds";
@@ -144,9 +144,19 @@ async function fillCrests(leagueIds) {
 const basisTag = (b) => (!b || b === "storico" ? "" : `<i class="api-tag" title="${b === "mercato" ? "Calcolato con le quote di mercato" : b === "api" ? "Calcolato con il pronostico di API-Football" : "Calcolato con il pronostico di API-Football e le quote di mercato"}">${b === "api+mercato" ? "API+Q" : b === "api" ? "API" : "Q"}</i>`);
 /** Scelta della partita con la quota minima scelta dall'utente (Impostazioni). */
 const pk = (m) => adjustPick(m.pick, state.minOdds);
+/** Ricerca libera: ogni parola digitata deve comparire nel nome di una squadra, del campionato (esteso o breve) o della nazione. Senza accenti né maiuscole. */
+const fold = (x) => String(x ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+function matchesQuery(m) {
+  const words = fold(state.q).split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const lg = state.leagues.find((l) => l.id === m.league);
+  const hay = fold([m.home, m.away, `${m.home} ${m.away}`, `${m.home} - ${m.away}`, lg?.name, lg?.short, lg?.nation, m.league].filter(Boolean).join(" | "));
+  return words.every((w) => hay.includes(w));
+}
 function visibleMatches() {
   return state.matches.filter((m) => {
     if (!inScope(m.league)) return false;
+    if (!matchesQuery(m)) return false;
     if (state.day === "results") return m.status === "final";
     if (!isOpen(m) || dayKey(m.kickoffAt) !== state.day) return false;
     return !state.onlyBet || pk(m)?.verdict === "BET";
@@ -195,7 +205,7 @@ function rowHtml(m, k = 0) {
     <button class="mc-vs" type="button" data-open="${esc(m.id)}" aria-label="Apri la scheda ${esc(m.home)} – ${esc(m.away)}">${versusHtml(m)}</button>${body}</div>`;
 }
 function renderDays() {
-  const pool = state.matches.filter((m) => inScope(m.league));
+  const pool = state.matches.filter((m) => inScope(m.league) && matchesQuery(m));
   const counts = new Map();
   for (const m of pool.filter(isOpen)) counts.set(dayKey(m.kickoffAt), (counts.get(dayKey(m.kickoffAt)) ?? 0) + 1);
   const keys = [...counts.keys()].sort();
@@ -263,7 +273,7 @@ function render() {
   if (animateNext) { listEl.classList.add("anim"); animateNext = false; clearTimeout(animTimer); animTimer = setTimeout(() => listEl.classList.remove("anim"), 700); } else listEl.classList.remove("anim");   // un ridisegno senza cambio di filtro non rilancia l'ingresso delle righe
   listEl.innerHTML = state.loading && !state.matches.length ? Array.from({ length: 4 }, () => `<div class="row skel" aria-hidden="true"><i></i><i></i><i></i></div>`).join("")
     : list.length ? list.map((m, k) => rowHtml(m, k)).join("")
-    : `<div class="empty">${state.loading ? "Carico i dati…" : state.error ? "" : state.onlyBet ? "Nessun BET in questa giornata con i filtri scelti." : "Nessuna partita per questa selezione."}</div>`;
+    : `<div class="empty">${state.loading ? "Carico i dati…" : state.error ? "" : state.q.trim() ? `Nessuna partita trovata per «${esc(state.q.trim())}».` : state.onlyBet ? "Nessun BET in questa giornata con i filtri scelti." : "Nessuna partita per questa selezione."}</div>`;
   $("#refresh").disabled = state.loading;
   $("#refresh").classList.toggle("spin", state.loading || Boolean(state.syncing));
   const stamps = state.leagues.map((l) => l.syncedAt).filter(Boolean).sort();
@@ -989,7 +999,29 @@ const freshChipHtml = () => { const f = freshInfo(); return f ? `<button class="
 function nextRun(now = Date.now()) { const d = new Date(now); d.setUTCMinutes(10, 0, 0); for (let i = 0; i < 7; i += 1) { if (d.getUTCHours() % 4 === 0 && d.getTime() > now) return d; d.setUTCHours(d.getUTCHours() + 1); } return d; }
 const COMP_LABEL = { prediction: "Pronostici API-Football", market: "Quote Over/Under e 1X2", corners: "Quote corner", details: "Schede dati (48 ore)", cornerStats: "Corner storici reali" };
 const CLASS_LABEL = [["ok", "aggiornati"], ["not_yet", "non ancora disponibili"], ["not_covered", "non previsti dal provider"], ["temporary", "temporaneamente non recuperabili"], ["error", "errori"]];
+/** Crediti API-Football: residuo giornaliero. Fonte: /api/usage (lettura leggera, nessun credito speso); in attesa, l'ultimo giro completo. */
+function renderCredits() {
+  const el = $("#set-credits");
+  if (!el) return;
+  const rq = state.board?.meta?.requests ?? {};
+  const u = state.usage ?? (rq.limit != null || rq.remaining != null ? { requests: rq.today, limit: rq.limit, remaining: rq.remaining } : null);
+  const n = (x) => Number(x).toLocaleString("it-IT");
+  if (!u || u.remaining == null || !(Number(u.limit) > 0)) { el.innerHTML = `<p class="set-hint">Residuo non ancora disponibile: compare dopo la prossima richiesta a API-Football.</p>`; return; }
+  const left = Math.max(0, Number(u.remaining)), limit = Number(u.limit), used = Math.max(0, limit - left), pctLeft = Math.max(0, Math.min(100, (left / limit) * 100));
+  const tone = pctLeft < 10 ? "bad" : pctLeft < 30 ? "warn" : "ok";
+  const reset = u.resetsAt ? ` · si azzerano alle ${esc(fmtTime.format(new Date(u.resetsAt)))}` : "";
+  el.innerHTML = `<div class="cr ${tone}"><div class="cr-top"><b class="cr-big">${n(left)}</b><span>crediti residui su ${n(limit)}</span></div>
+    <div class="cr-meter" role="img" aria-label="Crediti residui: ${n(left)} su ${n(limit)}"><i style="width:${pctLeft.toFixed(1)}%"></i></div>
+    <p class="cr-foot">Usati oggi ${n(used)}${reset}${u.assumed ? " · stima: nessuna richiesta ancora registrata oggi" : ""}</p></div>`;
+}
+async function loadUsage() {
+  try {
+    const res = await fetch("/api/usage", { headers: { accept: "application/json" } });
+    if (res.ok) { state.usage = await res.json(); renderCredits(); }
+  } catch { /* resta l'ultimo dato noto */ }
+}
 function renderStatusCard() {
+  renderCredits();
   const el = $("#set-status");
   if (!el) return;
   const b = state.board, f = freshInfo();
@@ -1074,12 +1106,24 @@ function showView(name) {
   window.scrollTo({ top: 0 });
   if (name === "plays") { renderPlays(); loadReliability(); refreshPlays(); }
   if (name === "matches") { animateNext = true; render(); }
+  if (name === "settings") loadUsage();
 }
 document.querySelector(".tabbar").addEventListener("click", (e) => {
   const b = e.target.closest(".tab-item"); if (!b) return;
   if (document.body.dataset.view === b.dataset.view) window.scrollTo({ top: 0, behavior: "smooth" });
   else showView(b.dataset.view);
 });
+/* Ricerca partite e campionati (calcio): scrive nello stato e ridisegna la lista; il campo resta fuori dalla lista, quindi non perde il focus. */
+{
+  const bar = $("#searchbar");
+  bar.innerHTML = `${icon("search", "sb-ic")}<input id="match-q" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Cerca squadra, partita o campionato" aria-label="Cerca partita o campionato" /><button class="sb-clear" id="match-q-clear" type="button" aria-label="Cancella la ricerca" hidden>${icon("close")}</button>`;
+  const input = $("#match-q"), clear = $("#match-q-clear");
+  let timer = null;
+  const apply = (value) => { state.q = value; clear.hidden = !value; animateNext = false; render(); };
+  input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => apply(input.value), 120); });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
+  clear.addEventListener("click", () => { input.value = ""; clearTimeout(timer); apply(""); input.focus({ preventScroll: true }); });
+}
 $("#mode-seg").addEventListener("click", (e) => { const b = e.target.closest("[data-seg]"); if (b) setSeg(b.dataset.seg); });
 
 /* Menu "Seleziona": tutte, i BET (o le filtrate), nessuna */
