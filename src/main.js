@@ -167,7 +167,7 @@ function playOfList(m) {
   const sel = listSel(m);
   if (!sel) return null;
   const item = { id: m.id, league: m.league, kickoffAt: m.kickoffAt, home: m.home, away: m.away, homeLogo: m.homeLogo ?? null, awayLogo: m.awayLogo ?? null, status: m.status ?? null, confidence: sel.confidence, pick: sel, corner: m.corner ?? cornerCache.get(m.id) ?? null };
-  return { ...playFromItem(item, {}), snap: { kickoffAt: item.kickoffAt, league: item.league, home: item.home, away: item.away, homeLogo: item.homeLogo, awayLogo: item.awayLogo, confidence: item.confidence, status: item.status, pick: sel, corner: item.corner, plan: null } };
+  return { ...playFromItem(item, {}), snap: { kickoffAt: item.kickoffAt, league: item.league, home: item.home, away: item.away, homeLogo: item.homeLogo, awayLogo: item.awayLogo, confidence: item.confidence, status: item.status, pick: sel, corner: item.corner, plan: null, mk: m.mk ?? null, cornerModel: m.cornerModel ?? null } };
 }
 function rowSaveHtml(m) {
   const cand = isOpen(m) ? playOfList(m) : null;
@@ -744,6 +744,14 @@ function playBody({ play, legs, status, profit }) {
   const foot = `<p class="pl-foot">Salvata ${esc(dayShort(play.savedAt))}${play.stake ? ` · puntata ${eur(play.stake)}` : ""}${profit != null ? ` · esito <b class="${profit >= 0 ? "pl-gain" : "pl-loss"}">${profit >= 0 ? "+" : ""}${eur(profit)}</b>` : ""}</p>`;
   const del = `<button class="link danger" type="button" data-del-play="${esc(play.id)}">Elimina</button>`;
   const sc = (l) => l.res ?? (l.live?.status === "final" ? [l.live.homeScore, l.live.awayScore] : null);
+  if (play.snap?.mk && play.kind === "single") {
+    // Stessa vista della lista Partite (tutti i mercati e le percentuali al momento del salvataggio); a partita finita, il resoconto pronosticato/uscito.
+    const l = legs[0], r = sc(l), act = actualOf(l.matchId);
+    const final = r ? { h: r[0], a: r[1], corners: l.cres?.total ?? act?.total ?? null } : null;
+    const item = { id: l.matchId, ...play.snap, status: r ? "final" : play.snap.status, corner: play.snap.corner ?? (r ? null : cornerCache.get(l.matchId) ?? null) };
+    const markets = marketsHtml(item, { mode: "all", rules: state.rules ?? undefined, open: openAcc.has(`pk:${l.matchId}`), result: final, idPrefix: "pk" });
+    return `<div class="pl-mk">${markets}</div><span class="pv-btns"><button class="link" type="button" data-open="${esc(l.matchId)}">Scheda partita</button>${del}</span>${foot}`;
+  }
   if (play.snap && play.kind === "single") {
     const l = legs[0], r = sc(l);
     const item = { id: l.matchId, ...play.snap, status: r ? "final" : play.snap.status, homeScore: r?.[0], awayScore: r?.[1], cornerActual: actualOf(l.matchId) };
@@ -775,7 +783,7 @@ function renderPlays(note = "") {
   const y = window.scrollY, ev = evaluate(plays, playResults), t = ev.total;
   const tile = (k, v, cls = "") => `<div class="${cls}"><small>${k}</small><b>${v}</b></div>`;
   const strip = plays.length ? `<div class="pl-sum pl-strip">${tile("Centrate", t.won + t.lost ? `${t.won} su ${t.won + t.lost}${t.rate != null ? ` · ${pct(t.rate)}` : ""}` : "—", t.won + t.lost && t.rate >= 0.5 ? "good" : "")}${tile("In attesa", String(t.pending))}${tile("Netto", t.staked ? eur(t.profit) : "—", t.staked ? (t.profit >= 0 ? "good" : "bad") : "")}</div>` : "";
-  const seg = plays.length ? `<div class="seg" id="pl-seg" role="group" aria-label="Filtro giocate" style="--i:${PL_FILTERS.findIndex(([k]) => k === playUi.filter)}">${PL_FILTERS.map(([k, l]) => `<button type="button" data-plf="${k}" aria-pressed="${playUi.filter === k}">${l}</button>`).join("")}</div>` : "";
+  const seg = plays.length ? `<div class="seg" id="pl-seg" role="group" aria-label="Filtro giocate" style="--segn:3;--i:${PL_FILTERS.findIndex(([k]) => k === playUi.filter)}">${PL_FILTERS.map(([k, l]) => `<button type="button" data-plf="${k}" aria-pressed="${playUi.filter === k}">${l}</button>`).join("")}</div>` : "";
   const stats = accordionHtml({ id: "stats", open: openAcc.has("stats"), cls: "stats-acc", headCls: "stats-head",
     head: `<span class="stats-t"><b>Statistiche e affidabilità</b><small>Efficienza dei pronostici e dei BET dell'app</small></span>`,
     body: `<div class="pl-pane"><div id="reliability">${reliabilityState.html}</div>${plays.length ? efficiencyHtml(efficiency(plays, playResults), { esc, pct }) : ""}${t.staked ? `<p class="pl-note">Esito netto calcolato sulle ${eur(t.staked)} puntate delle giocate già concluse (con puntata e quota salvate).</p>` : ""}</div>` });
@@ -896,6 +904,7 @@ async function sharePdf(btn) {
 /* ---------- Eventi ---------- */
 document.addEventListener("click", (e) => {
   const t = e.target;
+  if (t.closest("[data-sport-scope]")) return;         // i clic dentro l'altro sport non sono del calcio (altrimenti aprivano e richiudevano due volte le tendine)
   if (t.closest("[data-af-retry]") && detailState) { detailState.afTries = 0; loadAf(detailState.id, 0); }
   if (t.closest("[data-af-extra]") && detailState) { detailState.extra = true; detailState.afTries = 0; t.closest("[data-af-extra]").textContent = "Scarico gli altri dati…"; t.closest("[data-af-extra]").disabled = true; loadAf(detailState.id, 0); }
   if (t.closest("[data-af-refresh]") && detailState) { detailState.afTries = 0; t.closest("[data-af-refresh]").textContent = "Aggiorno…"; loadAf(detailState.id, 0, { refresh: true }); }

@@ -1,6 +1,7 @@
 // Stay Live — scelta dello sport. Il calcio (main.js) resta com'è; il tennis è un modulo separato caricato solo su richiesta.
 // Un errore nel tennis non può toccare il calcio: il caricamento è dinamico e protetto.
-// Il cambio sport avviene dal menu a tendina in alto a destra e mostra un finto caricamento (palla che rimbalza + skeleton).
+// All'apertura dell'app (ogni nuova sessione) compare la schermata di scelta: icona e nome grandi e due schede, Calcio e Tennis.
+// Dopo la scelta, il cambio sport avviene dal menu a tendina in alto a destra e mostra un finto caricamento (palla che rimbalza + skeleton).
 import "./sport.css";
 import "./monitor-tab.js";
 import { icon } from "./icons.js";
@@ -10,21 +11,33 @@ const KEY = "sl-sport";
 const body = document.body;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const LOADER_MS = 1000;           // durata minima del finto caricamento
+const gateOpen = () => !gate.hidden;
 let tennis = null;                // controller del tennis (dopo il primo caricamento)
 let loadingTennis = null;         // promessa del caricamento in corso
 let current = "football";
 let switching = false;
 
-const saved = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
-const mark = (sport) => { try { localStorage.setItem(KEY, sport); } catch { /* modalità privata */ } };
+// La scelta vale per la sessione: a ogni nuova apertura dell'app si torna alla schermata iniziale.
+const saved = () => { try { return sessionStorage.getItem(KEY); } catch { return null; } };
+const mark = (sport) => { try { sessionStorage.setItem(KEY, sport); } catch { /* modalità privata */ } };
 
 const root = document.createElement("div");
 root.id = "tennis-root";
+root.dataset.sportScope = "tennis";   // il calcio ignora i clic fatti qui dentro
 root.hidden = true;
+const gate = document.createElement("div");
+gate.id = "sport-gate";
+gate.hidden = true;
+gate.innerHTML = `<div class="sg-inner">
+  <div class="sg-brand"><img class="sg-icon" src="/icons/icon-192.png" width="84" height="84" alt="" decoding="async" /><h1 class="sg-word" data-text="StayLive">Stay<span>Live</span></h1><p>Scegli lo sport</p></div>
+  <div class="sg-tabs" role="group" aria-label="Sport">
+    <button type="button" class="sg-tab football" data-sport-pick="football"><span class="sg-art" aria-hidden="true"></span><span class="sg-ico" aria-hidden="true">${icon("soccer-ball")}</span><b>Calcio</b><small>Mercati, probabilità e BET</small></button>
+    <button type="button" class="sg-tab tennis" data-sport-pick="tennis"><span class="sg-art" aria-hidden="true"></span><span class="sg-ico" aria-hidden="true">${icon("tennis-ball")}</span><b>Tennis</b><small>ATP e WTA, pronostico del vincitore</small></button>
+  </div></div>`;
 const loader = document.createElement("div");
 loader.id = "sport-loader";
 loader.setAttribute("aria-hidden", "true");
-body.append(root, loader);
+body.append(gate, root, loader);
 
 /* Menu del calcio: la testata del calcio è in index.html (segnaposto), quella del tennis la crea tennis/app.js. */
 const slot = document.querySelector("#sport-slot");
@@ -44,10 +57,12 @@ const hideLoader = () => loader.classList.remove("on");
 
 /* ---------- Viste ---------- */
 function showFootball() {
+  gate.hidden = true;
   root.hidden = true;
   tennis?.hide();
   body.dataset.sport = "football";
   document.documentElement.removeAttribute("data-boot");
+  document.documentElement.removeAttribute("data-gate");
   current = "football";
 }
 
@@ -68,7 +83,18 @@ function mountTennis() {
   return loadingTennis;
 }
 
+function showGate() {
+  body.dataset.sport = "gate";
+  document.documentElement.removeAttribute("data-boot");
+  document.documentElement.removeAttribute("data-gate");
+  root.hidden = true;
+  tennis?.hide();
+  gate.hidden = false;
+  gate.querySelector(".sg-tab")?.focus({ preventScroll: true });
+}
+
 async function showTennis() {
+  gate.hidden = true;
   body.dataset.sport = "tennis";
   document.documentElement.removeAttribute("data-boot");
   current = "tennis";
@@ -77,6 +103,12 @@ async function showTennis() {
 }
 
 async function switchTo(sport) {
+  if (gateOpen()) {                                  // dalla schermata iniziale: entra subito, senza finto caricamento
+    mark(sport);
+    if (sport === "tennis") await showTennis(); else showFootball();
+    current = sport; window.scrollTo({ top: 0 });
+    return;
+  }
   if (switching || sport === current || !SPORTS[sport]) return;
   switching = true;
   mark(sport);
@@ -117,4 +149,5 @@ document.addEventListener("click", (e) => {
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenus(); });
 
 /* ---------- Apertura: si torna allo sport usato l'ultima volta ---------- */
-if (saved() === "tennis") void showTennis(); else showFootball();
+const first = saved();
+if (first === "tennis") void showTennis(); else if (first === "football") showFootball(); else showGate();
