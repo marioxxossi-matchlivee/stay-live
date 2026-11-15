@@ -11,7 +11,7 @@ import { accordionHtml } from "../playlist.js";
 import { DEFAULT_FILTERS, SURFACE_LABEL, CATEGORY_LABEL, GENDER_LABEL, facets, filterMatches, groupByTournament, sanitizeFilters, sanitizeMatches } from "./board.js";
 import { detailHtml, emptyHtml, rowHtml, canSave } from "./view.js";
 import { tennisMonitorHtml } from "./monitor.js";
-import { playsViewHtml, settingsHtml } from "./playsview.js";
+import { PL_FILTERS, listHtml as playsListHtml, playsViewHtml, settingsHtml } from "./playsview.js";
 import { absorbTResults, addTPlay, evaluateT, loadTPlays, playFromMatch, removeTPlay, saveTPlays, tSignature } from "./plays.js";
 
 const CACHE_KEY = "sl-tennis-board-v2";
@@ -48,10 +48,10 @@ export function mountTennis(root) {
       <section class="tn-pane" id="tn-pane-matches">
         <section class="intro"><p class="eyebrow">${icon("tennis-ball")}Tennis · ATP e WTA</p><h1 id="tn-title">Partite di tennis</h1><p id="tn-sum" class="summary" aria-live="polite"></p></section>
         <div id="tn-banner" class="banner" role="status" hidden></div>
-        <div class="seg" id="tn-seg" role="group" aria-label="Filtro partite" style="--i:0"><button type="button" data-seg="all" aria-pressed="true">Tutte</button><button type="button" data-seg="bet" aria-pressed="false">Solo BET</button></div>
+        <div class="seg" id="tn-seg" role="group" aria-label="Filtro partite" style="--segn:2;--i:0"><button type="button" data-seg="all" aria-pressed="true">Tutte</button><button type="button" data-seg="bet" aria-pressed="false">Solo BET</button></div>
         <div class="days" id="tn-days" aria-label="Giornata"></div>
-        <div class="listbar"><button class="chip-btn lg-toggle" id="tn-ftoggle" type="button" aria-expanded="false" aria-controls="tn-fpanel">Filtri</button></div>
-        <div class="tn-fpanel" id="tn-fpanel" hidden></div>
+        <div class="listbar"><button class="chip-btn" id="tn-ftoggle" type="button" aria-expanded="false" aria-controls="tn-facc">Filtri</button></div>
+        <div class="tn-facc" id="tn-facc" inert><div class="tn-fclip"><div class="tn-fpanel" id="tn-fpanel"></div></div></div>
         <div id="tn-list" class="list"></div>
         <p class="foot">Stime statistiche sperimentali. Non sono garanzie né consigli finanziari.</p>
       </section>
@@ -127,9 +127,12 @@ export function mountTennis(root) {
     for (const b of seg.querySelectorAll("[data-seg]")) b.setAttribute("aria-pressed", String(b.dataset.seg === cur));
     const f = state.filters, active = [f.tour !== "all", f.category !== "all", f.surface !== "all", f.tournament !== "all", Boolean(f.q)].filter(Boolean).length;
     const tg = $("#tn-ftoggle"); tg.textContent = active ? `Filtri · ${active}` : "Filtri"; tg.setAttribute("aria-expanded", String(state.fOpen));
-    const panel = $("#tn-fpanel"); panel.hidden = !state.fOpen || !state.matches.length;
-    // Il pannello si ridisegna sempre (lo stato visivo segue quello reale); si lascia intatto solo il campo di testo mentre si scrive, e si conserva lo scorrimento delle file di chip.
-    if (!panel.hidden && document.activeElement?.id !== "tn-q") {
+    // Tendina dei filtri: il contenitore resta lo stesso (l'altezza si anima), il contenuto si ridisegna sempre così lo stato visivo segue quello reale.
+    // Si lascia intatto solo il campo di testo mentre si scrive e si conserva lo scorrimento delle file di chip.
+    const facc = $("#tn-facc"), panel = $("#tn-fpanel");
+    facc.classList.toggle("open", state.fOpen && state.matches.length > 0);
+    facc.toggleAttribute("inert", !facc.classList.contains("open"));
+    if (state.matches.length && document.activeElement?.id !== "tn-q") {
       const scroll = [...panel.querySelectorAll(".tn-chips-row")].map((r) => r.scrollLeft);
       panel.innerHTML = filtersHtml();
       panel.querySelectorAll(".tn-chips-row").forEach((r, i) => { r.scrollLeft = scroll[i] ?? 0; });
@@ -141,6 +144,15 @@ export function mountTennis(root) {
 
   /* ---------- Altre schede ---------- */
   const evaluated = () => evaluateT(state.plays, state.matches);
+  /** Cambio filtro delle giocate: si aggiorna il selettore esistente (così scorre) e solo l'elenco. */
+  function setPlayFilter(f) {
+    state.playFilter = f;
+    const seg = $("#tn-pl-seg");
+    if (!seg) return renderPlays();
+    seg.style.setProperty("--i", String(PL_FILTERS.findIndex(([k]) => k === f)));
+    for (const b of seg.querySelectorAll("[data-plf]")) b.setAttribute("aria-pressed", String(b.dataset.plf === f));
+    const list = $("#tn-pl-list"); if (list) list.innerHTML = playsListHtml(evaluated().rows, f, state.open);
+  }
   function renderPlays() { $("#tn-pane-plays").innerHTML = playsViewHtml(evaluated(), { filter: state.playFilter, open: state.open, history: state.history }); }
   function renderReliability() { $("#tn-pane-reliability").innerHTML = `<section class="mn-intro"><h1>Affidabilità</h1><p>Quanto sono credibili i pronostici. Ogni numero ha la sua incertezza: con pochi casi non si conclude nulla.</p></section>${state.history ? tennisMonitorHtml(state.history, state.mnTab) : `<div class="mn-emptybox"><h3>Storico non ancora disponibile</h3><p>Comparirà dopo le prime partite concluse con un pronostico registrato prima dell'inizio.</p></div>`}`; }
   function renderSettings() { $("#tn-pane-settings").innerHTML = settingsHtml(state.diagnostics, state.builtAt, state.plays.length); }
@@ -244,7 +256,7 @@ export function mountTennis(root) {
     const day = t.closest("[data-day]"); if (day) { state.day = day.dataset.day; state.animate = true; return render(); }
     if (t.closest("#tn-ftoggle")) { state.fOpen = !state.fOpen; return render(); }
     for (const [attr, k] of [["data-tour", "tour"], ["data-cat", "category"], ["data-surface", "surface"]]) { const el = t.closest(`[${attr}]`); if (el) { state.filters[k] = el.getAttribute(attr); state.animate = true; return render(); } }
-    const plf = t.closest("[data-plf]"); if (plf) { state.playFilter = plf.dataset.plf; return renderPlays(); }
+    const plf = t.closest("[data-plf]"); if (plf) return setPlayFilter(plf.dataset.plf);
     const mn = t.closest("[data-mn]"); if (mn) { state.mnTab = mn.dataset.mn; return renderReliability(); }
     if (t.closest("#tn-clear-plays") && state.plays.length && confirm(`Eliminare le ${state.plays.length} giocate salvate? Non si può annullare.`)) { state.plays = []; render(); }
   });

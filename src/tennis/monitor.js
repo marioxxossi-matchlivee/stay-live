@@ -74,7 +74,7 @@ export function backtestHtml(b) {
 export function tennisMonitorHtml(h, tab = "live") {
   const n = (h?.rows ?? []).length;
   const hist = h?.backtest?.matches ? `Storico · ${Number(h.backtest.matches).toLocaleString("it-IT")}` : "Storico";
-  return `<div class="mn-seg" id="tn-mn-tabs" style="--i:${tab === "live" ? 0 : 1}" role="group" aria-label="Sezione"><button type="button" data-mn="live" aria-pressed="${tab === "live"}">Dal vivo · ${n}</button><button type="button" data-mn="hist" aria-pressed="${tab === "hist"}">${esc(hist)}</button></div>${tab === "live" ? liveHtml(h) : backtestHtml(h?.backtest)}`;
+  return `<div class="mn-seg" id="tn-mn-tabs" style="--segn:2;--i:${tab === "live" ? 0 : 1}" role="group" aria-label="Sezione"><button type="button" data-mn="live" aria-pressed="${tab === "live"}">Dal vivo · ${n}</button><button type="button" data-mn="hist" aria-pressed="${tab === "hist"}">${esc(hist)}</button></div>${tab === "live" ? liveHtml(h) : backtestHtml(h?.backtest)}`;
 }
 
 /** Scheda breve per la vista Giocate: BET dell'app, stessa di quella del calcio. */
