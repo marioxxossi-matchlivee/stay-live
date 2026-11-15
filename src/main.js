@@ -3,6 +3,7 @@ import "./design/tokens.css";
 import "./design/shell.css";
 import "./design/football.css";
 import "./design/chrome.css";
+import "./design/matchcard.css";
 import { MODEL, verdictFor } from "../functions/api/model.js";
 import { MIN_ODDS_DEFAULT, adjustPick, clampMinOdds } from "./rules.js";
 import { computePlan, isBetItem } from "./plan.js";
@@ -18,7 +19,7 @@ import { enableSwipe } from "./gestures.js";
 import { accordionHtml, filterRows, groupByDay, playHeadHtml } from "./playlist.js";
 import { showToast } from "./toast.js";
 import { enableSheet } from "./sheet.js";
-import { THR_DEFAULT, marketsHtml } from "./markets.js";
+import { marketsHtml } from "./markets.js";
 
 hideBrokenCrests();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -32,11 +33,8 @@ const state = {
   matches: [], leagues: [], continents: [], league: "all", navOpen: false, day: null, onlyBet: false, selected: new Set(),
   n: 8, minOdds: MIN_ODDS_DEFAULT, loading: false, error: null, banner: null, syncTried: false, updatedAt: null,
 };
-// Soglia dei pronostici «interessanti» (probabilità minima): impostazione dell'utente. Era la soglia della vecchia modalità «O/U + corner».
-const THR_KEY = "stayLive.customThr", MINODDS_KEY = "stayLive.minOdds";
+const MINODDS_KEY = "stayLive.minOdds";
 try { const mo = localStorage.getItem(MINODDS_KEY); if (mo != null) state.minOdds = clampMinOdds(mo); } catch { /* quota minima di default */ }
-try { const t = Number(localStorage.getItem(THR_KEY)); state.thr = t >= 0.5 && t <= 0.9 ? t : THR_DEFAULT; } catch { state.thr = THR_DEFAULT; }
-state.openMk = new Set();      // schede «Mercati e motivazioni» aperte: sopravvivono ai ridisegni
 state.rules = null;            // regole del motore (soglie) inviate con l'elenco, per spiegare i verdetti
 const leagueName = (id, short = false) => state.leagues.find((l) => l.id === id)?.[short ? "short" : "name"] ?? id;
 /** Filtro campionato: "all", id campionato oppure "n:<country>" per tutta una nazione. */
@@ -177,25 +175,24 @@ function rowSaveHtml(m) {
   const saved = isSaved(cand);
   return `<button class="row-save${saved ? " done" : ""}" type="button" data-row-save="${esc(m.id)}" aria-label="${saved ? `Giocata salvata: ${esc(cand.label)}` : `Salva giocata: ${esc(cand.label)}`}" aria-pressed="${saved}"${saved ? " disabled" : ""}>${saved ? iconFill("bookmark") : icon("bookmark")}</button>`;
 }
-/** Le due squadre una accanto all'altra (stemma e nome), con l'orario o il risultato al centro. */
+/** Le due squadre una accanto all'altra (stemma sopra il nome), con l'orario o il risultato al centro. */
 function versusHtml(m) {
   const played = m.homeScore != null && m.awayScore != null;
   const live = m.status === "in_progress", done = m.status === "final";
-  const centre = played ? `<strong class="vs-score">${esc(m.homeScore)}<i>–</i>${esc(m.awayScore)}</strong>` : `<strong class="vs-time">${esc(fmtTime.format(new Date(m.kickoffAt)))}</strong>`;
-  const state = live ? `<span class="vs-st live">In corso</span>` : done ? `<span class="vs-st">Terminata</span>` : "";
-  const team = (side, name, logo) => `<span class="tm ${side}">${crest(name, logo, "crest vs")}<b>${esc(name)}</b></span>`;
-  return `<span class="fx vs">${team("home", m.home, m.homeLogo)}<span class="vs-mid">${centre}${state}</span>${team("away", m.away, m.awayLogo)}</span>`;
+  const centre = played ? `<strong class="mc-score">${esc(m.homeScore)}<i>–</i>${esc(m.awayScore)}</strong>` : `<strong class="mc-time">${esc(fmtTime.format(new Date(m.kickoffAt)))}</strong>`;
+  const state = live ? `<span class="mc-st live">In corso</span>` : done ? `<span class="mc-st">Terminata</span>` : "";
+  const team = (name, logo) => `<span class="mc-t">${crest(name, logo, "crest")}<b>${esc(name)}</b></span>`;
+  return `${team(m.home, m.homeLogo)}<span class="mc-mid">${centre}${state}</span>${team(m.away, m.awayLogo)}`;
 }
+/** Scheda partita: testata (selezione, campionato, salva), squadre, poi i mercati (solo partite non ancora finite). */
 function rowHtml(m, k = 0) {
   const open = isOpen(m);
-  const check = open ? `<label class="chk"><input type="checkbox" data-sel="${esc(m.id)}" ${state.selected.has(m.id) ? "checked" : ""} aria-label="Seleziona ${esc(m.home)} – ${esc(m.away)}" /></label>` : `<span></span>`;
+  const check = open ? `<label class="chk"><input type="checkbox" data-sel="${esc(m.id)}" ${state.selected.has(m.id) ? "checked" : ""} aria-label="Seleziona ${esc(m.home)} – ${esc(m.away)}" /></label>` : `<span class="chk"></span>`;
   // Le due modalità condividono lo stesso motore e gli stessi dati: «Solo BET» mostra, delle partite di «Tutte», solo i mercati BET.
-  const markets = open ? `<div class="mk-wrap"><button class="mk-open" type="button" data-open="${esc(m.id)}" aria-label="Apri la scheda ${esc(m.home)} – ${esc(m.away)}"></button>${marketsHtml({ ...m, corner: m.corner ?? cornerCache.get(m.id) ?? null }, { mode: state.onlyBet ? "bet" : "all", thr: state.thr, rules: state.rules ?? undefined, open: state.openMk.has(m.id) })}</div>` : "";
-  return `<div class="row ${state.selected.has(m.id) ? "sel" : ""}${pk(m)?.verdict === "BET" && m.pick.confidence !== "insufficiente" ? " is-bet" : ""}" style="--i:${Math.min(k, 9)}">${check}
-    <button class="row-main" type="button" data-open="${esc(m.id)}">
-      <span class="meta"><span>${esc(leagueName(m.league, true))}</span></span>
-      ${versusHtml(m)}
-    </button>${rowSaveHtml(m)}${markets}</div>`;
+  const body = open ? `<div class="mc-body">${marketsHtml({ ...m, corner: m.corner ?? cornerCache.get(m.id) ?? null }, { mode: state.onlyBet ? "bet" : "all", rules: state.rules ?? undefined, open: openAcc.has(`mk:${m.id}`) })}</div>` : "";
+  return `<div class="row mc ${state.selected.has(m.id) ? "sel" : ""}${pk(m)?.verdict === "BET" && m.pick.confidence !== "insufficiente" ? " is-bet" : ""}" style="--i:${Math.min(k, 9)}">${check}
+    <span class="mc-league">${esc(leagueName(m.league, true))}</span>${rowSaveHtml(m)}
+    <button class="mc-vs" type="button" data-open="${esc(m.id)}" aria-label="Apri la scheda ${esc(m.home)} – ${esc(m.away)}">${versusHtml(m)}</button>${body}</div>`;
 }
 function renderDays() {
   const pool = state.matches.filter((m) => inScope(m.league));
@@ -249,7 +246,6 @@ function render() {
   const segEl = $("#mode-seg");
   segEl.style.setProperty("--i", String(["all", "bet"].indexOf(seg)));
   for (const b of segEl.querySelectorAll("[data-seg]")) b.setAttribute("aria-pressed", String(b.dataset.seg === seg));
-  $("#thr").value = String(state.thr);
   const long = state.day && state.day !== "results" ? dayParts(state.day).long : "";
   $("#day-title").textContent = state.day === "results" ? "Ultimi risultati" : long ? long[0].toUpperCase() + long.slice(1) : "Partite";
   const n = list.length, one = n === 1;
@@ -1138,9 +1134,6 @@ async function autoCorners({ force = false } = {}) {
   } finally { cornerBusy = false; state.cornerNote = ""; render(); }
 }
 { const mi = $("#min-odds"); if (mi) mi.value = String(state.minOdds); }
-// «Mercati e motivazioni»: si ricorda quali schede sono aperte, così non si richiudono a ogni ridisegno.
-$("#list").addEventListener("toggle", (e) => { const d = e.target; if (d instanceof HTMLDetailsElement && d.dataset.mk) (d.open ? state.openMk.add(d.dataset.mk) : state.openMk.delete(d.dataset.mk)); }, true);
-$("#thr").addEventListener("change", (e) => { state.thr = Number(e.target.value); try { localStorage.setItem(THR_KEY, String(state.thr)); } catch { /* preferenza non salvata */ } render(); });
 /* Swipe a destra su una partita = la seleziona, a sinistra = la deseleziona (solo touch; col mouse resta la casella). */
 enableSwipe($("#list"), {
   rowSel: ".row", canSwipe: (r) => Boolean(r.querySelector("[data-sel]")),
