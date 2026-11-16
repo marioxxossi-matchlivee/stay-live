@@ -209,9 +209,9 @@ test("dashboard: consumi per tipo e processo, esiti, previsione e completezza", 
   assert.equal(c.today.complete, 1); assert.equal(c.tomorrow.total, 1); assert.equal(c.missingOdds, 1);
 });
 
-test("pulsante «salva i BET del giorno»: nascosto, attivo o già salvato", () => {
-  assert.equal(saveDayState(0, 0).hidden, true);
-  assert.match(saveDayState(3, 1).label, /Salva i BET del giorno \(3\)/);
+test("pulsante «salva tutte le giocate del giorno»: sempre visibile, attivo o già salvato", () => {
+  assert.equal(saveDayState(0, 0).hidden, false); assert.equal(saveDayState(0, 0).disabled, true);
+  assert.match(saveDayState(3, 1).label, /Salva tutte le giocate del giorno \(3\)/);
   assert.equal(saveDayState(0, 4).disabled, true);
 });
 
