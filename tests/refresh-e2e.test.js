@@ -50,6 +50,12 @@ function makeWorld() {
       const off = Number(u.searchParams.get("offset") ?? 0), lim = Number(u.searchParams.get("limit") ?? 1000);
       return ok(r.slice(off, off + lim));
     }
+    if (method === "POST" && table.startsWith("rpc/")) {            // funzioni SQL del Budget Manager (migrazione 202611160001), simulate
+      const a = JSON.parse(opts.body), st = (db.__budget ??= { reserved: 0, ledger: [] });
+      if (table === "rpc/af_budget_reserve") { const used = Math.max(st.reserved, db.af_usage?.[0]?.requests ?? 0), granted = Math.max(0, Math.min(a.p_credits, a.p_cap - used)); st.reserved = used + granted; return ok({ granted, used: st.reserved }); }
+      if (table === "rpc/af_budget_release") { st.reserved = Math.max(0, st.reserved - a.p_credits); return ok(null); }
+      if (table === "rpc/af_ledger_add") { st.ledger.push(...a.p_rows); return ok(null); }
+    }
     if (method === "POST") {
       const body = JSON.parse(opts.body), keys = (u.searchParams.get("on_conflict") ?? "").split(",").filter(Boolean);
       for (const row of body) {
@@ -77,6 +83,11 @@ function makeWorld() {
     } else if (ep === "odds") {
       if (q.bet === "5") response = [{ bookmakers: [{ name: "Bk1", bets: [{ name: "Goals Over/Under", values: [{ value: "Over 2.5", odd: "1.9" }, { value: "Under 2.5", odd: "1.9" }] }] }] }];
       else if (q.bet === "1") response = [{ bookmakers: [{ name: "Bk1", bets: [{ name: "Match Winner", values: [{ value: "Home", odd: "2.0" }, { value: "Draw", odd: "3.4" }, { value: "Away", odd: "3.8" }] }] }] }];
+      else if (q.bet == null) response = [{ bookmakers: [{ name: "Bk1", bets: [   // senza filtro `bet`: tutti i mercati in una sola risposta (come API-Football)
+        { id: 5, name: "Goals Over/Under", values: [{ value: "Over 2.5", odd: "1.9" }, { value: "Under 2.5", odd: "1.9" }] },
+        { id: 1, name: "Match Winner", values: [{ value: "Home", odd: "2.0" }, { value: "Draw", odd: "3.4" }, { value: "Away", odd: "3.8" }] },
+        { id: 12, name: "Double Chance", values: [{ value: "Home/Draw", odd: "1.3" }, { value: "Draw/Away", odd: "1.8" }, { value: "Home/Away", odd: "1.3" }] },
+        { id: 8, name: "Both Teams Score", values: [{ value: "Yes", odd: "1.8" }, { value: "No", odd: "1.95" }] }] }] }];
       else response = [];
     } else if (ep === "fixtures/statistics") {
       const id = Number(q.fixture), cfg = LEAGUES.find((l) => Math.floor(id / 1000) === l.afId), t = teamsOf(cfg);
@@ -116,9 +127,12 @@ test("giro completo + recupero automatico, con API-Football come unica fonte", a
     assert.ok(w.log.af.some((c) => c.startsWith("fixtures?league=135")), "la Serie A (ex Ninjas) arriva da API-Football");
     assert.ok(w.log.af.some((c) => c.startsWith("fixtures?league=2&")), "anche la Champions League");
     assert.equal(m1.matches.eligible, LEAGUES.length * 2, "partite aperte nei prossimi 7 giorni: 2 per campionato");
-    // quote reali di doppia chance (bet 12) e gol/no gol (bet 8): solo per le partite entro 36 ore (una per campionato nel mock), non per le lontane
-    const dcCalls = w.log.af.filter((c) => c.startsWith("odds?") && /bet=12(&|$)/.test(c)).length, bttsCalls = w.log.af.filter((c) => c.startsWith("odds?") && /bet=8(&|$)/.test(c)).length;
-    assert.ok(dcCalls >= LEAGUES.length - 2 && dcCalls <= LEAGUES.length + 2, `doppia chance: ${dcCalls} richieste (una per partita vicina)`); assert.equal(bttsCalls, dcCalls);
+    // quote: UNA richiesta per partita con tutti i mercati (1X2, gol, doppia chance, gol/no gol, corner), non una per mercato
+    const perBet = w.log.af.filter((c) => c.startsWith("odds?") && /bet=/.test(c)).length;
+    const bundles = w.log.af.filter((c) => /^odds\?fixture=\d+$/.test(c)).length;
+    assert.equal(perBet, 0, "nessuna richiesta quote per singolo mercato");
+    assert.ok(bundles >= LEAGUES.length * 2 - 4 && bundles <= LEAGUES.length * 2, `quote: ${bundles} richieste per ${LEAGUES.length * 2} partite aperte (una per partita)`);
+    assert.ok(w.db.af_cache.some((r) => /^odds\?bet=12&/.test(r.cache_key) && r.results > 0), "la doppia chance è stata salvata nella sua chiave di cache dalla risposta cumulativa");
     // pronostico in errore temporaneo => parziale, con diagnostica precisa
     assert.equal(m1.status, "partial", JSON.stringify({ c: m1.components, e: m1.errors, p: m1.pending, n: m1.notes }));
     assert.equal(m1.components.prediction.temporary, 1);
@@ -161,7 +175,7 @@ test("giro completo + recupero automatico, con API-Football come unica fonte", a
     /* ---- 3 · recupero senza compiti: nessuna richiesta ---- */
     const before = w.log.urls.length;
     const m3 = await runRefresh(env, { mode: "recover", wait, log: () => {} });
-    assert.equal(m3.status, "skipped");
+    assert.ok(["ok", "skipped"].includes(m3.status), "il recupero rinfresca solo le partite vicine, e solo se la cache è scaduta");
     assert.ok(w.log.urls.slice(before).every((u) => u.startsWith(SB)), "nessuna chiamata ad API-Football");
     assert.equal(w.log.af.length, afCalls1 + calls2);
   } finally { globalThis.fetch = real; }

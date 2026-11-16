@@ -46,8 +46,8 @@ test("loadCornerOdds: solo cache non fa richieste; con limite si ferma e segnala
   globalThis.fetch = async (url) => {
     if (String(url).includes("sb.test")) return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
     calls += 1;
-    // 1ª chiamata = elenco mercati (odds/bets), 2ª = quote corner e 3ª = "Corners 1x2" della prima partita, poi il provider limita le richieste
-    const body = calls <= 3 ? { errors: [], response: calls === 1 ? [{ id: 45, name: "Corners Over Under" }] : calls === 2 ? [resp] : [], results: 1 } : { errors: { rateLimit: "Too many requests." }, response: [] };
+    // 1ª chiamata = elenco mercati (odds/bets), 2ª = tutte le quote della prima partita (una sola richiesta: corner e corner 1x2 insieme), poi il provider limita le richieste
+    const body = calls <= 2 ? { errors: [], response: calls === 1 ? [{ id: 45, name: "Corners Over Under" }] : [resp], results: 1 } : { errors: { rateLimit: "Too many requests." }, response: [] };
     return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json", "x-ratelimit-requests-remaining": "5000" } });
   };
   const r = await loadCornerOdds(env, [m(1), m(2), m(3)], Date.now(), { maxLive: 6 });
