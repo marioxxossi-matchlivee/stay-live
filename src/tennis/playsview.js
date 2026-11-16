@@ -54,7 +54,14 @@ export function settingsHtml(d, builtAt, playsCount) {
   const pr = d?.provider ?? {}, c = d?.counts ?? {};
   const row = (k, v) => `<div class="set-row"><span><b>${esc(k)}</b><small>${v}</small></span></div>`;
   const status = d ? `${row("Provider", esc(pr.status ?? "n.d."))}${row("Ultimo aggiornamento", esc(stamp(pr.lastOkAt ?? builtAt)))}${row("Partite nel tabellone", `${esc(c.matchesWindow ?? 0)} · con pronostico ${esc(c.predictionsPublished ?? 0)} · BET ${esc(c.bet ?? 0)}`)}<details class="st-more"><summary>Dettagli tecnici</summary>${diagnosticsHtml(d, builtAt)}</details>` : `<p class="set-hint">Compare dopo la prima sincronizzazione.</p>`;
+  const q = pr.quota, n = (x) => Number(x).toLocaleString("it-IT");
+  const credits = q?.remaining != null && Number(q.limit) > 0
+    ? (() => { const left = Math.max(0, Number(q.remaining)), lim = Number(q.limit), pl = Math.min(100, (left / lim) * 100), tone = pl < 10 ? "bad" : pl < 30 ? "warn" : "ok";
+      return `<div class="cr ${tone}"><div class="cr-top"><b class="cr-big">${n(left)}</b><span>crediti residui su ${n(lim)}</span></div><div class="cr-meter" role="img" aria-label="Crediti residui: ${n(left)} su ${n(lim)}"><i style="width:${pl.toFixed(1)}%"></i></div><p class="cr-foot">Usati ${n(lim - left)}${q.resetAt ? ` · rinnovo ${esc(stamp(q.resetAt))}` : ""} · letto ${esc(stamp(pr.lastOkAt ?? builtAt))}</p></div>`; })()
+    : q?.remaining != null ? `<div class="cr"><div class="cr-top"><b class="cr-big">${n(q.remaining)}</b><span>crediti residui</span></div></div>`
+    : `<p class="set-hint">Il provider non ha ancora comunicato il residuo: compare dopo il prossimo aggiornamento automatico. Richieste registrate oggi: ${esc(pr.requestsToday ?? 0)}.</p>`;
   return `<p class="eyebrow">${icon("gear")}Preferenze</p><h1 class="vtitle">Impostazioni</h1>
+    <div class="set-group"><h2>Crediti SportsAPI365</h2>${credits}</div>
     <div class="set-group"><h2>Stato dei dati</h2>${status}</div>
     <div class="set-group"><h2>Giocate salvate</h2><button class="set-btn danger" id="tn-clear-plays" type="button"${playsCount ? "" : " disabled"}>${icon("trash")}Elimina tutte le giocate salvate</button><p class="set-hint">Le giocate stanno solo in questo dispositivo (${playsCount}).</p></div>
     <p class="foot">Stay Live · stime statistiche sperimentali. Non sono garanzie né consigli finanziari.</p>`;
