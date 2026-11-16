@@ -1,0 +1,17 @@
+name: Verifica quote cumulative
+on:
+  workflow_dispatch:
+    inputs:
+      fixture:
+        description: "ID API-Football di una partita con quote già pubblicate"
+        required: true
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node scripts/odds-probe.js "${{ inputs.fixture }}"
+        env:
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
