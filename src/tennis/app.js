@@ -3,6 +3,7 @@
 import "./tennis.css";
 import "../monitor.css";
 import { icon, iconPair, markSvg } from "../icons.js";
+import { saveDayState } from "../dataquality.js";
 import { esc, dayParts, dayKey, fmtTime } from "../format.js";
 import { sportMenuHtml } from "../sportmenu.js";
 import { enableSheet, closeSheet } from "../sheet.js";
@@ -50,7 +51,7 @@ export function mountTennis(root) {
         <div id="tn-banner" class="banner" role="status" hidden></div>
         <div class="seg" id="tn-seg" role="group" aria-label="Filtro partite" style="--segn:2;--i:0"><button type="button" data-seg="all" aria-pressed="true">Tutte</button><button type="button" data-seg="bet" aria-pressed="false">Solo BET</button></div>
         <div class="days" id="tn-days" aria-label="Giornata"></div>
-        <div class="listbar"><button class="chip-btn" id="tn-ftoggle" type="button" aria-expanded="false" aria-controls="tn-facc">Filtri</button></div>
+        <div class="listbar"><button class="chip-btn save-day" id="tn-save-day" type="button" hidden></button><button class="chip-btn" id="tn-ftoggle" type="button" aria-expanded="false" aria-controls="tn-facc">Filtri</button></div>
         <div class="tn-facc" id="tn-facc" inert><div class="tn-fclip"><div class="tn-fpanel" id="tn-fpanel"></div></div></div>
         <div id="tn-list" class="list"></div>
         <p class="foot">Stime statistiche sperimentali. Non sono garanzie né consigli finanziari.</p>
@@ -125,6 +126,8 @@ export function mountTennis(root) {
     const seg = $("#tn-seg"), cur = state.onlyBet ? "bet" : "all";
     seg.style.setProperty("--i", String(cur === "bet" ? 1 : 0));
     for (const b of seg.querySelectorAll("[data-seg]")) b.setAttribute("aria-pressed", String(b.dataset.seg === cur));
+    const dayBetsT = state.day === "results" ? [] : list.filter((m) => m.bet?.verdict === "BET" && canSave(m)), doneT = dayBetsT.filter((m) => isSaved(m)).length, sdState = saveDayState(dayBetsT.length - doneT, doneT);
+    const sdBtn = $("#tn-save-day"); sdBtn.hidden = sdState.hidden; sdBtn.disabled = sdState.disabled; sdBtn.textContent = sdState.label;
     const f = state.filters, active = [f.tour !== "all", f.category !== "all", f.surface !== "all", f.tournament !== "all", Boolean(f.q)].filter(Boolean).length;
     const tg = $("#tn-ftoggle"); tg.textContent = active ? `Filtri · ${active}` : "Filtri"; tg.setAttribute("aria-expanded", String(state.fOpen));
     // Tendina dei filtri: il contenitore resta lo stesso (l'altezza si anima), il contenuto si ridisegna sempre così lo stato visivo segue quello reale.
@@ -224,6 +227,16 @@ export function mountTennis(root) {
     render();
     if (dlg.open && detailKey === key) openDetail(key, true);
   }
+  /** Salva tutti i BET della giornata mostrata (con le stesse regole del segnalibro di ogni riga). */
+  function saveDayBets() {
+    const cands = visible().filter((m) => m.bet?.verdict === "BET" && canSave(m) && !isSaved(m)).map((m) => playFromMatch(m));
+    let n = 0;
+    for (const c of cands) { const r = addTPlay(state.plays, c); if (r.added) { state.plays = r.plays; n += 1; } }
+    if (n) persistPlays();
+    showToast(n ? `${n} ${n === 1 ? "giocata salvata" : "giocate salvate"}` : "Giocate già salvate", n ? { action: "Vedi", onAction: () => setTab("plays") } : undefined);
+    navigator.vibrate?.(10);
+    render();
+  }
   function deletePlay(id) {
     const index = state.plays.findIndex((p) => p.id === id);
     if (index < 0) return;
@@ -245,6 +258,7 @@ export function mountTennis(root) {
     if (!(t instanceof Element)) return;
     if (t.closest("[data-sport-menu]") || t.closest("[data-close]") || t === dlg) return;   // menu sport e chiusura fogli: gestiti altrove
     if (t.closest("#tn-refresh")) return void load();
+    if (t.closest("#tn-save-day")) return saveDayBets();
     const tab = t.closest("[data-tab]"); if (tab) return setTab(tab.dataset.tab);
     if (t.closest("[data-goto]")) return setTab("matches");
     const sv = t.closest("[data-row-save]"); if (sv) return savePlay(sv.dataset.rowSave);
