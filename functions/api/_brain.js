@@ -6,6 +6,7 @@
 import { AF_LEAGUES, RETRY_HINT, betIdsFrom, loadSections, ttlFor } from "./_apifootball.js";
 import { parseAfPrediction, resolveMaps } from "./_afpredict.js";
 import { marketFrom } from "./_market.js";
+import { emptyRecheckMs, tierOf } from "./_policy.js";
 
 const chunk = (arr, n) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
 
@@ -28,7 +29,7 @@ export function countAbsent(list, map) {
  */
 const EXTRA_ODDS_MS = 36 * 3600e3, EXTRA_FRESH_MS = 6 * 3600e3;     // quote doppia chance / gol-no gol: partite entro 36 ore, rinfrescate al più ogni 6 ore
 
-export async function loadBrainInputs(env, matches, now = Date.now(), { live = true, maxMap = 6, maxLive = 12, market = true, maps: known = null, freshFor = null } = {}) {
+export async function loadBrainInputs(env, matches, now = Date.now(), { live = true, maxMap = 6, maxLive = 12, market = true, maps: known = null, freshFor = null, emptyFor = null, source } = {}) {
   const byGame = new Map(), state = new Map(), marketState = new Map(), errors = new Map();
   const open = matches.filter((m) => AF_LEAGUES[m.league] && m.status !== "canceled");
   for (const m of matches) if (!open.includes(m)) { state.set(m.game_id, "missing"); marketState.set(m.game_id, "missing"); }
@@ -41,27 +42,30 @@ export async function loadBrainInputs(env, matches, now = Date.now(), { live = t
 
   const mapped = open.filter((m) => maps.has(m.game_id));
   const ttl = (kind, m) => ttlFor(kind, { kickoff: Date.parse(m.kickoff_at), now, finished: m.status === "final" });
-  const fresh = (kind, m) => (freshFor ? Math.min(ttl(kind, m), freshFor(m)) : undefined);      // freshFor(m): età massima accettata dal giro completo (ms)
+  // freshFor(m, kind): età massima accettata (politica per priorità, _policy.js); emptyFor(m, kind): attesa dopo una risposta vuota (quote non ancora pubblicate).
+  const fresh = (kind, m) => (freshFor ? freshFor(m, kind) : undefined);
+  const emptyOf = (kind, m) => (emptyFor ? emptyFor(m, kind) : kind === "odds" ? emptyRecheckMs(Date.parse(m.kickoff_at) - now) : undefined);
+  const tierFor = (m) => tierOf(m.kickoff_at, now);
   const fx = (m) => maps.get(m.game_id).fixture_id;
   let bets = { goals: 5, winner: 1, doubleChance: 12, btts: 8 };
   if (market && mapped.length) {
-    const { sections } = await loadSections(env, [{ section: "bets", endpoint: "odds/bets", params: {}, ttl: ttlFor("odds-bets") }], now, { maxLive: live ? 1 : 0 });
+    const { sections } = await loadSections(env, [{ section: "bets", endpoint: "odds/bets", params: {}, ttl: ttlFor("odds-bets"), tier: "today" }], now, { maxLive: live ? 1 : 0, source });
     bets = betIdsFrom(sections.bets?.data);
   }
   // Quote reali di doppia chance e gol/no gol: solo per le partite entro 36 ore (le lontane cambiano e costano richieste inutili). Con una quota
   // reale il verdetto usa il valore atteso (pLow x quota), non la soglia "punti sulla media del campionato" che favorisce solo gli esiti rari.
   const extra = market ? mapped.filter((m) => Date.parse(m.kickoff_at) - now <= EXTRA_ODDS_MS) : [];
-  const freshExtra = (m) => (freshFor ? Math.min(ttl("odds", m), EXTRA_FRESH_MS, freshFor(m) * 2) : undefined);
+  const freshExtra = (m) => (freshFor ? freshFor(m, "odds-extra") : undefined);
   // Ordine: prima i pronostici di tutte le partite, poi le quote: se il provider limita le richieste, ogni partita ha almeno il pronostico.
   const reqs = [
-    ...mapped.map((m) => ({ section: `${m.game_id}|pred`, endpoint: "predictions", params: { fixture: fx(m) }, ttl: ttl("predictions", m), fresh: fresh("predictions", m) })),
+    ...mapped.map((m) => ({ section: `${m.game_id}|pred`, endpoint: "predictions", params: { fixture: fx(m) }, ttl: ttl("predictions", m), fresh: fresh("predictions", m), tier: tierFor(m) })),
     ...(market ? mapped.flatMap((m) => [
-      { section: `${m.game_id}|goals`, endpoint: "odds", params: { fixture: fx(m), bet: bets.goals }, ttl: ttl("odds", m), fresh: fresh("odds", m) },
-      { section: `${m.game_id}|x12`, endpoint: "odds", params: { fixture: fx(m), bet: bets.winner }, ttl: ttl("odds", m), fresh: fresh("odds", m) },
+      { section: `${m.game_id}|goals`, endpoint: "odds", params: { fixture: fx(m), bet: bets.goals }, ttl: ttl("odds", m), fresh: fresh("odds", m), emptyFresh: emptyOf("odds", m), tier: tierFor(m) },
+      { section: `${m.game_id}|x12`, endpoint: "odds", params: { fixture: fx(m), bet: bets.winner }, ttl: ttl("odds", m), fresh: fresh("odds", m), emptyFresh: emptyOf("odds", m), tier: tierFor(m) },
     ]) : []),
     ...extra.flatMap((m) => [
-      { section: `${m.game_id}|dc`, endpoint: "odds", params: { fixture: fx(m), bet: bets.doubleChance }, ttl: ttl("odds", m), fresh: freshExtra(m) },
-      { section: `${m.game_id}|btts`, endpoint: "odds", params: { fixture: fx(m), bet: bets.btts }, ttl: ttl("odds", m), fresh: freshExtra(m) },
+      { section: `${m.game_id}|dc`, endpoint: "odds", params: { fixture: fx(m), bet: bets.doubleChance }, ttl: ttl("odds", m), fresh: freshExtra(m), emptyFresh: emptyOf("odds", m), tier: tierFor(m) },
+      { section: `${m.game_id}|btts`, endpoint: "odds", params: { fixture: fx(m), bet: bets.btts }, ttl: ttl("odds", m), fresh: freshExtra(m), emptyFresh: emptyOf("odds", m), tier: tierFor(m) },
     ]),
   ];
   const sections = {};
@@ -69,7 +73,7 @@ export async function loadBrainInputs(env, matches, now = Date.now(), { live = t
   if (live) {
     let budget = maxLive;
     for (const part of parts) {                                  // in sequenza: il tetto di richieste vale per tutto il giro
-      const r = await loadSections(env, part, now, { maxLive: budget });
+      const r = await loadSections(env, part, now, { maxLive: budget, source });
       Object.assign(sections, r.sections);
       budget = Math.max(0, budget - Object.values(r.sections).filter((s) => s.source === "live").length);
       if (r.retry.pending) afterMs = Math.max(afterMs, r.retry.afterMs);

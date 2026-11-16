@@ -143,8 +143,8 @@ export async function backfillCorners(env, matches, now = Date.now(), { maxLive 
   const rows = [];
   for (let i = 0; i < matches.length; i += 40) {
     const part = matches.slice(i, i + 40).map((m) => ({ m, map: directMap(m) })).filter((x) => x.map);
-    const reqs = part.map(({ m, map }) => ({ section: m.game_id, endpoint: "fixtures/statistics", params: { fixture: map.fixture_id }, ttl: ttlFor("fixture", { finished: true }) }));
-    const r = await loadSections(env, reqs, now, { maxLive: Math.max(0, maxLive - out.stored - out.waiting) });
+    const reqs = part.map(({ m, map }) => ({ section: m.game_id, endpoint: "fixtures/statistics", params: { fixture: map.fixture_id }, ttl: ttlFor("fixture", { finished: true }), tier: "background" }));   // lavoro di fondo: il Budget Manager lo ferma per primo
+    const r = await loadSections(env, reqs, now, { maxLive: Math.max(0, maxLive - out.stored - out.waiting), source: env.AF_SOURCE });
     for (const { m, map } of part) {
       const s = r.sections[m.game_id];
       if (!s || s.deferred) { out.waiting += 1; continue; }

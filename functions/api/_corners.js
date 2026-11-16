@@ -12,6 +12,7 @@
 import { AF_LEAGUES, betIdsFrom, loadSections, summarizeMatchWinner, summarizeOdds, ttlFor } from "./_apifootball.js";
 import { resolveMaps } from "./_afpredict.js";
 import { RETRY_HINT } from "./_apifootball.js";
+import { emptyRecheckMs, tierOf } from "./_policy.js";
 
 export const MIN_CORNER_ODD = 1.3;
 const r4 = (v) => Math.round(v * 1e4) / 1e4;
@@ -81,7 +82,7 @@ export function cornerPick(corners, minOdd = MIN_CORNER_ODD, winner = null) {
  * Quote corner delle partite (stessa cache della scheda dati: una volta scaricate non si rifanno finché non possono essere cambiate).
  * live=false = solo cache. Restituisce { byGame: Map(game_id -> pick|null), state: Map(game_id -> "used"|"none"|"waiting"|"missing"), maps, retry }.
  */
-export async function loadCornerOdds(env, matches, now = Date.now(), { live = true, maxMap = 4, maxLive = 6, maps: known = null, refreshMs = null, freshFor = null } = {}) {
+export async function loadCornerOdds(env, matches, now = Date.now(), { live = true, maxMap = 4, maxLive = 6, maps: known = null, refreshMs = null, freshFor = null, emptyFor = null, source } = {}) {
   const byGame = new Map(), state = new Map(), errors = new Map();
   const open = matches.filter((m) => AF_LEAGUES[m.league] && m.status !== "canceled");
   for (const m of matches) if (!open.includes(m)) state.set(m.game_id, "missing");
@@ -92,15 +93,17 @@ export async function loadCornerOdds(env, matches, now = Date.now(), { live = tr
   afterMs = Math.max(afterMs, mapWait);
   const mapped = open.filter((m) => maps.has(m.game_id));
   if (mapped.length) {
-    const { sections: pre } = await loadSections(env, [{ section: "bets", endpoint: "odds/bets", params: {}, ttl: ttlFor("odds-bets") }], now, { maxLive: live ? 1 : 0 });
+    const { sections: pre } = await loadSections(env, [{ section: "bets", endpoint: "odds/bets", params: {}, ttl: ttlFor("odds-bets"), tier: "today" }], now, { maxLive: live ? 1 : 0, source });
     const ids = betIdsFrom(pre.bets?.data), bet = ids.corners;
     const ttl = (m) => ttlFor("corner-odds", { kickoff: Date.parse(m.kickoff_at), now, finished: m.status === "final" });
-    const fresh = (m) => Math.min(ttl(m), refreshMs ?? Infinity, freshFor ? freshFor(m) : Infinity);      // refreshMs: si riscaricano le quote più vecchie di così (lo usa solo il giro notturno)
+    // freshFor(m, kind): politica per priorità (_policy.js); refreshMs: si riscaricano le quote più vecchie di così (lo usa solo il giro notturno manuale)
+    const fresh = (m) => (freshFor ? Math.min(freshFor(m, "corner-odds"), refreshMs ?? Infinity) : refreshMs != null ? Math.min(ttl(m), refreshMs) : undefined);
+    const emptyOf = (m) => (emptyFor ? emptyFor(m, "corner-odds") : emptyRecheckMs(Date.parse(m.kickoff_at) - now));
     const reqs = mapped.flatMap((m) => [
-      { section: m.game_id, endpoint: "odds", params: { fixture: maps.get(m.game_id).fixture_id, bet }, ttl: ttl(m), fresh: fresh(m) },
-      { section: `cw:${m.game_id}`, endpoint: "odds", params: { fixture: maps.get(m.game_id).fixture_id, bet: ids.cornerWinner }, ttl: ttl(m), fresh: fresh(m) },   // chi fa più corner (1X2 corner)
+      { section: m.game_id, endpoint: "odds", params: { fixture: maps.get(m.game_id).fixture_id, bet }, ttl: ttl(m), fresh: fresh(m), emptyFresh: emptyOf(m), tier: tierOf(m.kickoff_at, now) },
+      { section: `cw:${m.game_id}`, endpoint: "odds", params: { fixture: maps.get(m.game_id).fixture_id, bet: ids.cornerWinner }, ttl: ttl(m), fresh: fresh(m), emptyFresh: emptyOf(m), tier: tierOf(m.kickoff_at, now) },   // chi fa più corner (1X2 corner)
     ]);
-    const r = await loadSections(env, reqs, now, { maxLive: live ? maxLive : 0 });
+    const r = await loadSections(env, reqs, now, { maxLive: live ? maxLive : 0, source });
     if (live && r.retry.pending) afterMs = Math.max(afterMs, r.retry.afterMs);
     for (const m of mapped) {
       const sec = r.sections[m.game_id], cw = r.sections[`cw:${m.game_id}`];

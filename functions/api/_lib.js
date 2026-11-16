@@ -209,3 +209,11 @@ export function syncDue(state, active, now) {
   if (!state?.synced_at) return true;
   return now - Date.parse(state.synced_at) >= (active ? TTL.active : TTL.idle);
 }
+
+/** Chiama una funzione SQL di Supabase (PostgREST /rpc). Restituisce il JSON della risposta. */
+export async function supabaseRpc(env, name, args = {}) {
+  const url = new URL(`/rest/v1/rpc/${name}`, env.SUPABASE_URL);
+  const res = await fetch(url, { method: "POST", headers: sbHeaders(env), body: JSON.stringify(args) });
+  if (!res.ok) throw new Error(`Supabase rpc ${name}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  return res.json().catch(() => null);
+}

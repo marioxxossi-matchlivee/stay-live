@@ -61,8 +61,23 @@ export function statusOf(meta) {
   return "ok";
 }
 
+import { MAX_RECOVER_ATTEMPTS, pruneTasks, retryDelayMs } from "./_policy.js";
+
 const MIN = 60e3;
-export const RETRY_AFTER = { temporary: 30 * MIN, error: 60 * MIN };
+export const RETRY_AFTER = { temporary: 30 * MIN, error: 60 * MIN };      // primo intervallo; i successivi sono progressivi (vedi retryDelayMs in _policy.js)
+export { MAX_RECOVER_ATTEMPTS, pruneTasks };
+
+/**
+ * Tre condizioni distinte (mai confuse):
+ *   «dato non ancora disponibile» (not_yet)  -> NON è un compito: si ricontrolla secondo la politica (_policy.js: emptyRecheckMs)
+ *   «dato non previsto» (not_covered)        -> nessun compito: il provider non lo offre
+ *   «temporaneo» / «errore»                  -> compito di recupero, al massimo MAX_RECOVER_ATTEMPTS tentativi con intervalli crescenti
+ * Dopo il terzo tentativo il compito resta «parcheggiato» (il recupero orario non insiste); lo riprende il giro completo programmato.
+ */
+export const isParked = (t) => (t?.attempts ?? 0) >= MAX_RECOVER_ATTEMPTS;
+
+/** Compiti che il recupero deve riprendere ora: scaduti e non ancora parcheggiati. */
+export const dueTasks = (tasks, now = Date.now()) => (tasks ?? []).filter((t) => Date.parse(t.next_try_at) <= now && !isParked(t));
 
 /**
  * Compiti ancora da completare. items = [{ component, scope ("game_id" o "league:<id>"), league, cls, error }].
@@ -75,7 +90,7 @@ export function buildTasks(items, prev = [], now = Date.now()) {
     if (i.carry && p) return p;                                           // non ritentato in questo giro: resta com'è (stessi tentativi)
     const attempts = (p?.attempts ?? 0) + 1;
     return { task_key: key, component: i.component, scope: i.scope, league: i.league ?? null, state: i.cls, attempts, last_error: i.error ? String(i.error).slice(0, 300) : null,
-      next_try_at: new Date(now + RETRY_AFTER[i.cls] * Math.min(4, attempts)).toISOString(), first_seen_at: p?.first_seen_at ?? new Date(now).toISOString(), updated_at: new Date(now).toISOString() };
+      next_try_at: new Date(now + retryDelayMs(i.cls, attempts)).toISOString(), first_seen_at: p?.first_seen_at ?? new Date(now).toISOString(), updated_at: new Date(now).toISOString() };
   });
 }
 

@@ -1,3 +1,4 @@
+import { completenessOf } from "./_completeness.js";
 import {
   CONTINENTS, LEAGUES, SEASON, errorMessage, isActiveLeague, json, loadFinals, missingConfig, supabaseGet, supabaseGetAll, syncDue,
 } from "./_lib.js";
@@ -52,12 +53,14 @@ export async function buildFixtures(env) {
     const now = Date.now();
     const from = new Date(now - 36 * 3600e3).toISOString();
     const to = new Date(now + days * 86400e3).toISOString();
-    const [window, finals, states, logos] = await Promise.all([
+    const [window, finals, states, logos, tasks] = await Promise.all([
       supabaseGetAll(env, "matches", { select: COLUMNS, season: `eq.${SEASON}`, status: "neq.superseded", and: `(kickoff_at.gte.${from},kickoff_at.lte.${to})`, order: "kickoff_at.asc,game_id.asc" }),
       loadFinals(env),
       supabaseGet(env, "sync_state", { select: "*" }),
       loadLogoIndex(env),
+      supabaseGet(env, "refresh_tasks", { select: "scope,component,state,attempts,next_try_at" }).catch(() => []),     // compiti di recupero aperti (per «prossimo tentativo»)
     ]);
+    const tasksBy = new Map(); for (const t of tasks) (tasksBy.get(t.scope) ?? tasksBy.set(t.scope, []).get(t.scope)).push(t);
     const sig = finalsSignature(finals);
     if (CTX.sig !== sig) { CTX.ctx = buildContext(finals); CTX.sig = sig; MEMO.clear(); }
     const ctx = CTX.ctx;
@@ -66,6 +69,9 @@ export async function buildFixtures(env) {
     const br = env.API_FOOTBALL_KEY && soon.length ? await loadBrainInputs(env, soon, now, { live: false }).catch(() => null) : null;
     // Corner: quelli cercati ogni notte per tutte le partite della settimana, già in cache (nessuna richiesta al provider da qui).
     const week = window.filter((m) => (m.status === "scheduled" || m.status === "in_progress") && Date.parse(m.kickoff_at) < now + 7 * 86400e3);
+    // Solo per la completezza: stato di pronostico e quote (da cache) anche per le partite oltre i 3 giorni. Non entra nel consiglio (il modello non cambia).
+    const far = week.filter((m) => !soon.includes(m));
+    const brFar = env.API_FOOTBALL_KEY && far.length ? await loadBrainInputs(env, far, now, { live: false }).catch(() => null) : null;
     const cr = env.API_FOOTBALL_KEY && week.length ? await loadCornerOdds(env, week, now, { live: false, maps: br?.maps }).catch(() => null) : null;
     // Modello statistico dei corner (corner reali storici in match_corners): se la tabella manca o è vuota, nessun modello (mai dati inventati).
     const cctx = await loadCornerRows(env).then(buildCornerContext).catch(() => null);
@@ -87,6 +93,7 @@ export async function buildFixtures(env) {
         ou,                                                                       // Over/Under 2,5 in breve (compatibilità con le versioni precedenti dell'app)
         mk,                                                                       // tutti i mercati della partita (1X2, doppia chance, gol, over/under) con le stesse probabilità del consiglio
         corner: cr?.byGame.get(m.game_id) ?? null,                                // corner (quote di API-Football), solo se già scaricati
+        dq: open ? completenessOf({ now, kickoff: m.kickoff_at, odds: (br ?? brFar)?.marketState.get(m.game_id) ?? brFar?.marketState.get(m.game_id), predictions: br?.state.get(m.game_id) ?? brFar?.state.get(m.game_id), stats: pick != null, corners: cr?.state.get(m.game_id) === "used" || (cctx && Date.parse(m.kickoff_at) < now + 7 * 86400e3) ? "used" : cr?.state.get(m.game_id), tasks: tasksBy.get(m.game_id) ?? [] }) : null,   // completezza dei dati (vedi _completeness.js)
         cornerModel: open && cctx && Date.parse(m.kickoff_at) < now + 7 * 86400e3 ? cornerModel(cctx, { league: m.league, kickoff_at: m.kickoff_at, home_id: m.home_id, away_id: m.away_id }) : null,   // modello Stay Live sui corner storici reali (distinto dalle quote)
       };
     });
