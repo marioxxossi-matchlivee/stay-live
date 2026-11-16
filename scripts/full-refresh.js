@@ -18,7 +18,10 @@ import { AF_LEAGUES, betIdsFrom, dayKey, loadSections, planFor, seasonFor, ttlFo
 import { loadBrainInputs } from "../functions/api/_brain.js";
 import { loadCornerOdds } from "../functions/api/_corners.js";
 import { backfillCorners, selectBackfill } from "../functions/api/_cornerstats.js";
-import { COMPONENT_LABEL, TEMP_RE, buildTasks, classify, countClasses, coverageFlags, emptyCounts, pendingSummary, statusOf } from "../functions/api/_diag.js";
+import { COMPONENT_LABEL, TEMP_RE, buildTasks, classify, countClasses, coverageFlags, dueTasks, emptyCounts, pendingSummary, pruneTasks, statusOf } from "../functions/api/_diag.js";
+import { budgetFor, capFor } from "../functions/api/_budget.js";
+import { completenessSummary } from "../functions/api/_budgetreport.js";
+import { leaguesDue, policyFor, tierOf } from "../functions/api/_policy.js";
 import { buildFixtures } from "../functions/api/fixtures.js";
 import { onRequest as syncLeague } from "../functions/api/sync.js";
 import { onRequest as snapshotPredictions } from "../functions/api/snapshot.js";
@@ -30,7 +33,7 @@ export const SOON_MS = 12 * H;                                   // entro 12 ore
 export const NEAR_MS = 48 * H;                                   // "vicine": quote e schede si riscaricano a ogni giro
 export const RESERVE_FOR_DETAILS = 1500;                         // sotto questi crediti restanti si salta la fase 4
 export const RESERVE_HISTORY = 2500;                             // e i corner storici (la parte meno urgente)
-export const HISTORY_CAP = { full: 400, recover: 150 };          // richieste massime per giro per i corner storici
+export const HISTORY_CAP = { full: 200, recover: 0 };           // corner storici: lavoro di fondo, solo nel giro completo e solo con crediti avanzati          // richieste massime per giro per i corner storici
 /**
  * Crediti che un giro può spendere: il 85% di quelli restanti diviso per i giri completi che mancano a fine giornata (UTC, ogni 4 ore);
  * il resto è riserva per i recuperi. Con 70+ campionati nei weekend le partite vicine costano più di 7.500 richieste al giorno se non si
@@ -125,7 +128,18 @@ async function saveTasks(env, tasks, prev) {
 
 const errOf = (e) => String(e?.message ?? e).slice(0, 300);
 
-export async function runRefresh(env, { mode = "full", trigger = "schedule", log = console.log, wait = sleep, now0 = Date.now() } = {}) {
+/** Giro di aggiornamento: imposta l'origine delle richieste (per il registro crediti), esegue, poi rilascia i crediti prenotati e salva il registro. */
+export async function runRefresh(envIn, opts = {}) {
+  const trigger = opts.trigger ?? "schedule", mode = opts.mode ?? "full";
+  const label = trigger === "workflow_dispatch" && mode === "full" ? "manual" : mode;
+  const env = { ...envIn, AF_SOURCE: label, AF_LEASE: envIn.AF_LEASE ?? "20" };
+  const meta = await runRefreshInner(env, opts);
+  const bud = budgetFor(env);
+  if (bud) { meta.budget = bud.stats(); await bud.flush().catch(() => {}); }
+  return meta;
+}
+
+async function runRefreshInner(env, { mode = "full", trigger = "schedule", log = console.log, wait = sleep, now0 = Date.now() } = {}) {
   const startedAt = new Date(now0).toISOString();
   const days = Math.min(30, Math.max(3, Number(env.FIXTURES_DAYS) || 7));
   const meta = {
@@ -145,17 +159,23 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
   log(`Crediti di partenza: ${usage0?.remaining ?? "sconosciuti"}${usage0?.assumed ? " (contatore di oggi non ancora creato: si parte dal limite giornaliero)" : ""} · tetto di questo giro: ${runBudget} richieste`);
   const spentNow = async () => ((await readUsage(env, Date.now()))?.requests ?? 0) - (usage0?.requests ?? 0);
   const attemptsOf = new Map(prevTasks.map((t) => [t.task_key, t.attempts]));
-  const due = mode === "recover" ? prevTasks.filter((t) => Date.parse(t.next_try_at) <= now0) : [];
+  const due = mode === "recover" ? dueTasks(prevTasks, now0) : [];
   try {
     if (mode === "recover") {
-      if (!due.length) { meta.status = "skipped"; meta.notes.push("Nessuna operazione da riprendere."); return meta; }
+      meta.parked = prevTasks.filter((t) => (t.attempts ?? 0) >= 3).length;
       if (usage0?.remaining != null && usage0.remaining < 300) { meta.status = "skipped"; meta.notes.push(`Crediti restanti ${usage0.remaining}: recupero rimandato al reset giornaliero.`); return meta; }
-      log(`Recupero: ${due.length} operazioni da riprendere (${[...new Set(due.map((t) => t.component))].join(", ")})`);
+      log(`Recupero: ${due.length} operazioni da riprendere (${[...new Set(due.map((t) => t.component))].join(", ") || "nessuna"}) + partite di oggi/imminenti da rinfrescare`);
     }
 
     /* 1 · campionati */
     log("1 Campionati…");
-    const onlyLeagues = mode === "recover" ? [...new Set(due.filter((t) => t.component === "league").map((t) => t.league))] : null;
+    // Solo i campionati che ne hanno bisogno (risultati da leggere, partite nelle 48 ore, calendario vecchio di 11 ore): prima erano tutti, a ogni giro.
+    const states0 = await supabaseGet(env, "sync_state", { select: "league,synced_at,last_error" }).catch(() => []);
+    const win0 = await supabaseGetAll(env, "matches", { select: "league,status,kickoff_at", season: `eq.${SEASON}`, status: "neq.final", and: `(kickoff_at.gte.${new Date(now0 - 14 * H).toISOString()},kickoff_at.lte.${new Date(now0 + 48 * H).toISOString()})` }).catch(() => []);
+    const onlyLeagues = mode === "recover"
+      ? [...new Set([...due.filter((t) => t.component === "league").map((t) => t.league), ...leaguesDue(LEAGUES, win0, states0, now0, { staleMs: Infinity, nearMs: 0 })])]
+      : leaguesDue(LEAGUES, win0, states0, now0);
+    meta.leagues.synced = onlyLeagues.length; meta.leagues.skipped = LEAGUES.length - onlyLeagues.length;
     const leagueResults = await syncAll(env, { wait, log, only: onlyLeagues });
     const syncedIds = new Set(leagueResults.map((r) => r.id));
     for (const r of leagueResults) {
@@ -179,23 +199,28 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
     const window = await supabaseGetAll(env, "matches", { select: COLUMNS, season: `eq.${SEASON}`, status: "neq.superseded", and: `(kickoff_at.gte.${from},kickoff_at.lte.${to})`, order: "kickoff_at.asc,game_id.asc" });
     const open = eligibleOpen(window, now, days);
     meta.matches.window = window.length; meta.matches.eligible = open.length;
-    const freshFor = freshForAt(now);
+    const policy = policyFor(now), freshFor = policy.freshFor, emptyFor = policy.emptyFor;
+    const bud = budgetFor(env);
+    // Riserva dinamica: crediti ancora attesi per le partite di oggi/imminenti, tolti a domani, settimana e lavori di fondo.
+    bud?.setExtraReserve(open.filter((m) => ["imminent", "today"].includes(tierOf(m.kickoff_at, now))).length * 6);
+    meta.tiers = open.reduce((a, m) => { const t = tierOf(m.kickoff_at, now); a[t] = (a[t] ?? 0) + 1; return a; }, {});
 
     /* 2 · copertura del piano (flag per campionato, cache 30 giorni) */
     log("2 Copertura del piano…");
     const flags = new Map();
     {
       const lgs = [...new Set(open.map((m) => m.league))];
-      const reqs = lgs.map((id) => { const cfg = LEAGUES.find((l) => l.id === id); return { section: id, endpoint: "leagues", params: { id: cfg.afId, season: seasonFor(id, new Date(now).toISOString()) }, ttl: ttlFor("coverage") }; });
+      const reqs = lgs.map((id) => { const cfg = LEAGUES.find((l) => l.id === id); return { section: id, endpoint: "leagues", params: { id: cfg.afId, season: seasonFor(id, new Date(now).toISOString()) }, ttl: ttlFor("coverage"), tier: "week" }; });
       for (let i = 0; i < reqs.length; i += 40) {
-        const { sections } = await loadSections(env, reqs.slice(i, i + 40), now, { maxLive: 40 });
+        const { sections } = await loadSections(env, reqs.slice(i, i + 40), now, { maxLive: 40, source: env.AF_SOURCE });
         for (const r of reqs.slice(i, i + 40)) { const f = coverageFlags(sections[r.section]?.data, r.params.season); if (f) flags.set(r.section, f); }
       }
     }
 
     /* 3 · pronostici, quote, corner */
     const dueIds = new Set(due.filter((t) => t.component !== "league" && t.component !== "cornerStats").map((t) => t.scope));
-    const targetSet = mode === "recover" ? new Set(open.filter((m) => dueIds.has(m.game_id)).map((m) => m.game_id)) : new Set(open.map((m) => m.game_id));
+    // recupero orario = compiti scaduti + partite imminenti/di oggi (la cache decide se serve davvero una richiesta); giro completo = tutte le partite aperte
+    const targetSet = mode === "recover" ? new Set(open.filter((m) => dueIds.has(m.game_id) || ["imminent", "today"].includes(tierOf(m.kickoff_at, now))).map((m) => m.game_id)) : new Set(open.map((m) => m.game_id));
     const target = open.filter((m) => targetSet.has(m.game_id)), rest = open.filter((m) => !targetSet.has(m.game_id));
     log(`3 Pronostici, quote e corner di ${target.length} partite${rest.length ? ` (altre ${rest.length} solo dalla cache)` : ""}…`);
     let br = null, cr = null, lastPending = Infinity, stalled = 0;
@@ -205,8 +230,8 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
       const left = runBudget - await spentNow();
       if (round > 1 && left <= 0) { meta.notes.push(`Budget di crediti del giro raggiunto (${runBudget}): il resto al prossimo giro.`); break; }
       const live = Number.isFinite(left) ? Math.max(10, Math.min(80, Math.floor((left - 25) / 2))) : 80;
-      br = await loadBrainInputs(env, target, t, { live: true, maxMap: 25, maxLive: live, freshFor, maps: br?.maps });
-      cr = await loadCornerOdds(env, target, t, { live: true, maxMap: 25, maxLive: live, freshFor, maps: br.maps });
+      br = await loadBrainInputs(env, target, t, { live: true, maxMap: 25, maxLive: live, freshFor, emptyFor, maps: br?.maps, source: env.AF_SOURCE });
+      cr = await loadCornerOdds(env, target, t, { live: true, maxMap: 25, maxLive: live, freshFor, emptyFor, maps: br.maps, source: env.AF_SOURCE });
       const pending = (br.retry?.pending ?? 0) + (cr.retry?.pending ?? 0);
       const usage = await readUsage(env, t);
       if (usage?.remaining != null && usage.remaining < 300) { meta.budgetStop = true; meta.notes.push(`Crediti giornalieri quasi esauriti (${usage.remaining} restanti): scarico interrotto, riprende da solo.`); break; }
@@ -246,19 +271,19 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
       meta.details.skipped = true; meta.notes.push("Schede dati rimandate: crediti restanti sotto la riserva.");
       for (const m of near) { meta.components.details.temporary += 1; items.push({ component: "details", scope: m.game_id, league: m.league, cls: "temporary", error: "Crediti sotto la riserva" }); }
     } else if (near.length) {
-      const { sections: pre } = await loadSections(env, [{ section: "bets", endpoint: "odds/bets", params: {}, ttl: ttlFor("odds-bets") }], Date.now());
+      const { sections: pre } = await loadSections(env, [{ section: "bets", endpoint: "odds/bets", params: {}, ttl: ttlFor("odds-bets"), tier: "today" }], Date.now(), { source: env.AF_SOURCE });
       const betIds = betIdsFrom(pre.bets?.data);
       const reqs = near.flatMap((m) => {
         const map = allMaps.get(m.game_id), kickoff = Date.parse(m.kickoff_at);
         return planFor({ fixtureId: map.fixture_id, leagueId: map.league_id, season: map.season, homeId: map.home_team_id, awayId: map.away_team_id, kickoff, finished: false, now, extra: true, betIds })
-          .map((r) => ({ ...r, section: `${m.game_id}|${r.section}`, fresh: VOLATILE.has(r.section) ? Math.min(r.ttl, freshFor(m)) : r.ttl }));
+          .map((r) => ({ ...r, section: `${m.game_id}|${r.section}`, fresh: VOLATILE.has(r.section) ? Math.min(r.ttl, freshFor(m, r.section === "predictions" ? "predictions" : "odds")) : r.ttl }));
       });
       meta.details.sections = reqs.length;
       let lastP = Infinity, stall = 0;
       for (let round = 1; round <= 10; round += 1) {
         let pending = 0, afterMs = 0;
         for (let i = 0; i < reqs.length; i += 40) {
-          const r = await loadSections(env, reqs.slice(i, i + 40), Date.now(), { maxLive: 60 });
+          const r = await loadSections(env, reqs.slice(i, i + 40), Date.now(), { maxLive: 60, source: env.AF_SOURCE });
           Object.assign(detailSections, r.sections);
           pending += r.retry.pending; afterMs = Math.max(afterMs, r.retry.afterMs);
         }
@@ -291,7 +316,13 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
       const noStats = new Set([...flags].filter(([, f]) => f.statistics === false).map(([id]) => id));     // il provider non fornisce statistiche per queste leghe: inutile spendere richieste
       const queue = selectBackfill(open, finals, have, { limit: 5000, now, skipLeagues: noStats });
       const cap = Math.min(HISTORY_CAP[mode === "recover" ? "recover" : "full"], Math.max(0, runBudget - (await spentNow()) - 100));      // solo con crediti del giro avanzati
-      if (usage5?.remaining != null && usage5.remaining < RESERVE_HISTORY) {
+      const bgCap = capFor("background", Date.now(), { extraReserve: open.filter((m) => ["imminent", "today"].includes(tierOf(m.kickoff_at, now))).length * 6 });
+      if (mode === "recover") {
+        meta.cornerHistory = { stored: have.size, backlog: queue.length, fetched: 0, skipped: true };   // mai nel recupero orario: lavoro di fondo del solo giro completo
+      } else if ((usage5?.requests ?? 0) >= bgCap) {
+        meta.cornerHistory = { stored: have.size, backlog: queue.length, fetched: 0, skipped: true };
+        meta.notes.push(`Corner storici rimandati: consumo di oggi (${usage5?.requests}) oltre la quota dei lavori di fondo (${bgCap}).`);
+      } else if (usage5?.remaining != null && usage5.remaining < RESERVE_HISTORY) {
         meta.cornerHistory = { stored: have.size, backlog: queue.length, fetched: 0, skipped: true };
         meta.notes.push(`Corner storici rimandati: crediti restanti ${usage5.remaining} sotto la riserva (${RESERVE_HISTORY}).`);
       } else if (queue.length && cap < 40) {
@@ -327,7 +358,9 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
     const usage1 = await readUsage(env, Date.now());
     meta.requests = { thisRun: usage1 && usage0 ? Math.max(0, (usage1.requests ?? 0) - (usage0.requests ?? 0)) : usage1?.requests ?? null, today: usage1?.requests ?? null, remaining: usage1?.remaining ?? null, limit: usage1?.limit_day ?? null, budget: Number.isFinite(runBudget) ? runBudget : null };
 
-    const tasks = buildTasks(items, prevTasks, Date.now());
+    const built0 = buildTasks(items, prevTasks, Date.now());
+    const { keep: tasks, drop: obsolete } = pruneTasks(built0, new Map(open.map((m) => [m.game_id, Date.parse(m.kickoff_at)])), Date.now());   // partite finite/iniziate/uscite dalla finestra: compiti eliminati
+    meta.tasksPruned = obsolete.length + prevTasks.filter((p) => !built0.some((b) => b.task_key === p.task_key)).length;
     const waitingGames = new Set(tasks.filter((t) => t.component !== "league" && t.component !== "cornerStats").map((t) => t.scope));
     meta.matches.waiting = open.filter((m) => waitingGames.has(m.game_id)).length; meta.matches.processed = open.length - meta.matches.waiting;
     for (const c of Object.values(meta.components)) { meta.stats.updated += c.ok; meta.stats.missing += c.temporary + c.error; meta.stats.notAvailable += c.not_yet + c.not_covered; }
@@ -338,6 +371,7 @@ export async function runRefresh(env, { mode = "full", trigger = "schedule", log
     meta.durationSec = Math.round((Date.parse(meta.finishedAt) - now0) / 1000);
     meta.status = statusOf(meta);
 
+    meta.completeness = completenessSummary(built.payload.matches, Date.now());       // contatori per la dashboard crediti (la dashboard non legge l'elenco partite)
     await supabaseUpsert(env, "app_snapshot", [{ id: "fixtures", payload: built.payload, meta, built_at: meta.finishedAt }], "id");
     // Verifica: l'istantanea riletta da Supabase deve essere quella appena scritta.
     const [back] = await supabaseGet(env, "app_snapshot", { select: "built_at", id: "eq.fixtures", limit: 1 }).catch(() => []);
