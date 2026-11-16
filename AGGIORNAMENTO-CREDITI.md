@@ -23,7 +23,7 @@
 | Duplicati | possibili | chiavi uguali (stessa chiamata e chiamate contemporanee) = una richiesta |
 | Completezza | assente | stato per partita (completo / parziale / quote in attesa / aggiornamento / errore) e dettaglio espandibile |
 | Dashboard | solo residuo | scheda «Consumo crediti (24 ore)» in Impostazioni (`/api/budget`) |
-| Giocate | solo segnalibro per riga | pulsante «Salva i BET del giorno» in Calcio e Tennis |
+| Giocate | solo segnalibro per riga | pulsante «Salva tutte le giocate del giorno» in Calcio e Tennis |
 
 Il contatore ufficiale `af_usage` non è stato modificato (il Budget Manager lo legge soltanto).
 Modello, EV, soglie dinamiche e BET Selection Engine: invariati. Il BET è mostrato solo se pronostico, quote e statistiche sono presenti (o non previsti dal provider).
