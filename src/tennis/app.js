@@ -126,8 +126,8 @@ export function mountTennis(root) {
     const seg = $("#tn-seg"), cur = state.onlyBet ? "bet" : "all";
     seg.style.setProperty("--i", String(cur === "bet" ? 1 : 0));
     for (const b of seg.querySelectorAll("[data-seg]")) b.setAttribute("aria-pressed", String(b.dataset.seg === cur));
-    const dayBetsT = state.day === "results" ? [] : list.filter((m) => m.bet?.verdict === "BET" && canSave(m)), doneT = dayBetsT.filter((m) => isSaved(m)).length, sdState = saveDayState(dayBetsT.length - doneT, doneT);
-    const sdBtn = $("#tn-save-day"); sdBtn.hidden = sdState.hidden; sdBtn.disabled = sdState.disabled; sdBtn.textContent = sdState.label;
+    const dayBetsT = state.day === "results" ? [] : list.filter((m) => canSave(m)), doneT = dayBetsT.filter((m) => isSaved(m)).length, sdState = saveDayState(dayBetsT.length - doneT, doneT);
+    const sdBtn = $("#tn-save-day"); sdBtn.hidden = sdState.hidden || state.day === "results" || !state.matches.length; sdBtn.disabled = sdState.disabled; sdBtn.textContent = sdState.label;
     const f = state.filters, active = [f.tour !== "all", f.category !== "all", f.surface !== "all", f.tournament !== "all", Boolean(f.q)].filter(Boolean).length;
     const tg = $("#tn-ftoggle"); tg.textContent = active ? `Filtri · ${active}` : "Filtri"; tg.setAttribute("aria-expanded", String(state.fOpen));
     // Tendina dei filtri: il contenitore resta lo stesso (l'altezza si anima), il contenuto si ridisegna sempre così lo stato visivo segue quello reale.
@@ -227,9 +227,9 @@ export function mountTennis(root) {
     render();
     if (dlg.open && detailKey === key) openDetail(key, true);
   }
-  /** Salva tutti i BET della giornata mostrata (con le stesse regole del segnalibro di ogni riga). */
+  /** Salva tutte le giocate della giornata mostrata (con le stesse regole del segnalibro di ogni riga). */
   function saveDayBets() {
-    const cands = visible().filter((m) => m.bet?.verdict === "BET" && canSave(m) && !isSaved(m)).map((m) => playFromMatch(m));
+    const cands = visible().filter((m) => canSave(m) && !isSaved(m)).map((m) => playFromMatch(m));
     let n = 0;
     for (const c of cands) { const r = addTPlay(state.plays, c); if (r.added) { state.plays = r.plays; n += 1; } }
     if (n) persistPlays();
