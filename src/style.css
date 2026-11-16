@@ -968,3 +968,24 @@ details.more .mk,details.more .form,details.more .kv div{background:var(--soft)}
 .pick .pk-pct,.pick.bet .pk-pct{font:600 12.5px/1.2 var(--body);letter-spacing:0;color:var(--mute);margin-left:auto}
 .api-note.q-none{border:1px solid #f3dcae}
 .set-row input[type=number]{width:84px;border:0;background:var(--soft);border-radius:12px;padding:9px 12px;font:700 16px var(--body);text-align:center;color:var(--ink)}
+
+/* Completezza dati e salvataggio dei BET del giorno */
+.dq{display:inline-flex;align-items:center;gap:5px;margin-left:8px;font-size:11px;font-weight:600;color:var(--muted,#667);white-space:nowrap}
+.dq i{width:7px;height:7px;border-radius:50%;background:#9aa3ad;flex:none}
+.dq-complete i{background:#1f9d57}.dq-waiting i{background:#d99a1e}.dq-partial i,.dq-error i{background:#d9701e}
+.dq-updating i{background:#2d7be5;animation:dqpulse 1.2s ease-in-out infinite}
+@keyframes dqpulse{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.dq-updating i{animation:none}}
+.dq-det{margin:6px 0 0;font-size:12px}
+.dq-det summary{cursor:pointer;color:var(--muted,#667);list-style:none;padding:4px 0}
+.dq-det summary::-webkit-details-marker{display:none}
+.dq-list{margin:4px 0 0;padding:0;list-style:none;display:grid;gap:4px}
+.dq-list li{display:flex;justify-content:space-between;gap:12px}
+.dq-list .dq-missing b,.dq-list .dq-error b{color:#d9701e}.dq-list .dq-ok b{color:#1f9d57}
+.chip-btn.save-day{font-weight:600}
+.chip-btn.save-day:disabled{opacity:.6}
+.bd-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px}
+.bd-grid div{display:flex;flex-direction:column;padding:10px;border-radius:12px;background:rgba(0,0,0,.04)}
+.bd-grid b{font-size:20px}.bd-grid span{font-size:12px;color:var(--muted,#667)}.bd-grid .bad b{color:#d33}
+.bd h3{font-size:13px;margin:12px 0 4px}.bd-list{margin:0;padding:0;list-style:none;display:grid;gap:3px;font-size:13px}
+.bd-list li{display:flex;justify-content:space-between;gap:10px}

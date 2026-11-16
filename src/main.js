@@ -12,6 +12,8 @@ import { buildPreviewPdf } from "./report.js";
 import { renderAfDetail } from "./afdetail.js";
 import { crest, hideBrokenCrests, matchHeader } from "./ui.js";
 import { efficiency, efficiencyHtml, reliabilityHtml } from "./efficiency.js";
+import { budgetHtml } from "./budgetview.js";
+import { dqChipHtml, dqDetailHtml, saveDayState } from "./dataquality.js";
 import { absorbCorners, absorbResults, addPlay, evaluate, legFromItem, loadPlays, pendingCornerIds, pendingMatchIds, playFromItem, savePlays, signature } from "./plays.js";
 import { cornerBarHtml, cornerHtml, cornerShort } from "./corners.js";
 import { icon, iconFill } from "./icons.js";
@@ -144,6 +146,8 @@ async function fillCrests(leagueIds) {
 const basisTag = (b) => (!b || b === "storico" ? "" : `<i class="api-tag" title="${b === "mercato" ? "Calcolato con le quote di mercato" : b === "api" ? "Calcolato con il pronostico di API-Football" : "Calcolato con il pronostico di API-Football e le quote di mercato"}">${b === "api+mercato" ? "API+Q" : b === "api" ? "API" : "Q"}</i>`);
 /** Scelta della partita con la quota minima scelta dall'utente (Impostazioni). */
 const pk = (m) => adjustPick(m.pick, state.minOdds);
+/** BET mostrato solo se i dati bastano (pronostico, quote e statistiche secondo il motore); la logica del consiglio non cambia. */
+const isBetM = (m) => pk(m)?.verdict === "BET" && m.dq?.betOk !== false;
 /** Ricerca libera: ogni parola digitata deve comparire nel nome di una squadra, del campionato (esteso o breve) o della nazione. Senza accenti né maiuscole. */
 const fold = (x) => String(x ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 function matchesQuery(m) {
@@ -159,7 +163,7 @@ function visibleMatches() {
     if (!matchesQuery(m)) return false;
     if (state.day === "results") return m.status === "final";
     if (!isOpen(m) || dayKey(m.kickoffAt) !== state.day) return false;
-    return !state.onlyBet || pk(m)?.verdict === "BET";
+    return !state.onlyBet || isBetM(m);
   });
 }
 const sideHtml = (name, logo, goals) => `<span class="side">${crest(name, logo)}<b>${esc(name)}</b>${goals != null ? `<span class="score">${goals}</span>` : ""}</span>`;
@@ -199,9 +203,9 @@ function rowHtml(m, k = 0) {
   const open = isOpen(m);
   const check = open ? `<label class="chk"><input type="checkbox" data-sel="${esc(m.id)}" ${state.selected.has(m.id) ? "checked" : ""} aria-label="Seleziona ${esc(m.home)} – ${esc(m.away)}" /></label>` : `<span class="chk"></span>`;
   // Le due modalità condividono lo stesso motore e gli stessi dati: «Solo BET» mostra, delle partite di «Tutte», solo i mercati BET.
-  const body = open ? `<div class="mc-body">${marketsHtml({ ...m, corner: m.corner ?? cornerCache.get(m.id) ?? null }, { mode: state.onlyBet ? "bet" : "all", rules: state.rules ?? undefined, open: openAcc.has(`mk:${m.id}`) })}</div>` : "";
-  return `<div class="row mc ${state.selected.has(m.id) ? "sel" : ""}${pk(m)?.verdict === "BET" && m.pick.confidence !== "insufficiente" ? " is-bet" : ""}" style="--i:${Math.min(k, 9)}">${check}
-    <span class="mc-league">${esc(leagueName(m.league, true))}</span>${rowSaveHtml(m)}
+  const body = open ? `<div class="mc-body">${marketsHtml({ ...m, corner: m.corner ?? cornerCache.get(m.id) ?? null }, { mode: state.onlyBet ? "bet" : "all", rules: state.rules ?? undefined, open: openAcc.has(`mk:${m.id}`) })}${dqDetailHtml(m.dq, { esc, updatedAt: state.updatedAt ?? null, time: (v) => fmtTime.format(new Date(v)) })}</div>` : "";
+  return `<div class="row mc ${state.selected.has(m.id) ? "sel" : ""}${isBetM(m) && m.pick.confidence !== "insufficiente" ? " is-bet" : ""}" style="--i:${Math.min(k, 9)}">${check}
+    <span class="mc-league">${esc(leagueName(m.league, true))}${open ? dqChipHtml(m.dq, esc) : ""}</span>${rowSaveHtml(m)}
     <button class="mc-vs" type="button" data-open="${esc(m.id)}" aria-label="Apri la scheda ${esc(m.home)} – ${esc(m.away)}">${versusHtml(m)}</button>${body}</div>`;
 }
 function renderDays() {
@@ -247,11 +251,19 @@ function renderLeagueNav() {
   }).join("");
   nav.innerHTML = `<div class="nav-all">${chip("all", "Tutti i campionati")}</div>${continents}`;
 }
+/** I BET di oggi (giornata selezionata, campionati e ricerca applicati) con una selezione salvabile. */
+function dayBets() { return state.matches.filter((m) => inScope(m.league) && matchesQuery(m) && isOpen(m) && dayKey(m.kickoffAt) === state.day && isBetM(m) && playOfList(m)); }
+function renderSaveDay() {
+  const btn = $("#save-day"); if (!btn) return;
+  const all = state.day === "results" ? [] : dayBets(), done = all.filter((m) => isSaved(playOfList(m))).length;
+  const st = saveDayState(all.length - done, done);
+  btn.hidden = st.hidden; btn.disabled = st.disabled; btn.textContent = st.label;
+}
 function render() {
   renderLeagueNav();
   renderDays();
   const list = visibleMatches();
-  const bets = list.filter((m) => pk(m)?.verdict === "BET").length;
+  const bets = list.filter(isBetM).length;
   const seg = segValue();
   const segEl = $("#mode-seg");
   segEl.style.setProperty("--i", String(["all", "bet"].indexOf(seg)));
@@ -265,6 +277,7 @@ function render() {
     + (state.cornerNote && !state.loading && !state.error ? `<span class="stat note">${esc(state.cornerNote)}</span>` : "")
     + (state.error ? "" : freshChipHtml());
   renderStatusCard();
+  renderSaveDay();
   const banner = $("#banner");
   banner.hidden = !(state.error || state.banner);
   banner.className = `banner${state.error ? " error" : ""}`;
@@ -942,6 +955,12 @@ document.addEventListener("click", (e) => {
     const sb = t.closest("#save-bets"); sb.textContent = "✓ BET già salvate"; sb.disabled = true; showToast(n ? `${n} ${n === 1 ? "giocata salvata" : "giocate salvate"}` : "Giocate già salvate");
     for (const b of document.querySelectorAll("[data-save]")) if (bets.some((i) => i.id === b.dataset.save)) { b.textContent = "✓ Salvata"; b.classList.add("done"); b.disabled = true; }
   }
+  if (t.closest("#save-day")) {
+    const cands = dayBets().map((m) => playOfList(m)).filter((c) => c && !isSaved(c));
+    const n = cands.filter((c) => commitPlay(c)).length;
+    render();
+    showToast(n ? `${n} ${n === 1 ? "giocata salvata" : "giocate salvate"}` : "Giocate già salvate", n ? { action: "Vedi", onAction: () => showView("plays") } : undefined);
+  }
   const rs = t.closest("[data-row-save]");
   if (rs && !rs.disabled) {
     const m = state.matches.find((x) => x.id === rs.dataset.rowSave), cand = m && playOfList(m);
@@ -1019,6 +1038,10 @@ async function loadUsage() {
     const res = await fetch("/api/usage", { headers: { accept: "application/json" } });
     if (res.ok) { state.usage = await res.json(); renderCredits(); }
   } catch { /* resta l'ultimo dato noto */ }
+  try {
+    const res = await fetch("/api/budget", { headers: { accept: "application/json" } });
+    const el = $("#set-budget"); if (el) el.innerHTML = budgetHtml(await res.json().catch(() => null), esc);
+  } catch { /* dashboard non disponibile: resta vuota */ }
 }
 function renderStatusCard() {
   renderCredits();
