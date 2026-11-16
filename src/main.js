@@ -251,13 +251,13 @@ function renderLeagueNav() {
   }).join("");
   nav.innerHTML = `<div class="nav-all">${chip("all", "Tutti i campionati")}</div>${continents}`;
 }
-/** I BET di oggi (giornata selezionata, campionati e ricerca applicati) con una selezione salvabile. */
-function dayBets() { return state.matches.filter((m) => inScope(m.league) && matchesQuery(m) && isOpen(m) && dayKey(m.kickoffAt) === state.day && isBetM(m) && playOfList(m)); }
+/** Le giocate della giornata selezionata (campionati, ricerca e filtro Tutte/Solo BET applicati: quelle che vedi in lista) con una selezione salvabile. */
+function dayBets() { return state.day === "results" ? [] : visibleMatches().filter((m) => isOpen(m) && playOfList(m)); }
 function renderSaveDay() {
   const btn = $("#save-day"); if (!btn) return;
-  const all = state.day === "results" ? [] : dayBets(), done = all.filter((m) => isSaved(playOfList(m))).length;
+  const all = dayBets(), done = all.filter((m) => isSaved(playOfList(m))).length;
   const st = saveDayState(all.length - done, done);
-  btn.hidden = st.hidden; btn.disabled = st.disabled; btn.textContent = st.label;
+  btn.hidden = st.hidden || state.day === "results" || state.loading || Boolean(state.error); btn.disabled = st.disabled; btn.textContent = st.label;
 }
 function render() {
   renderLeagueNav();

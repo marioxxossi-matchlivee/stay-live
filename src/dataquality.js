@@ -14,9 +14,9 @@ export function dqDetailHtml(dq, { esc, updatedAt = null, time = (v) => String(v
   return `<details class="dq-det"><summary>Dati della partita</summary><ul class="dq-list">${rows}${last}${next}</ul></details>`;
 }
 
-/** Pulsante «salva i BET del giorno»: testo e stato dai conteggi (da salvare / già salvati). */
+/** Pulsante «salva tutte le giocate del giorno»: sempre visibile nei giorni con partite; testo e stato dai conteggi (da salvare / già salvate). */
 export function saveDayState(todo, done) {
-  if (!todo && !done) return { hidden: true, disabled: true, label: "" };
-  if (!todo) return { hidden: false, disabled: true, label: `✓ BET del giorno salvati (${done})` };
-  return { hidden: false, disabled: false, label: `Salva i BET del giorno (${todo})` };
+  if (!todo && !done) return { hidden: false, disabled: true, label: "Nessuna giocata da salvare" };
+  if (!todo) return { hidden: false, disabled: true, label: `✓ Giocate del giorno salvate (${done})` };
+  return { hidden: false, disabled: false, label: `Salva tutte le giocate del giorno (${todo})` };
 }
