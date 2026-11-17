@@ -35,6 +35,7 @@ jobs:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
           FIXTURES_DAYS: "7"
+          SNAPSHOT_CHUNKS_ENABLED: ${{ vars.SNAPSHOT_CHUNKS_ENABLED || 'false' }}
           REFRESH_MODE: recover
           REFRESH_FORCE: ${{ inputs.completa && '1' || '' }}
         run: node scripts/full-refresh.js --recover
