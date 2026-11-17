@@ -126,7 +126,7 @@ export function cornerMotivation(m, cv) {
 }
 
 /* ---------- HTML ---------- */
-const cell = (label, p, { top = false, bet = false, odd = null, rec = false, res = null } = {}) => `<span class="c${top ? " top" : ""}${top && bet ? " bet" : ""}${rec ? " rec" : ""}${res === true ? " ok" : res === false ? " ko" : ""}"><i>${rec ? "★ " : ""}${esc(label)}</i><b>${pct(p)}</b>${(top || rec) && odd > 1 ? `<small>quota ${num(odd)}</small>` : ""}</span>`;
+const cell = (label, p, { top = false, bet = false, odd = null, rec = false, recBet = false, res = null } = {}) => `<span class="c${top ? " top" : ""}${top && bet ? " bet" : ""}${rec ? (recBet ? " rec rec-bet" : " rec rec-soft") : ""}${res === true ? " ok" : res === false ? " ko" : ""}"><i>${rec ? (recBet ? `<em class="star" aria-label="Consigliato">★</em> ` : `<em class="dot" aria-label="Più probabile, non consigliato">◦</em> `) : ""}${esc(label)}</i><b>${pct(p)}</b>${(top || rec) && odd > 1 ? `<small>quota ${num(odd)}</small>` : ""}</span>`;
 const row = (g, cells) => `<div class="mx" data-g="${g.id ?? g}"><span class="mx-l">${esc(g.label ?? "").replace("/", "/<wbr>")}</span><span class="mx-c">${cells}</span></div>`;
 const none = (label, why, g = "") => `<div class="mx none" data-g="${g}"><span class="mx-l">${esc(label)}</span><span class="mx-na">${esc(why)}</span></div>`;
 
@@ -136,7 +136,7 @@ function groupRow(m, g, mode, ctx = {}) {
   const top = mk.b?.[g.id] ?? null;
   // Solo BET: nel mercato si evidenzia l'esito BET (se diverso dal più probabile).
   const betKey = shown.find((k) => mk.x[k].v) ?? null, hi = mode === "bet" && betKey ? betKey : top;
-  return row(g, shown.map((k) => cell(optLabel(k), mk.x[k].p, { top: k === hi, bet: Boolean(mk.x[k].v), odd: mk.x[k].o, rec: k === ctx.recKey, res: ctx.final ? outcomes(ctx.final.h, ctx.final.a)[k] === 1 : null })).join(""));
+  return row(g, shown.map((k) => cell(optLabel(k), mk.x[k].p, { top: k === hi, bet: Boolean(mk.x[k].v), odd: mk.x[k].o, rec: k === ctx.recKey, recBet: ctx.recBet, res: ctx.final ? outcomes(ctx.final.h, ctx.final.a)[k] === 1 : null })).join(""));
 }
 /** Un corner (over/under su una soglia) è uscito? null se i corner reali non sono noti. */
 const cornerHit = (o, total) => (Number.isFinite(total) ? (o.side === "over" ? total > o.line : total < o.line) : null);
@@ -206,10 +206,12 @@ export function marketsHtml(m, { mode = "all", rules = RULES, open = false, corn
   const groups = mode === "bet" ? betGroups(mk) : GROUPS;
   // Il mercato consigliato dal motore tra tutti: il suo consiglio principale (in «Solo BET»: il primo BET).
   const recKey = mode === "bet" ? (mk.rec.find((k) => mk.x[k]) ?? null) : (m.pick?.key && mk.x[m.pick.key] ? m.pick.key : null);
-  const rows = groups.map((g) => groupRow(m, g, mode, { recKey, final })).join("") + (mode === "bet" ? "" : cornerRow(m, cv, final));
+  // ★ (in evidenza) solo per un BET vero: value bet su quota reale con dati sufficienti. ◦ (discreto) = la selezione più probabile, ma NON consigliata.
+  const recBet = mode === "bet" || (m.pick?.verdict === "BET" && m.dq?.betOk !== false);
+  const rows = groups.map((g) => groupRow(m, g, mode, { recKey, recBet, final })).join("") + (mode === "bet" ? "" : cornerRow(m, cv, final));
   const hk = recKey ?? headlineKey(m, rules);
   const why = hk ? motivationOf(m, hk, rules) : "";
   const tendina = accordionHtml({ id: `${idPrefix}:${m.id}`, open, cls: "mcd", headCls: "mcd-head", head: "<span>Mercati e motivazioni</span>", body: `<div class="mcd-body">${detailsBody(m, cv, rules)}</div>` });
   const recap = final ? recapHtml(m, final, cv, rules) : "";
-  return `${recap}<div class="mcm">${rows}</div>${why ? `<p class="mc-why"><b>${recKey ? "★ Consigliato · " : ""}${esc(optLabel(hk))}</b> ${why}</p>` : ""}${tendina}`;
+  return `${recap}<div class="mcm">${rows}</div>${why ? `<p class="mc-why"><b>${recKey ? (recBet ? "★ Consigliato · " : "◦ Più probabile, non consigliato · ") : ""}${esc(optLabel(hk))}</b> ${why}</p>` : ""}${tendina}`;
 }

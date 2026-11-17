@@ -982,10 +982,29 @@ details.more .mk,details.more .form,details.more .kv div{background:var(--soft)}
 .dq-list{margin:4px 0 0;padding:0;list-style:none;display:grid;gap:4px}
 .dq-list li{display:flex;justify-content:space-between;gap:12px}
 .dq-list .dq-missing b,.dq-list .dq-error b{color:#d9701e}.dq-list .dq-ok b{color:#1f9d57}
-.chip-btn.save-day{font-weight:600}
-.chip-btn.save-day:disabled{opacity:.6}
+
+
 .bd-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px}
 .bd-grid div{display:flex;flex-direction:column;padding:10px;border-radius:12px;background:rgba(0,0,0,.04)}
 .bd-grid b{font-size:20px}.bd-grid span{font-size:12px;color:var(--muted,#667)}.bd-grid .bad b{color:#d33}
 .bd h3{font-size:13px;margin:12px 0 4px}.bd-list{margin:0;padding:0;list-style:none;display:grid;gap:3px;font-size:13px}
 .bd-list li{display:flex;justify-content:space-between;gap:10px}
+
+/* ---- Pulsanti della barra lista: devono sembrare premibili ---- */
+.daybar{margin:0 0 10px}
+.daybar .save-day{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:52px;padding:12px 18px;border:0;border-radius:16px;font:700 15px/1.2 var(--body,system-ui);color:#fff;background:linear-gradient(180deg,#2f72f2,#1b53d4);box-shadow:0 6px 16px rgba(27,83,212,.32),inset 0 1px 0 rgba(255,255,255,.28);cursor:pointer;transition:transform .08s ease,box-shadow .08s ease,filter .08s ease;-webkit-tap-highlight-color:transparent}
+.daybar .save-day::after{content:none}
+.daybar .save-day::before{content:"";flex:none;width:18px;height:18px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z'/%3E%3C/svg%3E") center/contain no-repeat}
+.daybar .save-day:active:not(:disabled){transform:translateY(2px) scale(.99);box-shadow:0 2px 6px rgba(27,83,212,.30),inset 0 1px 0 rgba(255,255,255,.2);filter:brightness(.96)}
+.daybar .save-day:focus-visible{outline:3px solid rgba(47,114,242,.45);outline-offset:2px}
+.daybar .save-day:disabled{opacity:1;color:#1f7a4a;background:#e6f4ec;box-shadow:inset 0 0 0 1.5px rgba(31,122,74,.35);cursor:default}
+.listbar{display:grid!important;grid-template-columns:minmax(0,1fr) auto;gap:10px!important;align-items:stretch}
+.listbar .chip-btn{display:flex;align-items:center;justify-content:center;min-height:46px;border:1.5px solid rgba(70,92,140,.30)!important;border-radius:14px;background:var(--card,#fff);box-shadow:0 2px 0 rgba(70,92,140,.20);cursor:pointer;transition:transform .08s ease,box-shadow .08s ease,background .08s ease;-webkit-tap-highlight-color:transparent}
+.listbar .chip-btn.lg-toggle{max-width:none;justify-content:flex-start}
+.listbar .chip-btn:active{transform:translateY(2px);box-shadow:none;background:rgba(70,92,140,.08)}
+.listbar .chip-btn:focus-visible{outline:3px solid rgba(47,114,242,.45);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.daybar .save-day,.listbar .chip-btn{transition:none}}
+.daybar .complete-data{display:flex;align-items:center;justify-content:center;width:100%;margin-top:8px;min-height:44px;border:1.5px solid rgba(70,92,140,.30);border-radius:14px;background:var(--card,#fff);box-shadow:0 2px 0 rgba(70,92,140,.20);font:700 14px var(--body,system-ui);cursor:pointer}
+.daybar .complete-data::after{content:none}
+.daybar .complete-data:active:not(:disabled){transform:translateY(2px);box-shadow:none}
+.daybar .complete-data:disabled{opacity:.65;cursor:default}

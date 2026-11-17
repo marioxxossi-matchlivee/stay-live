@@ -258,6 +258,11 @@ function renderSaveDay() {
   const all = dayBets(), done = all.filter((m) => isSaved(playOfList(m))).length;
   const st = saveDayState(all.length - done, done);
   btn.hidden = st.hidden || state.day === "results" || state.loading || Boolean(state.error); btn.disabled = st.disabled; btn.textContent = st.label;
+  // «Completa i dati»: solo se nel giorno mostrato c'è qualcosa da completare (stato diverso da «completo»).
+  const cd = $("#complete-data"); if (!cd) return;
+  const todo = state.day === "results" ? 0 : state.matches.filter((m) => isOpen(m) && dayKey(m.kickoffAt) === state.day && m.dq && m.dq.status !== "complete").length;
+  cd.hidden = !todo || state.loading || Boolean(state.error);
+  if (!cd.dataset.busy) { cd.disabled = false; cd.textContent = `Completa i dati (${todo} da completare)`; }
 }
 function render() {
   renderLeagueNav();
@@ -955,6 +960,7 @@ document.addEventListener("click", (e) => {
     const sb = t.closest("#save-bets"); sb.textContent = "✓ BET già salvate"; sb.disabled = true; showToast(n ? `${n} ${n === 1 ? "giocata salvata" : "giocate salvate"}` : "Giocate già salvate");
     for (const b of document.querySelectorAll("[data-save]")) if (bets.some((i) => i.id === b.dataset.save)) { b.textContent = "✓ Salvata"; b.classList.add("done"); b.disabled = true; }
   }
+  if (t.closest("#complete-data")) completeData();
   if (t.closest("#save-day")) {
     const cands = dayBets().map((m) => playOfList(m)).filter((c) => c && !isSaved(c));
     const n = cands.filter((c) => commitPlay(c)).length;
@@ -965,7 +971,7 @@ document.addEventListener("click", (e) => {
   if (rs && !rs.disabled) {
     const m = state.matches.find((x) => x.id === rs.dataset.rowSave), cand = m && playOfList(m);
     if (cand && commitPlay(cand)) {
-      rs.classList.add("done"); rs.disabled = true; rs.setAttribute("aria-pressed", "true"); rs.setAttribute("aria-label", `Giocata salvata: ${cand.label}`);
+      rs.classList.add("done"); rs.innerHTML = iconFill("bookmark"); rs.disabled = true; rs.setAttribute("aria-pressed", "true"); rs.setAttribute("aria-label", `Giocata salvata: ${cand.label}`);
       showToast(`Giocata salvata: ${cand.label}`, { action: "Vedi", onAction: () => showView("plays") });
     }
   }
@@ -1089,6 +1095,17 @@ function renderStatusCard() {
     <p class="st-foot">Verde = giro riuscito · Ambra = restano operazioni da completare (si riprendono da sole ogni 30 minuti) · Rosso = dati vecchi o giro fallito. I dati che API-Football non fornisce non contano come errore.</p>`;
 }
 function refreshButtonHtml() { return `<button class="st-btn" type="button" data-act="refresh-all">Aggiorna tutto ora</button><p class="st-foot" id="refresh-msg"></p>`; }
+/** «Completa i dati»: avvia il recupero mirato su GitHub (riprova subito ciò che manca per oggi e domani, entro il budget crediti). */
+async function completeData() {
+  const btn = $("#complete-data"); if (!btn || btn.dataset.busy) return;
+  btn.dataset.busy = "1"; btn.disabled = true; btn.textContent = "Recupero avviato…";
+  try {
+    const res = await fetch("/api/refresh?mode=complete", { method: "POST" });
+    const j = await res.json().catch(() => ({}));
+    showToast(res.status === 202 ? "Recupero dati avviato: tira giù per ricaricare tra qualche minuto" : (j.error ?? `Errore ${res.status}`));
+  } catch (e) { showToast(`Richiesta non riuscita: ${e.message}`); }
+  setTimeout(() => { delete btn.dataset.busy; renderSaveDay(); }, 20000);
+}
 async function startFullRefresh() {
   const msg = $("#refresh-msg"), btn = document.querySelector('[data-act="refresh-all"]');
   if (btn) btn.disabled = true;
