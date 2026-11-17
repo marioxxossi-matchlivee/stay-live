@@ -23,6 +23,7 @@ import { budgetFor, capFor } from "../functions/api/_budget.js";
 import { completenessSummary } from "../functions/api/_budgetreport.js";
 import { leaguesDue, policyFor, tierOf } from "../functions/api/_policy.js";
 import { buildFixtures } from "../functions/api/fixtures.js";
+import { createSnapshotRows } from "../functions/api/_snapshot.js";
 import { onRequest as syncLeague } from "../functions/api/sync.js";
 import { onRequest as snapshotPredictions } from "../functions/api/snapshot.js";
 
@@ -373,12 +374,63 @@ async function runRefreshInner(env, { mode = "full", trigger = "schedule", log =
     meta.status = statusOf(meta);
 
     meta.completeness = completenessSummary(built.payload.matches, Date.now());       // contatori per la dashboard crediti (la dashboard non legge l'elenco partite)
-    await supabaseUpsert(env, "app_snapshot", [{ id: "fixtures", payload: built.payload, meta, built_at: meta.finishedAt }], "id");
-    // Verifica: l'istantanea riletta da Supabase deve essere quella appena scritta.
-    const [back] = await supabaseGet(env, "app_snapshot", { select: "built_at", id: "eq.fixtures", limit: 1 }).catch(() => []);
-    meta.verify = { ok: Boolean(back) && Date.parse(back.built_at) === Date.parse(meta.finishedAt), checkedAt: new Date().toISOString() };
-    if (!meta.verify.ok) { meta.notes.push("Istantanea scritta ma non rilevata in rilettura da Supabase."); meta.status = statusOf(meta); }
-    await supabasePatch(env, "app_snapshot", { id: "eq.fixtures" }, { meta }).catch((e) => meta.notes.push(`Esito della verifica non salvato: ${errOf(e)}`));
+
+    if (String(env.SNAPSHOT_CHUNKS_ENABLED ?? "").toLowerCase() !== "true") {
+      // Modalità di transizione: mantiene il vecchio formato finché il client Cloudflare non è stato distribuito.
+      await supabaseUpsert(env, "app_snapshot", [{ id: "fixtures", payload: built.payload, meta, built_at: meta.finishedAt }], "id");
+      const [back] = await supabaseGet(env, "app_snapshot", { select: "built_at", id: "eq.fixtures", limit: 1 }).catch(() => []);
+      meta.verify = { ok: Boolean(back) && Date.parse(back.built_at) === Date.parse(meta.finishedAt), mode: "legacy", checkedAt: new Date().toISOString() };
+      if (!meta.verify.ok) { meta.notes.push("Istantanea scritta ma non rilevata in rilettura da Supabase."); meta.status = statusOf(meta); }
+      await supabasePatch(env, "app_snapshot", { id: "eq.fixtures" }, { meta }).catch((e) => meta.notes.push(`Esito della verifica non salvato: ${errOf(e)}`));
+    } else {
+      // Legge solo i metadati della versione precedente: nessun download del vecchio payload da 2+ MB.
+      let previousStorage = null;
+      try {
+        const [previous] = await supabaseGet(env, "app_snapshot", { select: "meta", id: "eq.fixtures", limit: 1 });
+        previousStorage = previous?.meta?.snapshotStorage ?? null;
+      } catch (e) {
+        meta.notes.push(`Versione snapshot precedente non letta: ${errOf(e)}`);
+      }
+
+      // I blocchi vengono salvati prima del manifest. Se un blocco fallisce, il manifest precedente resta attivo.
+      const version = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      const snapshot = createSnapshotRows(built.payload, meta, meta.finishedAt, version);
+      for (const chunk of snapshot.chunks) {
+        await supabaseUpsert(env, "app_snapshot", [chunk], "id");
+      }
+      await supabaseUpsert(env, "app_snapshot", [snapshot.manifest], "id");
+      Object.assign(meta, snapshot.manifest.meta);
+
+      // Verifica leggera: manifest e soli ID dei blocchi, senza rileggere il JSON delle partite.
+      const [back] = await supabaseGet(env, "app_snapshot", { select: "built_at,meta", id: "eq.fixtures", limit: 1 }).catch(() => []);
+      let chunksFound = 0;
+      try {
+        if (snapshot.snapshotStorage.chunkCount) {
+          const savedChunks = await supabaseGet(env, "app_snapshot", {
+            select: "id",
+            id: `like.fixtures:chunk:${version}:%`,
+            limit: snapshot.snapshotStorage.chunkCount,
+          });
+          chunksFound = savedChunks.length;
+        }
+      } catch (e) { meta.notes.push(`Verifica blocchi snapshot non riuscita: ${errOf(e)}`); }
+      meta.verify = {
+        ok: Boolean(back) && Date.parse(back.built_at) === Date.parse(meta.finishedAt) && back.meta?.snapshotStorage?.version === version && chunksFound === snapshot.snapshotStorage.chunkCount,
+        chunksExpected: snapshot.snapshotStorage.chunkCount,
+        chunksFound,
+        checkedAt: new Date().toISOString(),
+      };
+      if (!meta.verify.ok) { meta.notes.push("Istantanea pubblicata ma verifica manifest/blocchi incompleta."); meta.status = statusOf(meta); }
+      await supabasePatch(env, "app_snapshot", { id: "eq.fixtures" }, { meta }).catch((e) => meta.notes.push(`Esito della verifica non salvato: ${errOf(e)}`));
+
+      // Elimina soltanto i blocchi della versione che era attiva prima di questo giro.
+      // Non tocca mai la versione appena pubblicata; un errore di pulizia non invalida lo snapshot.
+      if (previousStorage?.version && previousStorage.version !== version) {
+        try {
+          await supabaseDelete(env, "app_snapshot", { id: `like.fixtures:chunk:${previousStorage.version}:%` });
+        } catch (e) { meta.notes.push(`Pulizia della vecchia istantanea rimandata: ${errOf(e)}`); }
+      }
+    }
     if (prev !== null) await saveTasks(env, tasks, prevTasks).catch((e) => { meta.notes.push(`Compiti di recupero non salvati: ${errOf(e)}`); });
     await supabaseUpsert(env, "refresh_runs", [{ mode: meta.mode, status: meta.status, started_at: startedAt, finished_at: meta.finishedAt, meta }], "id").catch(() => {});
     log(`Fatto: ${meta.status} in ${meta.durationSec}s · ${built.payload.matches.length} partite nell'istantanea · compiti aperti ${tasks.length}`);
