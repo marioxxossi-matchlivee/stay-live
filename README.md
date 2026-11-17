@@ -38,6 +38,7 @@ L'app non usa più The Odds API: le quote reali arrivano solo da **API-Football*
 Tutto arriva da API-Football, lato server (la chiave non compare mai nel frontend). Due workflow GitHub:
 
 - **Aggiornamento completo** (ogni 4 ore, o a mano da GitHub / dall'app): campionati e risultati → copertura del piano → pronostici, quote 1X2 e Over/Under, quote corner → schede dati (prossime 48 ore) → corner storici reali → registro pronostici → istantanea, riletta da Supabase per verificarla (`scripts/full-refresh.js`).
+- **Snapshot calcio**: dopo il deploy del client, imposta la variabile GitHub Actions `SNAPSHOT_CHUNKS_ENABLED=true`. Da quel momento le partite sono salvate in blocchi da 40 righe nella tabella `app_snapshot`; il manifest `id=fixtures` viene pubblicato per ultimo. `/api/board` e `/api/board-chunks` inoltrano i dati in streaming e il client ricompone lo stesso `payload.matches` di prima. Non serve una nuova migrazione. Se la variabile manca o vale `false`, il workflow mantiene il formato precedente.
 - **Recupero aggiornamento** (ogni 30 minuti): riprende solo le operazioni rimaste incomplete (`refresh_tasks`), senza ripetere ciò che è completo (cache `af_cache`) e senza consumare crediti se non c'è nulla da fare o sono sotto la riserva.
 
 Ogni dato ha uno di cinque esiti: aggiornato · non ancora disponibile · non previsto dalla copertura del provider · temporaneamente non recuperabile · errore. Solo gli ultimi due rendono l'aggiornamento «parziale». Il dettaglio è in Impostazioni → Stato dei dati.

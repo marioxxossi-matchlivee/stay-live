@@ -1,3 +1,10 @@
+
+## 17 novembre 2026 — snapshot calcio a blocchi
+- L'aggiornamento non invia più l'intero array `matches` in una singola scrittura PostgREST. Le partite vengono salvate in blocchi da 40 righe `app_snapshot` (payload piccoli); la riga `id=fixtures` contiene il manifest e i dati comuni.
+- Il manifest viene aggiornato solo dopo il salvataggio di tutti i blocchi: se un blocco fallisce, la versione precedente resta quella attiva. I vecchi blocchi della versione precedente vengono rimossi dopo la pubblicazione.
+- `/api/board` continua a inoltrare il manifest in streaming; `/api/board-chunks` inoltra i blocchi in streaming. Il client ricompone `payload.matches`, mantenendo invariata la forma dei dati usata dall'interfaccia.
+- Compatibilità: gli snapshot precedenti al formato a blocchi continuano a essere letti senza migrazioni Supabase. La scrittura a blocchi è protetta dalla variabile GitHub Actions `SNAPSHOT_CHUNKS_ENABLED`: resta disattivata finché il deploy Cloudflare non è completato, poi si abilita a `true`. Nessuna modifica alla strategia, alle quote, ai provider o al consumo crediti.
+
 # CHANGELOG-DEBUG — audit e revisione del motore Stay Live
 
 Estrai lo ZIP direttamente sopra il progetto (stessa struttura di cartelle). Nessun file va eliminato (vedi «Codice morto»).
