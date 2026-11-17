@@ -54,7 +54,9 @@ export async function loadBrainInputs(env, matches, now = Date.now(), { live = t
   }
   // Quote reali di doppia chance e gol/no gol: solo per le partite entro 36 ore (le lontane cambiano e costano richieste inutili). Con una quota
   // reale il verdetto usa il valore atteso (pLow x quota), non la soglia "punti sulla media del campionato" che favorisce solo gli esiti rari.
-  const extra = market ? mapped.filter((m) => Date.parse(m.kickoff_at) - now <= EXTRA_ODDS_MS) : [];
+  // Doppia chance e gol/no gol: con la richiesta unica delle quote arrivano gratis per ogni partita (stessa richiesta del 1X2), quindi si leggono per tutte;
+  // senza (AF_ODDS_BUNDLE=0) restano limitate alle partite entro 36 ore perché costerebbero una richiesta ciascuna.
+  const extra = market ? mapped.filter((m) => env?.AF_ODDS_BUNDLE !== "0" || Date.parse(m.kickoff_at) - now <= EXTRA_ODDS_MS) : [];
   const freshExtra = (m) => (freshFor ? freshFor(m, "odds-extra") : undefined);
   // Ordine: prima i pronostici di tutte le partite, poi le quote: se il provider limita le richieste, ogni partita ha almeno il pronostico.
   const reqs = [

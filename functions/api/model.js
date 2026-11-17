@@ -26,7 +26,7 @@ export const MODEL = {
   minEdgeRatio: 0.145,    // con edgeMode "ratio": pLow almeno il 14,5% sopra la media (= +8 punti per un esito al 55%)
   maxUsefulProb: 0.80,    // oltre: quota equa < 1,25, esito non interessante
   minPlayOdds: 1.3,       // quota minima per giocare (singola o gamba di multipla). Si cambia dalle Impostazioni dell'app; sotto, il rischio non è ripagato
-  requireRealOdds: false, // false = un BET può nascere anche senza quota reale (probabilità + vantaggio sulla media, valore "non verificato"); true = serve la quota di mercato
+  requireRealOdds: true,  // true = un BET nasce solo con quota reale di mercato e valore atteso prudente positivo (value bet); false = anche senza quota (probabilità + vantaggio sulla media, "non verificato")
   edgeMargin: 1.03,       // valore atteso minimo: prob. prudente x quota >= 1,03
   longshotFloor: 0.40,    // con quota inserita non si consiglia sotto questa prob. prudente
   // Mercati preferiti: tra i BET della stessa partita passano davanti a 1X2, doppia chance, gol/no gol.
