@@ -105,9 +105,14 @@ main{padding-top:12px}
 main,.tn-main{position:relative;isolation:isolate}
 
 /* Mercato consigliato dal motore tra tutti: anello ambra e stella (il verde resta dei BET, il blu del più probabile) */
-.mx .c.rec{box-shadow:0 0 0 2px #f4a300;position:relative}
-.mx .c.rec i{color:#a35f00;font-weight:800}
-.mx .c.top.rec i{color:#ffe08a}
+/* ★ = BET vero (in evidenza) · ◦ = solo la selezione più probabile, non consigliata (discreto) */
+.mx .c.rec-bet{box-shadow:0 0 0 3px #f4a300,0 4px 12px rgba(244,163,0,.35);position:relative;background:linear-gradient(180deg,#fff6dc,#ffe9b0)}
+.mx .c.rec-bet i{color:#8a4b00;font-weight:800}
+.mx .c.top.rec-bet{background:var(--sl-bet-g)}
+.mx .c.top.rec-bet i{color:#ffe08a}
+.mx .c .star{font-style:normal;font-size:15px;line-height:1;color:#f4a300;text-shadow:0 1px 0 rgba(0,0,0,.18)}
+.mx .c.rec-soft{box-shadow:inset 0 0 0 1px rgba(100,112,130,.35);position:relative}
+.mx .c .dot{font-style:normal;font-size:11px;opacity:.55}
 
 /* Resoconto a partita finita */
 .mx .c.ok{outline:2px solid var(--sl-win);outline-offset:-2px}
