@@ -26,6 +26,7 @@ function makeWorld() {
       const v = row[col]; const dot = spec.indexOf("."); const op = spec.slice(0, dot), val = spec.slice(dot + 1);
       if (op === "eq") return String(v) === val; if (op === "neq") return String(v) !== val; if (op === "gte") return cmp(v, val) >= 0; if (op === "lte") return cmp(v, val) <= 0;
       if (op === "gt") return cmp(v, val) > 0; if (op === "lt") return cmp(v, val) < 0;
+      if (op === "like") { const re = new RegExp(`^${val.replace(/[.+^${}()|[\]\\]/g, "\\$&").replaceAll("%", ".*").replaceAll("_", ".")}$`); return re.test(String(v ?? "")); }
       if (op === "is") return val === "null" ? v == null : v != null;
       if (op === "in") return [...val.matchAll(/"((?:[^"\\]|\\.)*)"|([^,()]+)/g)].map((m) => m[1] ?? m[2]).includes(String(v));
       throw new Error(`filtro non gestito dal mock: ${spec}`);
@@ -106,7 +107,7 @@ function makeWorld() {
   return { db, log, knobs, fetchMock, now };
 }
 
-const env = { SUPABASE_URL: SB, SUPABASE_SERVICE_ROLE_KEY: "sr", API_FOOTBALL_KEY: "k", SYNC_SECRET: "s", API_FOOTBALL_MIN_GAP_MS: "0", FIXTURES_DAYS: "7", API_FOOTBALL_DAILY_LIMIT: "1000000" };   // il mondo finto ha 70 campionati: tetto del giro alto, qui non si prova il budget
+const env = { SUPABASE_URL: SB, SUPABASE_SERVICE_ROLE_KEY: "sr", API_FOOTBALL_KEY: "k", SYNC_SECRET: "s", API_FOOTBALL_MIN_GAP_MS: "0", FIXTURES_DAYS: "7", API_FOOTBALL_DAILY_LIMIT: "1000000", SNAPSHOT_CHUNKS_ENABLED: "true" };   // il mondo finto ha 70 campionati: tetto del giro alto, qui non si prova il budget
 
 test("giro completo + recupero automatico, con API-Football come unica fonte", async () => {
   const w = makeWorld(), real = globalThis.fetch;
@@ -146,10 +147,14 @@ test("giro completo + recupero automatico, con API-Football come unica fonte", a
     assert.equal(m1.components.corners.error, 0);
     assert.ok(m1.stats.updated > 100 && m1.stats.missing === 2, JSON.stringify(m1.stats));
     // istantanea scritta E riletta
-    assert.equal(w.db.app_snapshot.length, 1); assert.equal(m1.verify.ok, true);
-    const snap = w.db.app_snapshot[0];
-    assert.ok(snap.payload.matches.length >= LEAGUES.length * 2 && snap.meta.v === 2 && snap.meta.status === "partial");
-    assert.ok(snap.payload.matches.some((m) => m.pick), "i pronostici del modello sono calcolati");
+    const snap = w.db.app_snapshot.find((r) => r.id === "fixtures");
+    const snapChunks = w.db.app_snapshot.filter((r) => r.id.startsWith("fixtures:chunk:"));
+    assert.ok(snap && snapChunks.length > 0 && m1.verify.ok);
+    assert.equal(snapChunks.length, snap.meta.snapshotStorage.chunkCount);
+    const storedMatches = snapChunks.flatMap((r) => r.payload.matches);
+    assert.ok(storedMatches.length >= LEAGUES.length * 2 && snap.meta.v === 2 && snap.meta.status === "partial");
+    assert.ok(storedMatches.some((m) => m.pick), "i pronostici del modello sono calcolati");
+    assert.equal(snap.payload.matches.length, 0, "il manifest non contiene il grande array delle partite");
     // corner storici reali scaricati e salvati (con le sole partite finite delle squadre in campo)
     assert.ok(w.db.match_corners.length > 0 && w.db.match_corners.every((r) => r.available && r.home_corners === 6 && r.away_corners === 4));
     assert.equal(m1.components.cornerStats.ok, w.db.match_corners.length);
@@ -169,7 +174,8 @@ test("giro completo + recupero automatico, con API-Football come unica fonte", a
     assert.equal(m2.mode, "recover");
     assert.ok(calls2 < 40, `il recupero riprende solo ciò che manca: ${calls2} richieste (il giro completo ne ha fatte ${afCalls1})`);
     assert.ok(!w.log.af.slice(afCalls1).some((c) => c.startsWith("fixtures?league=")), "i campionati già aggiornati non si riscaricano");
-    assert.equal(w.db.app_snapshot[0].meta.status, "ok"); assert.equal(m2.components.prediction.temporary, 0);
+    assert.equal(w.db.app_snapshot.find((r) => r.id === "fixtures").meta.status, "ok"); assert.equal(m2.components.prediction.temporary, 0);
+    assert.equal(w.db.app_snapshot.filter((r) => r.id.startsWith("fixtures:chunk:")).length, w.db.app_snapshot.find((r) => r.id === "fixtures").meta.snapshotStorage.chunkCount, "i blocchi della versione precedente sono stati ripuliti");
     assert.equal(m2.verify.ok, true);
 
     /* ---- 3 · recupero senza compiti: nessuna richiesta ---- */
@@ -189,12 +195,14 @@ test("errori veri: un campionato che fallisce non ferma gli altri e resta da rec
     return base(url, opts);
   };
   try {
-    const m = await runRefresh(env, { mode: "full", wait: async () => {}, log: () => {} });
+    const m = await runRefresh({ ...env, SNAPSHOT_CHUNKS_ENABLED: "false" }, { mode: "full", wait: async () => {}, log: () => {} });
     assert.equal(m.leagues.ok, LEAGUES.length - 1); assert.equal(m.leagues.failed[0].id, "seriea");
     assert.match(m.leagues.failed[0].error, /application key/);
     assert.equal(m.status, "partial");
     assert.ok(w.db.refresh_tasks.some((t) => t.task_key === "league:seriea" && t.state === "error"));
     assert.ok(w.db.matches.some((x) => x.league === "epl"), "gli altri campionati sono stati salvati");
+    const legacySnapshot = w.db.app_snapshot.find((r) => r.id === "fixtures");
+    assert.ok(legacySnapshot?.payload?.matches?.length > 0 && !legacySnapshot.meta?.snapshotStorage, "senza flag il formato legacy resta compatibile durante il deploy");
     assert.equal(m.errors[0].component, "league");
   } finally { globalThis.fetch = real; }
 });
