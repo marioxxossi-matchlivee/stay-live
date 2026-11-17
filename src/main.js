@@ -22,6 +22,7 @@ import { accordionHtml, filterRows, groupByDay, playHeadHtml } from "./playlist.
 import { showToast } from "./toast.js";
 import { enableSheet } from "./sheet.js";
 import { marketsHtml } from "./markets.js";
+import { restoreBoardPayload } from "./snapshot.js";
 
 hideBrokenCrests();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -66,7 +67,14 @@ const writeCache = (data, board = null) => { try { localStorage.setItem(CACHE_KE
 async function fetchBoard() {
   const j = await getJson("/api/board");
   if (!j?.payload?.matches) throw new Error("Istantanea non disponibile");
-  return { data: { ...j.payload, needsSync: [], needsCrests: [] }, board: { builtAt: j.built_at, meta: j.meta ?? null } };
+  let payload = j.payload;
+  const storage = j.meta?.snapshotStorage;
+  if (storage) {
+    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(String(storage.version))) throw new Error("Versione dell'istantanea non valida");
+    const rows = storage.chunkCount ? await getJson(`/api/board-chunks?version=${encodeURIComponent(storage.version)}&count=${storage.chunkCount}`) : [];
+    payload = restoreBoardPayload(payload, storage, rows);
+  }
+  return { data: { ...payload, needsSync: [], needsCrests: [] }, board: { builtAt: j.built_at, meta: j.meta ?? null } };
 }
 function applyData(data, board = null) {
   Object.assign(state, { matches: data.matches, leagues: data.leagues, continents: data.continents ?? [], updatedAt: data.updatedAt, board, rules: data.rules ?? state.rules });
