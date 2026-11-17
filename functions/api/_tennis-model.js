@@ -23,7 +23,7 @@ export const TENNIS_MODEL = {
   tourServeAvg: { atp: 0.645, wta: 0.565 },
   // Ranking ufficiale: contributo piccolo e SOLO dove l'Elo è ancora povero di dati (giocatori con poche partite nello storico).
   rankPoints: 45, rankThinN: 30, rankMax: 250,   // punti Elo per 1.0 di differenza di ln(posizione); si applica solo se uno dei due ha < rankThinN partite
-  minMatches: 12,        // sotto questa soglia (per uno dei due giocatori) il modello si astiene
+  minMatches: 8,         // sotto questa soglia (per uno dei due giocatori) il modello si astiene. Tra 8 e 19 partite l'affidabilità resta «bassa»: mai BET (vedi _tennis-bet.js)
   minEdge: 0.05,         // sotto 55% per il favorito il match è considerato equilibrato: nessun pronostico
   probClip: 0.02,
 };
@@ -33,6 +33,12 @@ const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 export const logistic = (x) => 1 / (1 + Math.exp(-x));
 export const logit = (p) => Math.log(p / (1 - p));
 const eloExpected = (diff) => 1 / (1 + 10 ** (-diff / 400));
+
+/** Formato dell'incontro quando il provider non lo dà (programma partite): donne sempre al meglio dei 3 set; uomini al meglio dei 5 solo nei tabelloni principali degli Slam, altrimenti 3. Il turno non è decodificabile: una qualificazione di Slam maschile verrebbe letta come 5 set. */
+export function inferBestOf({ tour, tournament } = {}) {
+  if (tour !== "atp") return 3;
+  return /^(australian open|french open|roland garros|wimbledon|us open)\b/i.test(String(tournament ?? "").trim()) ? 5 : 3;
+}
 
 /** Superficie del provider → famiglia usata dal modello. Sconosciuta → null (si usa solo l'Elo generale). */
 export function normalizeSurface(name) {
