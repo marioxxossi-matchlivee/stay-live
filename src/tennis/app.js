@@ -51,7 +51,7 @@ export function mountTennis(root) {
         <div id="tn-banner" class="banner" role="status" hidden></div>
         <div class="seg" id="tn-seg" role="group" aria-label="Filtro partite" style="--segn:2;--i:0"><button type="button" data-seg="all" aria-pressed="true">Tutte</button><button type="button" data-seg="bet" aria-pressed="false">Solo BET</button></div>
         <div class="days" id="tn-days" aria-label="Giornata"></div>
-        <div class="listbar"><button class="chip-btn save-day" id="tn-save-day" type="button" hidden></button><button class="chip-btn" id="tn-ftoggle" type="button" aria-expanded="false" aria-controls="tn-facc">Filtri</button></div>
+        <div class="daybar"><button class="chip-btn save-day" id="tn-save-day" type="button" hidden></button></div><div class="listbar"><button class="chip-btn" id="tn-ftoggle" type="button" aria-expanded="false" aria-controls="tn-facc">Filtri</button></div>
         <div class="tn-facc" id="tn-facc" inert><div class="tn-fclip"><div class="tn-fpanel" id="tn-fpanel"></div></div></div>
         <div id="tn-list" class="list"></div>
         <p class="foot">Stime statistiche sperimentali. Non sono garanzie né consigli finanziari.</p>
