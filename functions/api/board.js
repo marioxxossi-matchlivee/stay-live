@@ -1,10 +1,9 @@
 import { json, missingConfig } from "./_lib.js";
 
 /**
- * GET /api/board: l'elenco partite GIÀ PRONTO, costruito ogni 4 ore dal giro completo (scripts/full-refresh.js) e salvato su Supabase.
- * Qui non c'è nessun calcolo: la risposta di Supabase passa così com'è (stream), quindi la CPU usata è trascurabile
- * (il piano Free di Cloudflare concede 10 ms a richiesta). Forma: { payload: <come /api/fixtures>, meta: <rapporto del giro>, built_at }.
- * 404 se l'istantanea non esiste ancora (migrazione non applicata o primo giro non fatto): l'app ripiega su /api/fixtures.
+ * GET /api/board: restituisce il manifest dello snapshot calcio.
+ * Il body Supabase viene inoltrato in streaming: il Worker non deve parsare/serializzare i dati delle partite.
+ * Per gli snapshot a blocchi il client scarica i blocchi da /api/board-chunks e ricompone payload.matches.
  */
 export async function onRequest({ env }) {
   const missing = missingConfig(env);
