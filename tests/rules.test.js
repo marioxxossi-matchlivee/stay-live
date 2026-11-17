@@ -21,10 +21,11 @@ test("la quota minima cambia il verdetto della scelta già calcolata, in entramb
   assert.equal(adjustPick(pick(1.2, { pLow: 0.9, verdict: "EVITA" }), 1.1).verdict, "BET", "abbassandola passa");
   assert.ok(p);
 });
-test("senza quota reale il BET resta, e la quota minima mostrata segue l'impostazione", () => {
+test("senza quota reale non c'è BET (serve il value bet), e la quota minima mostrata segue l'impostazione", () => {
   const p = pick(null);
   assert.equal(adjustPick(p, 1.8).minOdds, 1.8);
-  assert.equal(adjustPick(p, 1.8).verdict, "BET");
+  assert.equal(adjustPick(p, 1.8).verdict, "EVITA");
+  assert.match(adjustPick(p, 1.8).reason, /Quota reale non disponibile/);
   assert.equal(MODEL.minPlayOdds, 1.3, "il modello condiviso non viene alterato");
 });
 test("pochi dati e scelte assenti passano invariati", () => {
