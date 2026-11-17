@@ -3,7 +3,7 @@ name: Tennis — sincronizzazione
 # Un solo workflow coordinato per tutto il tennis (SportsAPI365 Direct → Supabase → modello → snapshot → app). Il calcio non è coinvolto.
 #   ogni 15 minuti   live      feed delle partite in corso (1 richiesta) + ricostruzione della snapshot
 #   ogni 30 minuti   refresh   programma ATP/WTA, risultati di oggi e ieri, pronostici, quote ed EV, snapshot
-#   ogni giorno      static    ranking, tornei, statistiche dei giocatori in programma, backtest cronologico
+#   due volte al dì  static    ranking, tornei, statistiche dei giocatori in programma, backtest cronologico
 #   a mano           backfill  storico dei risultati degli ultimi N giorni (da lanciare una volta, poi basta il refresh)
 # Consumo stimato: ~96 + ~1.000 + ~300 richieste al giorno su 200.000 al mese (6.600 al giorno circa): ampiamente nei limiti.
 # Anti-sovrapposizione: gruppo di concorrenza per modalità + blocco a scadenza su Supabase (tennis_acquire_lock).
@@ -14,6 +14,7 @@ on:
     - cron: "*/15 * * * *"
     - cron: "20,50 * * * *"
     - cron: "35 3 * * *"
+    - cron: "35 15 * * *"
   workflow_dispatch:
     inputs:
       mode:
@@ -52,7 +53,7 @@ jobs:
           else case "${{ github.event.schedule }}" in
             "*/15 * * * *") M=live;;
             "20,50 * * * *") M=refresh;;
-            "35 3 * * *") M=static;;
+            "35 3 * * *"|"35 15 * * *") M=static;;
             *) M=refresh;;
           esac; fi
           echo "mode=$M" >> "$GITHUB_OUTPUT"
