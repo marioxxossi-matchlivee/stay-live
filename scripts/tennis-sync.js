@@ -15,7 +15,7 @@ import { pathToFileURL } from "node:url";
 import { errorMessage, supabaseDelete, supabaseGetAll, supabasePatch, supabaseUpsert } from "../functions/api/_lib.js";
 import { createClient, DIRECT_BASE } from "../functions/api/_tennis-client.js";
 import { TOURS, normalizeUpcoming, normalizeResult, normalizeLive, normalizeRankingPage, normalizeMatchStats, normalizeTournamentFilters, readPage, readLiveFeed } from "../functions/api/_tennis-provider.js";
-import { RatingBook, predictMatch, normalizeSurface, TENNIS_MODEL } from "../functions/api/_tennis-model.js";
+import { RatingBook, predictMatch, normalizeSurface, inferBestOf, TENNIS_MODEL } from "../functions/api/_tennis-model.js";
 import { chronologicalBacktest, fitPlatt, MIN_RELIABLE_SAMPLE } from "../functions/api/_tennis-metrics.js";
 import { evaluateBet } from "../functions/api/_tennis-bet.js";
 import { buildBoard } from "../functions/api/_tennis-snapshot.js";
@@ -23,7 +23,7 @@ import { buildBoard } from "../functions/api/_tennis-snapshot.js";
 const H = 3600e3, DAY = 24 * H;
 export const LIMITS = { live: 6, refresh: 160, static: 450, backfill: 6000 };   // richieste massime per giro (la quota mensile è 200.000)
 export const QUOTA_RESERVE = 3000;                                              // sotto questa quota residua si lavora solo sull'essenziale
-export const CFG = { finishedWindowH: 48, historyDays: 400, statsTtlDays: 7, statsCapPerRun: 140, rankPages: 3, resultPages: 24, upcomingPages: 10, snapshotMaxAgeMin: 90 };
+export const CFG = { finishedWindowH: 48, historyDays: 400, statsTtlDays: 7, statsCapPerRun: 400, rankPages: 3, resultPages: 24, upcomingPages: 10, snapshotMaxAgeMin: 90 };
 const iso = (t) => new Date(t).toISOString();
 export const ymd = (t) => iso(t).slice(0, 10);
 /** Date UTC (YYYY-MM-DD) dei `n` giorni che finiscono a `now`, dal più recente. */
@@ -132,8 +132,8 @@ export function computePredictions({ matches, book, stats, ranks, calibrator, no
     const st = (id) => { const s = stats.get(id); return s && s.serve_pts_won != null && s.return_pts_won != null ? { serve: s.serve_pts_won, ret: s.return_pts_won, matches: s.matches ?? null, servePoints: s.stats?.servePoints ?? null } : undefined; };
     const rk = (id) => ranks.get(`${m.tour}|${id}`)?.position;
     const extras = { h2h: m.h2h && m.h2h.p1Wins != null && m.h2h.p2Wins != null ? { p1Wins: m.h2h.p1Wins, p2Wins: m.h2h.p2Wins } : undefined, stats1: st(m.p1_id), stats2: st(m.p2_id), rank: rk(m.p1_id) && rk(m.p2_id) ? { p1: rk(m.p1_id), p2: rk(m.p2_id) } : undefined };
-    const pred = predictMatch(book, { t: Date.parse(m.starts_at), surface: m.surface, tour: m.tour, bestOf: m.best_of, p1: { id: m.p1_id, name: m.p1_name }, p2: { id: m.p2_id, name: m.p2_name } }, extras, calibrator);
-    if (m.best_of == null) pred.missing = [...pred.missing, "formato dell'incontro (assunto al meglio dei 3 set)"];
+    const pred = predictMatch(book, { t: Date.parse(m.starts_at), surface: m.surface, tour: m.tour, bestOf: m.best_of ?? inferBestOf({ tour: m.tour, tournament: m.tournament }), p1: { id: m.p1_id, name: m.p1_name }, p2: { id: m.p2_id, name: m.p2_name } }, extras, calibrator);
+    if (m.best_of == null) pred.missing = [...pred.missing, `formato dell'incontro (dedotto dal torneo: al meglio dei ${pred.bestOf} set)`];
     const bet = evaluateBet({ status: m.status, startsAt: m.starts_at, oddsSources: m.odds_sources, oddsFetchedAt: m.odds_fetched_at }, pred, { now, category: m.category });
     rows.push({
       match_key: m.match_key, starts_at: m.starts_at, tour: m.tour, surface: normalizeSurface(m.surface), published: pred.published, pick: pred.published ? pred.pick : null,
