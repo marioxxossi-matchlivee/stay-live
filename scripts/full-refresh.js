@@ -159,7 +159,8 @@ async function runRefreshInner(env, { mode = "full", trigger = "schedule", log =
   log(`Crediti di partenza: ${usage0?.remaining ?? "sconosciuti"}${usage0?.assumed ? " (contatore di oggi non ancora creato: si parte dal limite giornaliero)" : ""} · tetto di questo giro: ${runBudget} richieste`);
   const spentNow = async () => ((await readUsage(env, Date.now()))?.requests ?? 0) - (usage0?.requests ?? 0);
   const attemptsOf = new Map(prevTasks.map((t) => [t.task_key, t.attempts]));
-  const due = mode === "recover" ? dueTasks(prevTasks, now0) : [];
+  const force = env.REFRESH_FORCE === "1";          // «Completa i dati»: si riprova subito tutto, anche i compiti sospesi o in attesa
+    const due = mode === "recover" ? (force ? prevTasks : dueTasks(prevTasks, now0)) : [];
   try {
     if (mode === "recover") {
       meta.parked = prevTasks.filter((t) => (t.attempts ?? 0) >= 3).length;
@@ -220,7 +221,7 @@ async function runRefreshInner(env, { mode = "full", trigger = "schedule", log =
     /* 3 · pronostici, quote, corner */
     const dueIds = new Set(due.filter((t) => t.component !== "league" && t.component !== "cornerStats").map((t) => t.scope));
     // recupero orario = compiti scaduti + partite imminenti/di oggi (la cache decide se serve davvero una richiesta); giro completo = tutte le partite aperte
-    const targetSet = mode === "recover" ? new Set(open.filter((m) => dueIds.has(m.game_id) || ["imminent", "today"].includes(tierOf(m.kickoff_at, now))).map((m) => m.game_id)) : new Set(open.map((m) => m.game_id));
+    const targetSet = mode === "recover" ? new Set(open.filter((m) => dueIds.has(m.game_id) || (force ? ["imminent", "today", "tomorrow"] : ["imminent", "today"]).includes(tierOf(m.kickoff_at, now))).map((m) => m.game_id)) : new Set(open.map((m) => m.game_id));
     const target = open.filter((m) => targetSet.has(m.game_id)), rest = open.filter((m) => !targetSet.has(m.game_id));
     log(`3 Pronostici, quote e corner di ${target.length} partite${rest.length ? ` (altre ${rest.length} solo dalla cache)` : ""}…`);
     let br = null, cr = null, lastPending = Infinity, stalled = 0;
