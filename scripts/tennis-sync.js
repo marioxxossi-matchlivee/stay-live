@@ -19,6 +19,7 @@ import { RatingBook, predictMatch, normalizeSurface, inferBestOf, TENNIS_MODEL }
 import { chronologicalBacktest, fitPlatt, groupSummary, MIN_RELIABLE_SAMPLE } from "../functions/api/_tennis-metrics.js";
 import { evaluateBet } from "../functions/api/_tennis-bet.js";
 import { buildBoard } from "../functions/api/_tennis-snapshot.js";
+import { computeItfShadow } from "../functions/api/_tennis-itf-shadow.js";
 import { buildStrategy } from "../functions/api/_tennis-strategy.js";
 import { planRecords, buildStrategyHistory } from "../functions/api/_tennis-strategy-track.js";
 
@@ -267,6 +268,13 @@ export async function runRefresh({ api, db, now }) {
   const calibrator = bt[0]?.payload?.calibrator ?? null;
   const rows = computePredictions({ matches, book, stats: mapBy(stats, "player_id"), ranks: mapBy(rankings, (r) => `${r.tour}|${r.player_id}`), calibrator, now });
   await db.upsert("tennis_predictions", rows, "match_key");
+  // Filtro sperimentale ITF (8 punti) in SHADOW MODE: registra soltanto cosa avrebbe escluso. Non tocca `rows` né i BET; nessuna richiesta al provider.
+  // Un errore non ferma il giro: pronostici e snapshot restano identici.
+  try {
+    const shadow = computeItfShadow({ matches, predictions: rows, now });
+    await db.upsert("tennis_itf_shadow", shadow, "match_key");
+    meta.itfShadow = { rows: shadow.length, excluded: shadow.filter((x) => x.outcome === "excluded").length, wouldRemoveBet: shadow.filter((x) => x.would_remove).length, notEvaluable: shadow.filter((x) => x.outcome === "not_evaluable").length };
+  } catch (e) { meta.itfShadowError = String(e?.message ?? e).slice(0, 200); }
   meta.predictions = { total: rows.length, published: rows.filter((r) => r.published).length, abstained: rows.filter((r) => !r.published).length, bet: rows.filter((r) => r.bet?.verdict === "BET").length, historyMatches: history.length, calibrated: !!calibrator };
   await buildAndStoreSnapshot(db, now, { job: "refresh", api, jobMeta: meta });
   return meta;
