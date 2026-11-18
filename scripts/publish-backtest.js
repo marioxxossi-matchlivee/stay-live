@@ -24,7 +24,7 @@ export function buildBacktestPayload(rows, preds, { warmup = 0.3, generatedAt = 
     warmup, analyzed: preds.length,
     bet: summarize(g.bet), evita: summarize(evitaAll),
     evitaByReason: { soglia: summarize(g.soglia), edge: summarize(g.edge), campione: summarize(g.campione) },
-    calibration: { n: gc.total.n, ece: gc.total.ece, brier: gc.total.brier, table: gc.total.table.filter((b) => b.n) },
+    calibration: { n: gc.total.n, ece: gc.total.ece, brier: gc.total.brier, logLoss: gc.total.logLoss, table: gc.total.table.filter((b) => b.n) },
     byConfidence: byConfidence(preds),
     limits: "Nel passato non ci sono le quote: il rendimento è un proxy (mercato che quota la media del campionato con il margine del bookmaker), non un rendimento reale.",
   };

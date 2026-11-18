@@ -20,7 +20,7 @@ import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import { MODEL, SELECTIONS, verdictFor } from "../functions/api/model.js";
 import { normalize, parseRows, predict, withModel } from "./backtest.js";
-import { MIN_BETS_FOR_CLAIM, brier, calibration } from "./metrics.js";
+import { MIN_BETS_FOR_CLAIM, brier, calibration, logLoss } from "./metrics.js";
 import { wilson } from "../src/efficiency.js";
 
 const mean = (a) => (a.length ? a.reduce((t, v) => t + v, 0) / a.length : null);
@@ -101,7 +101,7 @@ export function globalCalibration(preds) {
   const all = P.flatMap((x) => x.a.selections.map((s) => ({ p: s.p, pLow: s.pLow, y: x.y[s.key] })));
   const cal = calibration(all.map((v) => v.p), all.map((v) => v.y));
   const calLow = calibration(all.map((v) => v.pLow), all.map((v) => v.y));
-  return { per, total: { n: all.length, ece: cal.ece, brier: brier(all.map((v) => v.p), all.map((v) => v.y)), table: cal.table, eceLow: calLow.ece, tableLow: calLow.table } };
+  return { per, total: { n: all.length, ece: cal.ece, brier: brier(all.map((v) => v.p), all.map((v) => v.y)), logLoss: logLoss(all.map((v) => v.p), all.map((v) => v.y)), table: cal.table, eceLow: calLow.ece, tableLow: calLow.table } };
 }
 
 /** Affidabilità per livello di fiducia: campione (partite osservate) e incertezza del modello (sd media sui gol attesi). */
@@ -156,7 +156,7 @@ export function buildReport(rows, preds) {
   if (bet.n && evS.n) L.push(`Differenza BET − EVITA: **${pt(bet.rate - evS.rate)}** (${bet.rate - evS.rate >= 0.03 ? "la selezione aggiunge valore" : "la selezione NON separa i buoni dai cattivi"}). Rendimento teorico a quota di mercato = media campionato + margine: BET ${pc(bet.proxyRoi)}, EVITA ${pc(evS.proxyRoi)}.`, "");
 
   const gc = globalCalibration(preds);
-  L.push("## 2. Taratura di tutte le selezioni (ogni esito di ogni partita)", `Globale: ${gc.total.n} selezioni · ECE ${gc.total.ece.toFixed(3)} · Brier ${gc.total.brier.toFixed(3)} · ECE soglia prudente ${gc.total.eceLow.toFixed(3)}`, "",
+  L.push("## 2. Taratura di tutte le selezioni (ogni esito di ogni partita)", `Globale: ${gc.total.n} selezioni · ECE ${gc.total.ece.toFixed(3)} · Brier ${gc.total.brier.toFixed(3)} · log loss ${gc.total.logLoss.toFixed(3)} · ECE soglia prudente ${gc.total.eceLow.toFixed(3)}`, "",
     table(["Esito", "n", "Reale", "Dichiarato", "Scarto", "Brier skill", "Soglia prudente", "Reale − soglia"], gc.per.map((r) => [r.label, String(r.n), pc(r.rate), pc(r.claimed), pt(r.gap), r.skill == null ? "—" : pt(r.skill), pc(r.floor), pt(r.aboveFloor)])), "",
     "_Brier skill > 0 = meglio della semplice media del campionato; ≤ 0 = il modello non aggiunge nulla su quell'esito. «Reale − soglia» deve essere positivo: la soglia prudente è pensata per essere superata dalla percentuale reale; se è negativo, su quell'esito la prudenza non basta._", "",
     "### Curva di affidabilità (probabilità centrale)", table(["Fascia", "n", "Dichiarato", "Reale"], gc.total.table.filter((b) => b.n).map((b) => [`${pc(b.lo, 0)}–${pc(b.hi, 0)}`, String(b.n), pc(b.predicted), pc(b.observed)])), "");
