@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import { errorMessage, supabaseDelete, supabaseGetAll, supabasePatch, supabaseUpsert } from "../functions/api/_lib.js";
-import { createClient, DIRECT_BASE } from "../functions/api/_tennis-client.js";
+import { createClient, DIRECT_BASE, TennisApiError } from "../functions/api/_tennis-client.js";
 import { TOURS, normalizeUpcoming, normalizeResult, normalizeLive, normalizeRankingPage, normalizeMatchStats, normalizeTournamentFilters, readPage, readLiveFeed } from "../functions/api/_tennis-provider.js";
 import { RatingBook, predictMatch, normalizeSurface, inferBestOf, TENNIS_MODEL } from "../functions/api/_tennis-model.js";
 import { chronologicalBacktest, fitPlatt, groupSummary, MIN_RELIABLE_SAMPLE } from "../functions/api/_tennis-metrics.js";
@@ -67,13 +67,17 @@ export function resultRow(n, nowIso) {
 export const dedupe = (rows) => [...new Map(rows.map((r) => [r.match_key, r])).values()];
 
 const note = (meta, msg) => { (meta.errors ??= []).unshift({ at: new Date().toISOString(), message: String(msg).slice(0, 300) }); meta.errors.length = Math.min(meta.errors.length, 20); };
+/** Errore temporaneo del provider (5xx, 429, timeout, rete): non deve far saltare l'intero giro, lo si segnala e si va avanti. */
+export const isTransient = (e) => e instanceof TennisApiError && e.retryable === true;
 const lowQuota = (api) => api.stats.quota.remaining !== null && api.stats.quota.remaining < QUOTA_RESERVE;
 
 // ───────────── Passi ─────────────
 export async function fetchUpcoming(api, tours = TOURS, meta = {}) {
   const out = []; let dropped = 0;
   for (const tour of tours) {
-    const r = await api.paginate((p) => `/upcoming/matches/${tour}?group=singles&limit=50&pageNo=${p}`, readPage, { maxPages: CFG.upcomingPages });
+    let r;
+    try { r = await api.paginate((p) => `/upcoming/matches/${tour}?group=singles&limit=50&pageNo=${p}`, readPage, { maxPages: CFG.upcomingPages }); }
+    catch (e) { if (!isTransient(e)) throw e; note(meta, `programma ${tour}: ${errorMessage(e)}`); (meta.providerFailures ??= []).push(`programma ${tour}`); continue; }
     for (const w of r.warnings) note(meta, `programma ${tour}: ${w}`);
     for (const row of r.items) { const n = normalizeUpcoming(row, tour); if (n) out.push(n); else dropped++; }
     if (r.capped) { meta.capped = true; break; }
@@ -83,10 +87,13 @@ export async function fetchUpcoming(api, tours = TOURS, meta = {}) {
 }
 
 export async function fetchResults(api, dates, tours = TOURS, meta = {}) {
-  const out = []; let dropped = 0, doubles = 0;
+  const out = []; let dropped = 0, doubles = 0; const failedTours = new Set();
   for (const date of dates) for (const tour of tours) {
+    if (failedTours.has(tour)) continue; // il provider ha già risposto con un errore per questo circuito: niente altri tentativi in questo giro
     if (lowQuota(api) && date !== dates[0]) { note(meta, "quota quasi esaurita: risultati precedenti saltati"); return out; }
-    const r = await api.paginate((p) => `/${tour}/results/${date}?pageNo=${p}&pageSize=50`, readPage, { maxPages: CFG.resultPages });
+    let r;
+    try { r = await api.paginate((p) => `/${tour}/results/${date}?pageNo=${p}&pageSize=50`, readPage, { maxPages: CFG.resultPages }); }
+    catch (e) { if (!isTransient(e)) throw e; failedTours.add(tour); note(meta, `risultati ${tour} ${date}: ${errorMessage(e)}`); (meta.providerFailures ??= []).push(`risultati ${tour}`); continue; }
     for (const w of r.warnings) note(meta, `risultati ${tour} ${date}: ${w}`);
     for (const row of r.items) { const n = normalizeResult(row, tour); if (n) out.push(n); else if (Array.isArray(row?.player1?.members)) doubles++; else dropped++; }
     if (r.capped) { meta.capped = true; meta.results = { rows: out.length, dropped, doublesSkipped: doubles, dates: dates.length, capped: true }; return out; }
@@ -277,6 +284,12 @@ export async function runRefresh({ api, db, now }) {
   } catch (e) { meta.itfShadowError = String(e?.message ?? e).slice(0, 200); }
   meta.predictions = { total: rows.length, published: rows.filter((r) => r.published).length, abstained: rows.filter((r) => !r.published).length, bet: rows.filter((r) => r.bet?.verdict === "BET").length, historyMatches: history.length, calibrated: !!calibrator };
   await buildAndStoreSnapshot(db, now, { job: "refresh", api, jobMeta: meta });
+  // Giro parziale (es. un circuito in errore): resta valido, con l'avviso in meta.errors. Se il provider non ha dato nulla, il giro risulta fallito
+  // ma solo DOPO aver ricalcolato pronostici e snapshot dai dati già presenti, così l'app non resta ferma.
+  if (meta.providerFailures?.length) {
+    meta.partial = true;
+    if (!meta.results?.rows && !meta.upcoming?.rows) throw new TennisApiError(`Provider non raggiungibile (${meta.providerFailures.join(", ")}): dati non aggiornati`, { retryable: true });
+  }
   return meta;
 }
 
@@ -351,7 +364,7 @@ export async function runJob(mode, { api, db, now = Date.now(), days, dates }) {
     meta.quota = api.stats.quota; meta.requests = api.stats.requests; note(meta, msg);
     await recordUsage(db, api, now).catch(() => {});
     await finish(db, job.id, Date.now(), { ok: false, error: msg, meta }).catch(() => {});
-    return { ok: false, error: msg, meta };
+    return { ok: false, error: msg, meta, transient: isTransient(e) };
   }
 }
 
@@ -363,9 +376,11 @@ async function main() {
   const days = Math.max(1, Math.min(400, Number(process.env.BACKFILL_DAYS) || 30));
   const dates = String(process.env.BACKFILL_DATES ?? "").split(/[,\s]+/).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
   const res = await runJob(mode, { api, db: makeDb(process.env), days, dates });
-  const line = res.skipped ? `Saltato: ${res.skipped}` : res.ok ? `OK ${mode}: ${api.stats.requests} richieste, quota residua ${api.stats.quota.remaining ?? "n.d."}` : `ERRORE ${mode}: ${res.error}`;
+  const partial = res.ok && res.meta?.partial ? ` — PARZIALE: ${(res.meta.providerFailures ?? []).join(", ")} non raggiungibile` : "";
+  const line = res.skipped ? `Saltato: ${res.skipped}` : res.ok ? `OK ${mode}: ${api.stats.requests} richieste, quota residua ${api.stats.quota.remaining ?? "n.d."}${partial}` : res.transient ? `AVVISO ${mode}: il provider non risponde (${res.error}); riprova al prossimo giro` : `ERRORE ${mode}: ${res.error}`;
   console.log(line);
+  if (process.env.GITHUB_ACTIONS && (res.transient || partial)) console.log(`::warning::${line}`);
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Tennis — ${mode}\n${line}\n\n\`\`\`json\n${JSON.stringify(res.meta, null, 2).slice(0, 4000)}\n\`\`\`\n`);
-  process.exit(res.ok ? 0 : 1);
+  process.exit(res.ok || res.transient ? 0 : 1); // un errore temporaneo del provider resta scritto in tennis_sync_state ma non manda in rosso il workflow
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
