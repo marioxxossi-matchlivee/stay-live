@@ -26,6 +26,17 @@ Regole che restano: nessuna scrittura sul database di produzione da questo lavor
 ## Finding critico sui dati (da confermare con l'audit, NON ancora corretto)
 **Il motore legge solo le prime 80.000 partite concluse.** `loadHistory` (`scripts/tennis-sync.js`) usa `getAll(..., 1000, 80)` con ordine cronologico crescente. Le partite concluse negli ultimi 400 giorni sono **96.211**: ne restano fuori **16.194**, tutte le più recenti (dopo il 25/09/2026). Il backtest statico lo conferma (`history: 80000`). Conseguenza: i rating Elo e la forma ignorano circa 8 settimane di risultati; il mercato li conosce. Verificato su Supabase in sola lettura. Candidato n. 1 come causa dei grandi scarti modello−mercato, specie nei circuiti minori dove i giocatori cambiano forma in fretta. È una modifica ai dati d'ingresso del motore: va provata in Shadow Mode come esperimento isolato, non applicata direttamente.
 
+## Risultati del primo audit (18/11/2026, 96.240 partite, 36.355 con quote di chiusura)
+Proxy dichiarato: quote di CHIUSURA di bookmaker non identificato; rigioco Elo+forma **non calibrato** e senza requisito di affidabilità riproducibile. I ROI sono quindi pessimistici in assoluto; contano di più calibrazione e Brier relativi al mercato.
+1. **Il Brier del modello è peggiore di quello del mercato in tutte le fasce** (es. 2,00–3,00: 0,2686 contro 0,2317; 5,00–10,00: 0,1387 contro 0,0821). Nessuna evidenza di un vantaggio informativo sul mercato.
+2. **Il modello è troppo «piatto»**: sovrastima gli sfavoriti (quote 3–5: 38,4% previsto, 21,2% reale; 5–10: 29,6% contro 8,9%; oltre 10: 24,4% contro 1,7%) e sottostima i grandi favoriti (sotto 1,20: 68,4% contro 88,9%). Per questo trova «valore» sulle quote alte per costruzione. ECE 0,15–0,23 in tutte le fasce.
+3. **Le selezioni con le regole attuali (869) perdono**: ROI circa −18% (sfavoriti −20,2%, favoriti −14,9%); il modello sovrastima di 11 punti sugli sfavoriti e di 15,7 sui favoriti scelti. **Uno scarto maggiore dal mercato non migliora il risultato** (8–12 pt: −25%, 12–15 pt: −10%): sono errori del modello, non valore.
+4. **Esperimento A (rating congelati contro aggiornati)**: i rating aggiornati migliorano Brier (0,2146→0,2105) ed ECE (0,034→0,013) e il ROI delle selezioni (−13,5%→−8,9%), ma restano peggiori del mercato (Brier 0,1764) e perdenti. La mancata lettura delle ultime 16.194 partite è un difetto reale ma **non la causa principale**. Le probabilità cambiano in media di 6,5 punti tra le due versioni.
+5. **Buco dell'audit**: nelle selezioni compaiono solo ATP/WTA Tour; ITF e Challenger sono vuoti perché nel rigioco l'affidabilità «alta» richiesta dalle categorie rigide non è riproducibile. Il filtro ITF 8 punti non è stato valutato. Aggiunti: tabella calibrazione per categoria su tutti i lati e selezioni senza requisito di affidabilità.
+6. **Classificazione**: 2.613 partite WTA restano «CHALLENGER/ITF NON DISTINTO» (2,7%); i livelli W15…W100 e M15/M25 sono distinti correttamente.
+
+**Lettura**: il modello ha un potere informativo inferiore al mercato; i disaccordi sono in gran parte errori del modello. Direzione di progetto (da validare): non usare la probabilità grezza ma una **probabilità rimodulata sul mercato**, adattata walk-forward (c = peso dell'informazione del modello oltre il mercato). L'audit ora la stima (sezione «Il modello aggiunge qualcosa al mercato?») e applica le stesse soglie alla probabilità rimodulata: se non resta nessuna selezione, il sistema deve astenersi.
+
 ## Casi da ricostruire
 Cinque selezioni registrate in `tennis_strategy_picks` (tutte ITF, nessuna ancora conclusa): Cirpanli 17,48 (P 18,2% / mercato 5,5%), Tailleu 12,22 (21,4% / 7,8%), Peet 6,05 (33,1% / 18,9%), Vrancken Peeters 4,25 (43,9% / 29,3%), Novak 6,25 (29,4% / 15,2%). Dati coerenti con i valori indicati dall'utente. Storico prospettico della strategia: 5 giocate, 1 esecuzione, quindi **nessun risultato storico utilizzabile**: l'analisi storica usa il rigioco cronologico con le quote di chiusura (proxy, dichiarato).
 
@@ -45,7 +56,7 @@ Nuovi: `scripts/tennis-strategy-audit.js`, `.github/workflows/tennis-strategy-au
 Suite completa `node --test`: tutti superati (il fallimento precedente era la migrazione shadow mancante, ora presente). Audit: 9 test.
 
 ## Prossimo passo preciso
-1. Lanciare a mano il workflow «Tennis — audit Strategy Center» e leggere il riepilogo (fasce di quota, ROI, Brier, ECE, scarto per categoria, ITF ≤8 vs >8).
+1. ~~Primo audit~~ **fatto** (risultati sopra). Rilanciare il workflow dopo l'aggiornamento dello script e leggere le nuove sezioni: calibrazione per categoria, ITF/Challenger senza requisito di affidabilità, regressione sul mercato.
 2. Con quei numeri, esperimento isolato A: stesso rigioco con la storia completa (senza tetto di 80 pagine) per misurare quanto cambia lo scarto dal mercato. Poi, uno alla volta e in Shadow Mode: B) quota di riferimento coerente (stesso book per EV e mercato) e controllo outlier; C) tetto di scarto e filtro ITF sul lato selezionato; D) classi A/B/C/D.
 3. ~~Riaggiungere la migrazione mancante dello shadow ITF~~ **Fatto**: `supabase/migrations/202611180001_tennis_itf_shadow.sql`, ricostruita dallo schema reale di produzione, idempotente (la tabella esiste già: non va eseguita a mano).
 
