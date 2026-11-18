@@ -14,6 +14,7 @@ import { pathToFileURL } from "node:url";
 import { supabaseGetAll } from "../functions/api/_lib.js";
 import { RatingBook, predictMatch, normalizeSurface, TENNIS_MODEL } from "../functions/api/_tennis-model.js";
 import { TENNIS_BET, noVig } from "../functions/api/_tennis-bet.js";
+import { STRATEGY2, classifySide, adjustProbability } from "../functions/api/_tennis-strategy2.js";
 
 export const BANDS = [[1.2, 1.5, "1,20–1,50"], [1.5, 2, "1,50–2,00"], [2, 3, "2,00–3,00"], [3, 5, "3,00–5,00"], [5, 10, "5,00–10,00"], [10, Infinity, "oltre 10,00"]];
 export const bandOf = (odds) => BANDS.find(([a, b]) => odds >= a && odds < b)?.[2] ?? "sotto 1,20";
@@ -37,12 +38,13 @@ const EPS = 1e-6, clip = (p) => Math.min(1 - EPS, Math.max(EPS, p));
 /** rows: { p (probabilità del lato), y (1 vince), odds, mkt }. ROI a puntata fissa 1 sulle quote del lato. */
 export function summarizeSides(rows) {
   const n = rows.length; if (!n) return { n: 0 };
+  const prof = rows.map((x) => (x.y ? x.odds - 1 : -1)), mProf = sum(prof, (z) => z) / n, roiSe = n > 1 ? r(Math.sqrt(sum(prof, (z) => (z - mProf) ** 2) / (n - 1) / n)) : null;
   const wins = sum(rows, (x) => x.y), withOdds = rows.filter((x) => x.odds > 1), cal = [];
   for (let i = 0; i < 10; i++) { const b = rows.filter((x) => x.p >= i / 10 && x.p < (i + 1) / 10 + (i === 9 ? 1e-9 : 0)); if (b.length) cal.push({ from: i / 10, n: b.length, meanP: r(sum(b, (x) => x.p) / b.length), hit: r(sum(b, (x) => x.y) / b.length) }); }
   const ece = cal.reduce((s, b) => s + (b.n / n) * Math.abs(b.meanP - b.hit), 0);
   return {
     n, wins, hitRate: r(wins / n), avgP: r(sum(rows, (x) => x.p) / n), avgMarket: r(sum(rows, (x) => x.mkt) / n), avgOdds: withOdds.length ? r(sum(withOdds, (x) => x.odds) / withOdds.length, 2) : null,
-    avgEv: r(sum(rows, (x) => x.p * x.odds - 1) / n), roi: r(sum(rows, (x) => (x.y ? x.odds - 1 : -1)) / n), brierModel: r(sum(rows, (x) => (x.p - x.y) ** 2) / n), brierMarket: r(sum(rows, (x) => (x.mkt - x.y) ** 2) / n),
+    avgEv: r(sum(rows, (x) => x.p * x.odds - 1) / n), roi: r(sum(rows, (x) => (x.y ? x.odds - 1 : -1)) / n), roiSe, brierModel: r(sum(rows, (x) => (x.p - x.y) ** 2) / n), brierMarket: r(sum(rows, (x) => (x.mkt - x.y) ** 2) / n),
     logLossModel: r(sum(rows, (x) => -(x.y ? Math.log(clip(x.p)) : Math.log(clip(1 - x.p)))) / n), ece: r(ece), calibration: cal,
     calibrationGapPt: r((sum(rows, (x) => x.y) / n - sum(rows, (x) => x.p) / n) * 100, 2),
   };
@@ -90,7 +92,7 @@ export function analyze(sides) {
   return {
     allSides: summarizeSides(sides),
     allByBand: groupBy(sides, (x) => bandOf(x.odds)),
-    allByCategory: groupBy(sides, (x) => x.label),
+    allByCategory: groupBy(sides.filter((x) => x.p >= 0.5), (x) => x.label),
     allByGapBand: groupBy(sides.filter((x) => passesCurrentRules({ ...x, gap: 0 })), (x) => gapOf(x.gap)),
     currentRules: { selections: summarizeSides(eligible), byBand: groupBy(eligible, (x) => bandOf(x.odds)), byUnderdog: groupBy(eligible, (x) => (x.isUnderdog ? "sfavorito (modello)" : "favorito (modello)")), byCategory: groupBy(eligible, (x) => x.label), byGapBand: groupBy(eligible, (x) => gapOf(x.gap)) },
     itf8: { kept: summarizeSides(itf.filter((x) => x.gap * 100 <= 8)), excluded: summarizeSides(itf.filter((x) => x.gap * 100 > 8)), threshold: 8 },
@@ -150,6 +152,36 @@ export function walkForwardVsMarket(sides, { minTrainMonths = 3, minOdds = TENNI
   return { matches: rows.length, testedMatches: test.length, firstTestMonth: months[minTrainMonths] ?? null, full: full && { a: full.a, b: full.b, c: full.c, seC: full.seC }, byLabel, brier: { model: brier((x) => x.p), market: brier((x) => x.mkt), adjusted: brier((x) => x.q) }, adjustedSelections: { n, wins, roi: n ? r(profit / n) : null, avgOdds: n ? r(oddsSum / n, 2) : null } };
 }
 
+
+/**
+ * Strategy Center 2.0 sperimentale, walk-forward: per ogni mese, rimodulazione e prova per categoria adattate SOLO ai mesi precedenti;
+ * poi classe A/B/C/D (functions/api/_tennis-strategy2.js) per ciascun lato; si gioca al massimo un lato per partita (quello con vantaggio maggiore tra A/B/C).
+ * Confronto con le regole attuali sulla STESSA finestra temporale.
+ */
+export function strategy2WalkForward(sides, cfg = STRATEGY2) {
+  const byKey = new Map(); for (const s of sides) (byKey.get(s.key) ?? byKey.set(s.key, {}).get(s.key))[s.slot] = s;
+  const rows = [...byKey.values()].filter((m) => m[1] && m[2]).map((m) => ({ key: m[1].key, t: m[1].t, label: m[1].label, x1: lg(m[1].mkt), x2: lg(m[1].p) - lg(m[1].mkt), y: m[1].y, p: m[1].p, mkt: m[1].mkt, o: [m[1].odds, m[2].odds], rel: m[1].reliability })).sort((a, b) => a.t - b.t);
+  const months = [...new Set(rows.map((x) => monthOf(x.t)))].sort(), picks = { A: [], B: [], C: [] }, dReasons = {}; let dSides = 0, tested = 0;
+  for (let k = cfg.minTrainMonths; k < months.length; k++) {
+    const train = rows.filter((x) => monthOf(x.t) < months[k]), fit = fitLogit(train); if (!fit) continue;
+    const ev = {}; for (const l of new Set(train.map((x) => x.label))) { const v = train.filter((x) => x.label === l); if (v.length >= cfg.minCategoryN) { const f = fitLogit(v); if (f) ev[l] = { c: f.c, se: f.seC }; } }
+    for (const x of rows.filter((z) => monthOf(z.t) === months[k])) {
+      tested++; const q = adjustProbability(fit, x.p, x.mkt), best = [];
+      for (const s of [1, 2]) {
+        const pm = s === 1 ? x.p : 1 - x.p, mk = s === 1 ? x.mkt : 1 - x.mkt, pa = s === 1 ? q : 1 - q, o = x.o[s - 1];
+        const c = classifySide({ pAdj: pa, pModel: pm, mkt: mk, odds: o, reliability: x.rel, evidence: ev[x.label] }, cfg);
+        if (c.tier === "D") { dSides++; dReasons[c.reasons[0]] = (dReasons[c.reasons[0]] ?? 0) + 1; continue; }
+        best.push({ tier: c.tier, edge: c.edge, p: pa, odds: o, mkt: mk, y: s === 1 ? x.y : 1 - x.y, label: x.label, isUnderdog: pa < 0.5 });
+      }
+      best.sort((a, b) => b.edge - a.edge); if (best[0]) picks[best[0].tier].push(best[0]);
+    }
+  }
+  const t0 = months[cfg.minTrainMonths] ? Date.parse(`${months[cfg.minTrainMonths]}-01T00:00:00Z`) : Infinity;
+  const current = pickBestPerMatch(sides.filter((x) => x.t >= t0 && passesCurrentRules(x, TENNIS_BET, { ignoreReliability: true })));
+  const all = [...picks.A, ...picks.B, ...picks.C];
+  return { firstTestMonth: months[cfg.minTrainMonths] ?? null, testedMatches: tested, tiers: { A: summarizeSides(picks.A), B: summarizeSides(picks.B), C: summarizeSides(picks.C), "A+B": summarizeSides([...picks.A, ...picks.B]), "A+B+C": summarizeSides(all) }, underdogShare: { "A+B+C": all.length ? r(all.filter((x) => x.isUnderdog).length / all.length) : null, regoleAttuali: current.length ? r(current.filter((x) => x.isUnderdog).length / current.length) : null }, discardedSides: dSides, discardReasons: dReasons, currentRulesSameWindow: summarizeSides(current), byCategoryAB: groupBy([...picks.A, ...picks.B], (x) => x.label) };
+}
+
 /**
  * ESPERIMENTO A (isolato, solo audit): oggi il motore legge le prime 80.000 partite concluse e ignora le più recenti (tetto di 80 pagine).
  * Qui si confrontano, sulle SOLE partite successive al punto di taglio, i rating congelati al taglio (come il motore attuale) con rating aggiornati ogni giorno.
@@ -169,6 +201,8 @@ export function staleExperiment(matches, cutoffMs) {
   return { available: true, cutoff: new Date(cutoffMs).toISOString(), comparedSides: A.length, onlyFrozen: fz.length - A.length, onlyFresh: fr.length - A.length, pDiffMeanPt, frozen: one(A), fresh: one(B) };
 }
 
+const s2Md = (w) => `\n### Strategy Center 2.0 sperimentale — walk-forward da ${w.firstTestMonth} su ${w.testedMatches} partite (classi A/B/C/D, soglie fissate a priori)\n| classe | selezioni | vinte | quota media | P rimodulata | ROI | ± 2 err. std. |\n|---|---|---|---|---|---|---|\n${Object.entries(w.tiers).map(([k, v]) => `| ${k} | ${v.n} | ${v.wins ?? 0} | ${v.avgOdds ?? ""} | ${v.avgP ?? ""} | ${v.roi ?? ""} | ${v.roiSe != null ? r(2 * v.roiSe) : ""} |`).join("\n")}\n| regole ATTUALI, stessa finestra | ${w.currentRulesSameWindow.n} | ${w.currentRulesSameWindow.wins ?? 0} | ${w.currentRulesSameWindow.avgOdds ?? ""} | ${w.currentRulesSameWindow.avgP ?? ""} | ${w.currentRulesSameWindow.roi ?? ""} | ${w.currentRulesSameWindow.roiSe != null ? r(2 * w.currentRulesSameWindow.roiSe) : ""} |\nQuota di sfavoriti (P<50%): nuova A+B+C ${w.underdogShare["A+B+C"]}, regole attuali ${w.underdogShare.regoleAttuali}. Lati scartati (D): ${w.discardedSides}; motivi principali: ${Object.entries(w.discardReasons).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join("; ")}. Classi A+B per categoria: ${Object.entries(w.byCategoryAB).map(([k, v]) => `${k} ${v.n}`).join("; ") || "nessuna"}.\n`;
+
 const marketMd = (m) => `\n### Il modello aggiunge qualcosa al mercato? (walk-forward, mesi successivi a ${m.firstTestMonth})\nCoefficiente c: 0 = nessuna informazione oltre il mercato, 1 = piena. Tutto il campione: c = ${m.full?.c} ± ${m.full?.seC} (b = ${m.full?.b}). Per categoria: ${Object.entries(m.byLabel).map(([k, v]) => `${k} c=${v?.c}±${v?.seC} (n=${v?.n})`).join("; ")}.\nBrier su ${m.testedMatches} partite: modello ${m.brier.model}, mercato ${m.brier.market}, modello rimodulato sul mercato ${m.brier.adjusted}. Con la probabilità rimodulata e le stesse soglie: ${m.adjustedSelections.n} selezioni, ${m.adjustedSelections.wins} vinte, ROI ${m.adjustedSelections.roi}, quota media ${m.adjustedSelections.avgOdds}.\n`;
 
 async function main() {
@@ -180,12 +214,12 @@ async function main() {
   const cats = Object.fromEntries(Object.entries(ok.reduce((o, m) => ((o[competitionLabel(m.tour, m.category, m.tournament)] = (o[competitionLabel(m.tour, m.category, m.tournament)] ?? 0) + 1), o), {})).sort((a, b) => b[1] - a[1]));
   const sides = replay(ok);
   const CAP = 80000, cutoffMs = ok.length > CAP ? Date.parse(ok[CAP - 1].starts_at) : null;
-  const rep = { generatedAt: new Date().toISOString(), engine: TENNIS_MODEL.version, matchesLoaded: ok.length, firstMatch: ok[0]?.starts_at ?? null, lastMatch: ok.at(-1)?.starts_at ?? null, matchesWithClosingOdds: new Set(sides.map((s) => s.key)).size, classification: cats, limits: "Quote di CHIUSURA (non quelle al momento della previsione); rigioco Elo+forma senza statistiche di servizio, H2H, ranking.", ...analyze(sides), experimentA: staleExperiment(ok, cutoffMs), relaxed: analyzeRelaxed(sides), market: walkForwardVsMarket(sides) };
+  const rep = { generatedAt: new Date().toISOString(), engine: TENNIS_MODEL.version, matchesLoaded: ok.length, firstMatch: ok[0]?.starts_at ?? null, lastMatch: ok.at(-1)?.starts_at ?? null, matchesWithClosingOdds: new Set(sides.map((s) => s.key)).size, classification: cats, limits: "Quote di CHIUSURA (non quelle al momento della previsione); rigioco Elo+forma senza statistiche di servizio, H2H, ranking.", ...analyze(sides), experimentA: staleExperiment(ok, cutoffMs), relaxed: analyzeRelaxed(sides), market: walkForwardVsMarket(sides), strategy2: strategy2WalkForward(sides) };
   fs.mkdirSync("audit-out", { recursive: true });
   fs.writeFileSync("audit-out/tennis-strategy-audit.json", JSON.stringify(rep, null, 2));
   const row = (k, v) => `| ${k} | ${v.n} | ${v.avgP ?? ""} | ${v.hitRate ?? ""} | ${v.calibrationGapPt ?? ""} | ${v.avgEv ?? ""} | ${v.roi ?? ""} | ${v.brierModel ?? ""} | ${v.brierMarket ?? ""} | ${v.ece ?? ""} |`;
   const table = (t, o) => `\n### ${t}\n| gruppo | n | P modello | vittorie | scarto pt | EV medio | ROI | Brier mod. | Brier merc. | ECE |\n|---|---|---|---|---|---|---|---|---|---|\n${Object.entries(o).map(([k, v]) => row(k, v)).join("\n")}\n`;
-  const md = `## Audit Strategy Center (sola lettura)\nPartite: ${rep.matchesLoaded} (${rep.firstMatch} → ${rep.lastMatch}); con quote di chiusura: ${rep.matchesWithClosingOdds}.\n> ${rep.limits}\n${table("Tutti i lati per fascia di quota", rep.allByBand)}${table("Selezioni con le regole ATTUALI, per fascia", rep.currentRules.byBand)}${table("Selezioni attuali: favoriti/sfavoriti", rep.currentRules.byUnderdog)}${table("Selezioni attuali per scarto modello−mercato", rep.currentRules.byGapBand)}${table("Selezioni attuali per categoria", rep.currentRules.byCategory)}${table("TUTTI i lati per categoria (calibrazione per circuito)", rep.allByCategory)}${table("Selezioni attuali SENZA requisito di affidabilità, per categoria", rep.relaxed.byCategory)}${table("Idem: favoriti/sfavoriti", rep.relaxed.byUnderdog)}${table("Idem: filtro ITF 8 punti", { "ITF mantenute (≤8)": rep.relaxed.itf8.kept, "ITF escluse (>8)": rep.relaxed.itf8.excluded })}${marketMd(rep.market)}${table("Filtro ITF 8 punti (rigioco)", { "ITF mantenute (≤8)": rep.itf8.kept, "ITF escluse (>8)": rep.itf8.excluded })}${rep.experimentA.available ? table(`Esperimento A — dopo il ${rep.experimentA.cutoff.slice(0, 10)}: rating congelati (come oggi) contro aggiornati`, { "congelati: tutti i lati": rep.experimentA.frozen.sides, "aggiornati: tutti i lati": rep.experimentA.fresh.sides, "congelati: selezioni attuali": rep.experimentA.frozen.selections, "aggiornati: selezioni attuali": rep.experimentA.fresh.selections }) + `\nScarto medio assoluto modello−mercato (punti): congelati ${rep.experimentA.frozen.meanAbsGapPt}, aggiornati ${rep.experimentA.fresh.meanAbsGapPt}. Quota media delle selezioni: ${rep.experimentA.frozen.selectionsAvgOdds} contro ${rep.experimentA.fresh.selectionsAvgOdds}. Differenza media assoluta di probabilità tra le due versioni: ${rep.experimentA.pDiffMeanPt} punti su ${rep.experimentA.comparedSides} lati (solo in una versione: ${rep.experimentA.onlyFrozen} congelati, ${rep.experimentA.onlyFresh} aggiornati).\n` : `\nEsperimento A: ${rep.experimentA.reason}\n`}\n### Classificazione tornei\n${Object.entries(cats).map(([k, v]) => `- ${k}: ${v}`).join("\n")}\n`;
+  const md = `## Audit Strategy Center (sola lettura)\nPartite: ${rep.matchesLoaded} (${rep.firstMatch} → ${rep.lastMatch}); con quote di chiusura: ${rep.matchesWithClosingOdds}.\n> ${rep.limits}\n${table("Tutti i lati per fascia di quota", rep.allByBand)}${table("Selezioni con le regole ATTUALI, per fascia", rep.currentRules.byBand)}${table("Selezioni attuali: favoriti/sfavoriti", rep.currentRules.byUnderdog)}${table("Selezioni attuali per scarto modello−mercato", rep.currentRules.byGapBand)}${table("Selezioni attuali per categoria", rep.currentRules.byCategory)}${table("Favoriti del modello (P ≥ 50%) per categoria: calibrazione per circuito", rep.allByCategory)}${table("Selezioni attuali SENZA requisito di affidabilità, per categoria", rep.relaxed.byCategory)}${table("Idem: favoriti/sfavoriti", rep.relaxed.byUnderdog)}${table("Idem: filtro ITF 8 punti", { "ITF mantenute (≤8)": rep.relaxed.itf8.kept, "ITF escluse (>8)": rep.relaxed.itf8.excluded })}${marketMd(rep.market)}${s2Md(rep.strategy2)}${table("Filtro ITF 8 punti (rigioco)", { "ITF mantenute (≤8)": rep.itf8.kept, "ITF escluse (>8)": rep.itf8.excluded })}${rep.experimentA.available ? table(`Esperimento A — dopo il ${rep.experimentA.cutoff.slice(0, 10)}: rating congelati (come oggi) contro aggiornati`, { "congelati: tutti i lati": rep.experimentA.frozen.sides, "aggiornati: tutti i lati": rep.experimentA.fresh.sides, "congelati: selezioni attuali": rep.experimentA.frozen.selections, "aggiornati: selezioni attuali": rep.experimentA.fresh.selections }) + `\nScarto medio assoluto modello−mercato (punti): congelati ${rep.experimentA.frozen.meanAbsGapPt}, aggiornati ${rep.experimentA.fresh.meanAbsGapPt}. Quota media delle selezioni: ${rep.experimentA.frozen.selectionsAvgOdds} contro ${rep.experimentA.fresh.selectionsAvgOdds}. Differenza media assoluta di probabilità tra le due versioni: ${rep.experimentA.pDiffMeanPt} punti su ${rep.experimentA.comparedSides} lati (solo in una versione: ${rep.experimentA.onlyFrozen} congelati, ${rep.experimentA.onlyFresh} aggiornati).\n` : `\nEsperimento A: ${rep.experimentA.reason}\n`}\n### Classificazione tornei\n${Object.entries(cats).map(([k, v]) => `- ${k}: ${v}`).join("\n")}\n`;
   console.log(md.slice(0, 6000));
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
 }
