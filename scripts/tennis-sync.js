@@ -16,9 +16,11 @@ import { errorMessage, supabaseDelete, supabaseGetAll, supabasePatch, supabaseUp
 import { createClient, DIRECT_BASE } from "../functions/api/_tennis-client.js";
 import { TOURS, normalizeUpcoming, normalizeResult, normalizeLive, normalizeRankingPage, normalizeMatchStats, normalizeTournamentFilters, readPage, readLiveFeed } from "../functions/api/_tennis-provider.js";
 import { RatingBook, predictMatch, normalizeSurface, inferBestOf, TENNIS_MODEL } from "../functions/api/_tennis-model.js";
-import { chronologicalBacktest, fitPlatt, MIN_RELIABLE_SAMPLE } from "../functions/api/_tennis-metrics.js";
+import { chronologicalBacktest, fitPlatt, groupSummary, MIN_RELIABLE_SAMPLE } from "../functions/api/_tennis-metrics.js";
 import { evaluateBet } from "../functions/api/_tennis-bet.js";
 import { buildBoard } from "../functions/api/_tennis-snapshot.js";
+import { buildStrategy } from "../functions/api/_tennis-strategy.js";
+import { planRecords, buildStrategyHistory } from "../functions/api/_tennis-strategy-track.js";
 
 const H = 3600e3, DAY = 24 * H;
 export const LIMITS = { live: 6, refresh: 160, static: 450, backfill: 6000 };   // richieste massime per giro (la quota mensile è 200.000)
@@ -145,6 +147,41 @@ export function computePredictions({ matches, book, stats, ranks, calibrator, no
   return rows;
 }
 
+// ───────────── Strategy Center: registrazione prospettica e storico (solo Supabase, nessuna richiesta al provider) ─────────────
+/** Registra le giocate della strategia PRIMA dell'inizio (primo momento utile, poi immutabili). Un errore qui non ferma mai il giro. */
+export async function recordStrategy(db, payload, now, meta = {}) {
+  const strategy = buildStrategy(payload.matches, { range: "d7", tour: "all", now, calibration: payload.history?.backtest ?? null });
+  const since = iso(now - 1 * H);
+  const [picks, doubles] = await Promise.all([
+    db.getAll("tennis_strategy_picks", { select: "match_key", starts_at: `gte.${since}` }, 1000, 5),
+    db.getAll("tennis_strategy_doubles", { select: "pair_key,leg1_match_key,leg2_match_key", starts_at: `gte.${since}` }, 1000, 5),
+  ]);
+  const existing = { pickKeys: new Set(picks.map((r) => r.match_key)), doubleLegKeys: new Set(doubles.flatMap((r) => [r.leg1_match_key, r.leg2_match_key])), doublePairs: new Set(doubles.map((r) => r.pair_key)) };
+  const rec = planRecords(strategy, existing, now);
+  await db.upsert("tennis_strategy_runs", [rec.run], "id");
+  await db.upsert("tennis_strategy_picks", rec.picks, "match_key");
+  await db.upsert("tennis_strategy_doubles", rec.doubles, "pair_key");
+  meta.strategy = { analyzed: strategy.dashboard.analyzed, evaluable: strategy.dashboard.evaluable, value: strategy.dashboard.valueFound, selected: strategy.dashboard.singles, double: strategy.dashboard.double, newPicks: rec.picks.length, newDoubles: rec.doubles.length };
+  return rec;
+}
+
+/** Storico delle strategie dalle sole righe registrate + esiti delle partite (lette dal database). */
+const inList = (ks) => `in.(${ks.map((k) => `"${String(k).split("\"").join("\\\"")}"`).join(",")})`; // filtro PostgREST: valori tra virgolette, virgolette interne con barra rovesciata
+export async function loadStrategyHistory(db) {
+  const [picks, doubles] = await Promise.all([
+    db.getAll("tennis_strategy_picks", { select: "*", order: "starts_at.desc" }, 1000, 10),
+    db.getAll("tennis_strategy_doubles", { select: "*", order: "starts_at.desc" }, 1000, 10),
+  ]);
+  const keys = [...new Set([...picks.map((r) => r.match_key), ...doubles.flatMap((r) => [r.leg1_match_key, r.leg2_match_key])])];
+  const matches = new Map();
+  for (let i = 0; i < keys.length; i += 40) {
+    const part = keys.slice(i, i + 40);
+    const rows = await db.getAll("tennis_matches", { select: "match_key,status,winner,score", match_key: inList(part) }, 1000, 1);
+    for (const r of rows) matches.set(r.match_key, r);
+  }
+  return buildStrategyHistory({ picks, doubles, matches });
+}
+
 const mapBy = (rows, key) => new Map(rows.map((r) => [typeof key === "function" ? key(r) : r[key], r]));
 
 /** Ricostruisce la snapshot dall'ultimo stato del database e la salva. */
@@ -173,6 +210,13 @@ export async function buildAndStoreSnapshot(db, now, meta = {}) {
     ctx.sync.set(meta.job, { ...row, last_ok: iso(now), last_started: row.last_started ?? iso(now), meta: { ...(row.meta ?? {}), ...(meta.jobMeta ?? {}), quota: meta.api.stats.quota, requests: meta.api.stats.requests } });
   }
   const payload = buildBoard(ctx);
+  // Strategy Center: registrazione (solo nel giro «refresh», che rilegge le quote) e storico. Se le tabelle non esistono ancora
+  // (migrazione non eseguita) o Supabase risponde con un errore, il giro continua: pronostici e snapshot non ne risentono.
+  if (meta.job === "refresh") {
+    try { await recordStrategy(db, payload, now, meta.jobMeta ?? (meta.jobMeta = {})); }
+    catch (e) { (meta.jobMeta ??= {}).strategyError = String(e?.message ?? e).slice(0, 200); }
+  }
+  try { payload.strategy = await loadStrategyHistory(db); } catch (e) { payload.strategy = { unavailable: true, reason: String(e?.message ?? e).slice(0, 200) }; }
   await db.upsert("tennis_snapshot", [{ id: "board", payload, meta: { matches: payload.matches.length, builtBy: meta.job ?? null }, built_at: iso(now) }], "id");
   return { matches: payload.matches.length };
 }
@@ -264,7 +308,9 @@ export async function runStatic({ api, db, now }) {
   const history = await loadHistory(db, now);
   const bt = chronologicalBacktest(history, { warmup: 0 });
   const calibrator = bt.published.length >= MIN_RELIABLE_SAMPLE ? fitPlatt(bt.published.map((r) => ({ p: r.p, y: r.y }))) : null;
-  const payload = { at: iso(now), matches: history.length, predicted: bt.rows.length, published: bt.published.length, abstained: bt.abstained, summary: bt.summary, verdict: bt.verdict, calibrator, modelVersion: TENNIS_MODEL.version };
+  const seg = bt.published.map((r) => ({ p: r.p, y: r.y, tour: r.tour, surface: r.surface }));
+  const payload = { at: iso(now), matches: history.length, predicted: bt.rows.length, published: bt.published.length, abstained: bt.abstained, summary: bt.summary, verdict: bt.verdict, calibrator, modelVersion: TENNIS_MODEL.version,
+    byTour: groupSummary(seg, (r) => r.tour), bySurface: groupSummary(seg, (r) => r.surface) }; // campioni per circuito e superficie: li usa lo Strategy Engine per dichiarare cosa è validato
   await db.upsert("tennis_snapshot", [{ id: "backtest", payload, meta: { n: bt.published.length }, built_at: iso(now) }], "id");
   meta.backtest = { history: history.length, published: bt.published.length, verdict: bt.verdict, calibrated: !!calibrator };
   await buildAndStoreSnapshot(db, now, { job: "static", api, jobMeta: meta });
