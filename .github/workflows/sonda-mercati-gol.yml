@@ -1,0 +1,29 @@
+name: Sonda mercati gol (Multigol)
+
+# Sola lettura: elenca i mercati di API-Football (1 credito) e, se indichi una partita, quali mercati sui gol sono quotati e da quanti bookmaker.
+# Serve a capire se esiste un mercato simile al Multigol. Prova anche con una partita GIÀ FINITA per vedere se lo storico delle quote è ancora disponibile.
+# Si avvia a mano: Actions → "Sonda mercati gol (Multigol)" → Run workflow. Secret: API_FOOTBALL_KEY.
+on:
+  workflow_dispatch:
+    inputs:
+      fixture:
+        description: "ID API-Football di una partita (facoltativo; anche già finita)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Sonda
+        env:
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          FIXTURE: ${{ inputs.fixture }}
+        run: node scripts/goals-markets-probe.js "$FIXTURE" | tee -a "$GITHUB_STEP_SUMMARY"
