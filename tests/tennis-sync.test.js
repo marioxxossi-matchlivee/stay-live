@@ -199,3 +199,39 @@ test("storico del modello: solo conclusi regolarmente con vincitore", async () =
   const h = await loadHistory(db, NOW); assert.equal(h.length, 2); assert.deepEqual([h[0].winnerId, h[0].loserId, h[1].winnerId], ["1", "2", "5"]);
 });
 test("buildBook: aggiornamento in ordine", () => { const b = buildBook([{ t: 1, winnerId: "a", loserId: "b", surface: "Hard" }]); assert.ok(b.view("a", "hard").elo > b.view("b", "hard").elo); });
+
+// ── Provider con errori 502 (caso reale del 18/11/2026: risultati ATP di oggi e feed live in errore, il resto funzionava) ──
+const flakyClient = (bad) => { const ok = fakeFetch(routes()); return createClient({ key: "SEGRETO-XYZ", fetchImpl: async (u, o) => (bad.test(String(u)) ? new Response("Bad Gateway", { status: 502 }) : ok(u, o)), sleep: async () => {}, minGapMs: 0 }); };
+
+test("giro refresh: risultati ATP in 502 → il giro prosegue con WTA e programma, è valido ma segnato come parziale", async () => {
+  const db = fakeDb();
+  const r = await runJob("refresh", { api: flakyClient(/\/atp\/results\//), db, now: NOW });
+  assert.equal(r.ok, true, r.error); assert.equal(r.meta.partial, true); assert.deepEqual(r.meta.providerFailures, ["risultati atp"]);
+  assert.ok(db.t.tennis_matches.some((m) => m.tour === "wta" && m.src_endpoint === "results"), "risultati WTA salvati");
+  assert.ok(db.t.tennis_matches.some((m) => m.src_endpoint === "upcoming"), "programma salvato");
+  assert.ok(db.t.tennis_snapshot.find((s) => s.id === "board"), "snapshot ricostruita");
+  assert.ok(r.meta.errors.some((e) => /risultati atp/.test(e.message)));
+  const st = db.t.tennis_sync_state.find((s) => s.id === "refresh"); assert.ok(st.last_ok && st.locked_until === null);
+});
+
+test("giro refresh: provider giù del tutto → giro fallito ma temporaneo, snapshot comunque ricostruita, blocco rilasciato", async () => {
+  const db = fakeDb();
+  const r = await runJob("refresh", { api: flakyClient(/^https:\/\/api\.sportsapi365\.com/), db, now: NOW });
+  assert.equal(r.ok, false); assert.equal(r.transient, true); assert.ok(!r.error.includes("SEGRETO"));
+  assert.ok(db.t.tennis_snapshot.find((s) => s.id === "board"), "l'app non resta ferma sull'ultima snapshot");
+  const st = db.t.tennis_sync_state.find((s) => s.id === "refresh"); assert.ok(st.last_error && !st.last_ok && st.locked_until === null);
+});
+
+test("giro live: 502 → errore temporaneo (non rosso nel workflow), stato registrato", async () => {
+  const db = fakeDb();
+  const r = await runJob("live", { api: flakyClient(/events\/live/), db, now: NOW });
+  assert.equal(r.ok, false); assert.equal(r.transient, true); assert.match(r.error, /502/);
+  const st = db.t.tennis_sync_state.find((s) => s.id === "live"); assert.match(st.last_error, /502/);
+});
+
+test("errore NON temporaneo (chiave non valida) resta un errore vero", async () => {
+  const db = fakeDb();
+  const bad = createClient({ key: "SEGRETO-XYZ", fetchImpl: async () => new Response("no", { status: 401 }), sleep: async () => {}, minGapMs: 0 });
+  const r = await runJob("refresh", { api: bad, db, now: NOW });
+  assert.equal(r.ok, false); assert.equal(!!r.transient, false);
+});
