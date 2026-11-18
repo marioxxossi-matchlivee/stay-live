@@ -1,6 +1,7 @@
 // Stay Live Tennis — schermata tennis (caricata solo quando si sceglie il tennis: un errore qui non tocca il calcio).
 // Stessa struttura del calcio: Partite · Giocate · Affidabilità · Impostazioni.
 import "./tennis.css";
+import "./strategy.css";
 import "../monitor.css";
 import { icon, iconPair, markSvg } from "../icons.js";
 import { saveDayState } from "../dataquality.js";
@@ -13,12 +14,14 @@ import { DEFAULT_FILTERS, SURFACE_LABEL, CATEGORY_LABEL, GENDER_LABEL, facets, f
 import { detailHtml, emptyHtml, rowHtml, canSave } from "./view.js";
 import { tennisMonitorHtml } from "./monitor.js";
 import { PL_FILTERS, listHtml as playsListHtml, playsViewHtml, settingsHtml } from "./playsview.js";
+import { computeView, loadBankroll, saveBankroll, sanitizeView, settingsFromFields } from "./strategy.js";
+import { strategyHtml } from "./strategyview.js";
 import { absorbTResults, addTPlay, evaluateT, loadTPlays, playFromMatch, removeTPlay, saveTPlays, tSignature } from "./plays.js";
 
 const CACHE_KEY = "sl-tennis-board-v2";
 const STALE_MS = 75 * 60e3;   // la snapshot si rinnova ogni 15–30 minuti
 const REFRESH_MS = 5 * 60e3;
-const TABS = ["matches", "plays", "reliability", "settings"];
+const TABS = ["matches", "strategy", "plays", "reliability", "settings"];
 const isOpen = (m) => m.status === "scheduled" || m.status === "live";
 
 async function getJson(url, ms = 15000) {
@@ -36,7 +39,7 @@ const writeCache = (data) => { try { localStorage.setItem(CACHE_KEY, JSON.string
 export function mountTennis(root) {
   const state = {
     matches: [], history: null, diagnostics: null, builtAt: null, filters: { ...DEFAULT_FILTERS }, day: null, onlyBet: false, fOpen: false,
-    tab: "matches", plays: loadTPlays(), playFilter: "all", open: new Set(), mnTab: "live",
+    tab: "matches", sView: sanitizeView(null), bank: loadBankroll(), sShowAll: false, strategyHist: null, plays: loadTPlays(), playFilter: "all", open: new Set(), mnTab: "live",
     loading: false, error: null, fromCache: false, lastLoad: 0, animate: true,
   };
 
@@ -56,12 +59,14 @@ export function mountTennis(root) {
         <div id="tn-list" class="list"></div>
         <p class="foot">Stime statistiche sperimentali. Non sono garanzie né consigli finanziari.</p>
       </section>
+      <section class="tn-pane" id="tn-pane-strategy" hidden></section>
       <section class="tn-pane" id="tn-pane-plays" hidden></section>
       <section class="tn-pane" id="tn-pane-reliability" hidden></section>
       <section class="tn-pane" id="tn-pane-settings" hidden></section>
     </main>
-    <nav class="sl-nav tn n4" id="tn-tabs" role="group" aria-label="Navigazione"><span class="sl-nav-ind" aria-hidden="true"></span>
+    <nav class="sl-nav tn n5" id="tn-tabs" role="group" aria-label="Navigazione"><span class="sl-nav-ind" aria-hidden="true"></span>
       <button type="button" data-tab="matches" aria-pressed="true"><span class="tab-ic">${iconPair("tennis-ball")}</span><span class="tab-lb">Partite</span></button>
+      <button type="button" data-tab="strategy" aria-pressed="false"><span class="tab-ic">${iconPair("target")}</span><span class="tab-lb">Strategia</span></button>
       <button type="button" data-tab="plays" aria-pressed="false"><span class="tab-ic">${iconPair("receipt")}<i class="badge" id="tn-plays-badge" hidden>0</i></span><span class="tab-lb">Giocate</span></button>
       <button type="button" data-tab="reliability" aria-pressed="false"><span class="tab-ic">${iconPair("chart-bar")}</span><span class="tab-lb">Affidabilità</span></button>
       <button type="button" data-tab="settings" aria-pressed="false"><span class="tab-ic">${iconPair("gear")}</span><span class="tab-lb">Impostazioni</span></button>
@@ -156,6 +161,12 @@ export function mountTennis(root) {
     for (const b of seg.querySelectorAll("[data-plf]")) b.setAttribute("aria-pressed", String(b.dataset.plf === f));
     const list = $("#tn-pl-list"); if (list) list.innerHTML = playsListHtml(evaluated().rows, f, state.open);
   }
+  function renderStrategy() {
+    const pane = $("#tn-pane-strategy"), y = window.scrollY;
+    const model = computeView(state.matches, state.sView, state.bank, state.history, Date.now());
+    pane.innerHTML = strategyHtml(model, { open: state.open, showAll: state.sShowAll }, { history: state.strategyHist, hasData: state.matches.length > 0 });
+    window.scrollTo({ top: y });
+  }
   function renderPlays() { $("#tn-pane-plays").innerHTML = playsViewHtml(evaluated(), { filter: state.playFilter, open: state.open, history: state.history }); }
   function renderReliability() { $("#tn-pane-reliability").innerHTML = `<section class="mn-intro"><h1>Affidabilità</h1><p>Quanto sono credibili i pronostici. Ogni numero ha la sua incertezza: con pochi casi non si conclude nulla.</p></section>${state.history ? tennisMonitorHtml(state.history, state.mnTab) : `<div class="mn-emptybox"><h3>Storico non ancora disponibile</h3><p>Comparirà dopo le prime partite concluse con un pronostico registrato prima dell'inizio.</p></div>`}`; }
   function renderSettings() { $("#tn-pane-settings").innerHTML = settingsHtml(state.diagnostics, state.builtAt, state.plays.length); }
@@ -164,7 +175,7 @@ export function mountTennis(root) {
     $("#tn-refresh").classList.toggle("spin", state.loading);
     renderMatches();
     const t = state.tab;
-    if (t === "plays") renderPlays(); else if (t === "reliability") renderReliability(); else if (t === "settings") renderSettings();
+    if (t === "strategy") renderStrategy(); else if (t === "plays") renderPlays(); else if (t === "reliability") renderReliability(); else if (t === "settings") renderSettings();
     for (const b of root.querySelectorAll("#tn-tabs button")) b.setAttribute("aria-pressed", String(b.dataset.tab === t));
     $("#tn-tabs").style.setProperty("--i", String(TABS.indexOf(t)));
     for (const id of TABS) $(`#tn-pane-${id}`).hidden = id !== t;
@@ -182,6 +193,7 @@ export function mountTennis(root) {
     const payload = data?.payload ?? {};
     state.matches = sanitizeMatches(payload.matches);
     state.history = payload.history ?? null;
+    state.strategyHist = payload.strategy ?? null;
     state.diagnostics = payload.diagnostics ?? null;
     state.builtAt = data?.built_at ?? payload.updatedAt ?? null;
     state.fromCache = cached;
@@ -197,7 +209,7 @@ export function mountTennis(root) {
     try {
       const r = await getJson("/api/tennis-board");
       state.lastLoad = Date.now();
-      if (r.status === 404) { state.matches = []; state.history = null; state.diagnostics = null; state.builtAt = null; setBanner(""); }
+      if (r.status === 404) { state.matches = []; state.history = null; state.strategyHist = null; state.diagnostics = null; state.builtAt = null; setBanner(""); }
       else if (r.ok && r.body?.payload) { apply(r.body); writeCache(r.body); }
       else throw new Error(r.body?.error ?? `Risposta ${r.status}`);
     } catch (e) {
@@ -270,11 +282,22 @@ export function mountTennis(root) {
     const day = t.closest("[data-day]"); if (day) { state.day = day.dataset.day; state.animate = true; return render(); }
     if (t.closest("#tn-ftoggle")) { state.fOpen = !state.fOpen; return render(); }
     for (const [attr, k] of [["data-tour", "tour"], ["data-cat", "category"], ["data-surface", "surface"]]) { const el = t.closest(`[${attr}]`); if (el) { state.filters[k] = el.getAttribute(attr); state.animate = true; return render(); } }
+    const sr = t.closest("[data-srange]"); if (sr) { state.sView = sanitizeView({ ...state.sView, range: sr.dataset.srange }); return renderStrategy(); }
+    const st = t.closest("[data-stour]"); if (st) { state.sView = sanitizeView({ ...state.sView, tour: st.dataset.stour }); return renderStrategy(); }
+    const sp = t.closest("[data-sprofile]"); if (sp) { state.bank = { ...state.bank, stakePct: Number(sp.dataset.sprofile) }; saveBankroll(state.bank); return renderStrategy(); }
+    if (t.closest("[data-sall]")) { state.sShowAll = true; return renderStrategy(); }
+    const sx = t.closest("[data-sx]"); if (sx) { const id = sx.dataset.sx, box = sx.closest(".sc-card, .sc-d"), open = !box.classList.contains("open"); box.classList.toggle("open", open); sx.setAttribute("aria-expanded", String(open)); box.querySelector(":scope > .sc-detail")?.toggleAttribute("inert", !open); open ? state.open.add(id) : state.open.delete(id); return; }
     const plf = t.closest("[data-plf]"); if (plf) return setPlayFilter(plf.dataset.plf);
     const mn = t.closest("[data-mn]"); if (mn) { state.mnTab = mn.dataset.mn; return renderReliability(); }
     if (t.closest("#tn-clear-plays") && state.plays.length && confirm(`Eliminare le ${state.plays.length} giocate salvate? Non si può annullare.`)) { state.plays = []; render(); }
   });
-  root.addEventListener("change", (e) => { if (e.target.id === "tn-tournament") { state.filters.tournament = e.target.value; state.animate = true; render(); } });
+  root.addEventListener("change", (e) => {
+    if (e.target.closest?.("#tn-pane-strategy") && e.target.matches?.("input")) {
+      const v = (id) => root.querySelector(id)?.value;
+      state.bank = settingsFromFields({ bankroll: v("#sc-bankroll"), stakePct: v("#sc-stakepct"), dailyPct: v("#sc-daily"), weeklyPct: v("#sc-weekly") });
+      saveBankroll(state.bank); return renderStrategy();
+    }
+    if (e.target.id === "tn-tournament") { state.filters.tournament = e.target.value; state.animate = true; render(); } });
   let qTimer;
   root.addEventListener("input", (e) => {
     if (e.target.id !== "tn-q") return;
