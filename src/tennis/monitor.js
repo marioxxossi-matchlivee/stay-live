@@ -53,7 +53,7 @@ export function liveHtml(h) {
   const avoid = avoidRows.length ? groupCard("EVITA · le scelte sconsigliate", statOf(avoidRows), { note: "EVITA non significa che perde: significa che a quella quota non conviene. Si misura se escono meno dei BET.", min: 300 }) : "";
   const cal = calibration(conc), bd = breakdown(conc);
   const all = `<section class="mn-card"><h3>Tutti i pronostici</h3>
-    <div class="mn-kpis"><div><b>${conc.length}</b><span>valutati</span></div><div><b>${P(statOf(conc).rate, 1)}</b><span>centrati</span></div><div><b>${P(statOf(conc).claimed, 1)}</b><span>dichiarato</span></div><div><b>${num(h.summary?.brier, 3)}</b><span>Brier</span></div></div>
+    <div class="mn-kpis mn-kpis--5"><div><b>${conc.length}</b><span>valutati</span></div><div><b>${P(statOf(conc).rate, 1)}</b><span>centrati</span></div><div><b>${P(statOf(conc).claimed, 1)}</b><span>dichiarato</span></div><div><b>${num(h.summary?.brier, 3)}</b><span>Brier</span></div><div><b>${num(h.summary?.logLoss, 3)}</b><span>Log loss</span></div></div>
     <p class="mn-note">Se «centrati» e «dichiarato» sono vicini, le percentuali del modello sono credibili. Riferimenti: Brier 0,250 e log loss 0,693 sono il lancio di moneta.</p>
     ${cal.length ? `<h4>Taratura: dichiarato contro reale</h4>${calTable(cal)}` : ""}
     ${bd.length ? `<h4>Per tipo di partita</h4><div class="mn-scroll"><table class="mn-table"><thead><tr><th>Gruppo</th><th>Casi</th><th>Dichiarato</th><th>Reale</th><th>Scarto</th></tr></thead><tbody>${bd.map((m) => `<tr><th>${esc(m.label)}</th><td>${m.n}</td><td>${P(m.claimed, 1)}</td><td>${P(m.rate, 1)}</td><td>${esc(pt(m.gap))}</td></tr>`).join("")}</tbody></table></div>` : ""}</section>`;
