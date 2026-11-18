@@ -95,3 +95,33 @@ test("selezioni senza requisito di affidabilità: i lati ITF compaiono, 8 punti 
   const out = analyzeRelaxed([mk("a", 0.12), mk("b", 0.06)]);
   assert.equal(out.selections.n, 2); assert.equal(out.itf8.kept.n, 1); assert.equal(out.itf8.excluded.n, 1);
 });
+
+import { STRATEGY2, classifySide, evaluateDouble, adjustProbability } from "../functions/api/_tennis-strategy2.js";
+import { strategy2WalkForward } from "../scripts/tennis-strategy-audit.js";
+test("strategy2: classi A/B/C/D motivate; senza prova statistica il vantaggio resta «da monitorare»", () => {
+  const base = { pAdj: 0.3, pModel: 0.3, mkt: 0.2, odds: 5, reliability: "media" }; // EV rimodulato +50%
+  assert.equal(classifySide({ ...base, evidence: { c: 0.02, se: 0.02 } }).tier, "C");
+  assert.equal(classifySide({ ...base, evidence: { c: 0.6, se: 0.2 } }).tier, "B");         // c − 2,58·se > 0; c − 3,29·se < 0
+  assert.equal(classifySide({ ...base, evidence: { c: 0.8, se: 0.1 } }).tier, "A");         // robusta e EV ≥ 6%
+  assert.equal(classifySide({ ...base }).tier, "C");                                         // niente evidenza per categoria
+  const d1 = classifySide({ ...base, pModel: 0.4, evidence: { c: 0.8, se: 0.1 } }); assert.equal(d1.tier, "D"); assert.match(d1.reasons[0], /anomalo/); // 20 punti di scarto
+  assert.equal(classifySide({ ...base, pAdj: 0.21, evidence: { c: 0.8, se: 0.1 } }).tier, "B"); // EV +5%: sopra il minimo ma sotto la soglia della classe A
+  assert.equal(classifySide({ ...base, pAdj: 0.19, evidence: { c: 0.8, se: 0.1 } }).tier, "D"); // EV −5%: scartata
+});
+test("strategy2: rimodulazione verso il mercato; c=0 → coincide con il mercato (con b=1)", () => {
+  assert.ok(Math.abs(adjustProbability({ a: 0, b: 1, c: 0 }, 0.4, 0.2) - 0.2) < 1e-9);
+  assert.ok(Math.abs(adjustProbability({ a: 0, b: 1, c: 1 }, 0.4, 0.2) - 0.4) < 1e-9);
+});
+test("strategy2: doppia solo con due singole A/B non correlate e migliore delle singole; altrimenti zero", () => {
+  const A = { tier: "A", pAdj: 0.7, odds: 1.9, tournament: "X" }, B = { tier: "B", pAdj: 0.68, odds: 1.95, tournament: "Y" };
+  assert.equal(evaluateDouble(A, { ...B, tier: "C" }).propose, false);
+  assert.equal(evaluateDouble(A, { ...B, tournament: "X" }).propose, false);
+  const under = evaluateDouble({ tier: "B", pAdj: 0.33, odds: 6.05, tournament: "P" }, { tier: "B", pAdj: 0.44, odds: 4.25, tournament: "Q" });
+  assert.equal(under.propose, false); assert.match(under.reasons.join(" "), /probabilità congiunta/); // il caso reale Peet + Vrancken Peeters (congiunta 14,5%)
+});
+test("strategy2 walk-forward: su dati di solo rumore le classi A/B restano rare e la A non compare mai", () => {
+  const world = (seed) => { const rnd = lcg(seed), sides = []; for (let i = 0; i < 4000; i++) { const t = Date.UTC(2026, 0, 1) + i * 2 * 3600e3, truth = sigm((rnd() - 0.5) * 3), mkt = Math.min(0.95, Math.max(0.05, truth + (rnd() - 0.5) * 0.03)), p = Math.min(0.95, Math.max(0.05, mkt + (rnd() - 0.5) * 0.3)), y = rnd() < truth ? 1 : 0; for (const s of [1, 2]) sides.push({ key: `k${i}`, slot: s, t, tour: "atp", category: "tour", label: "ATP TOUR", p: s === 1 ? p : 1 - p, mkt: s === 1 ? mkt : 1 - mkt, odds: 0.95 / (s === 1 ? mkt : 1 - mkt), y: s === 1 ? y : 1 - y, reliability: "media", isUnderdog: false }); } return sides; };
+  let worldsWithAB = 0, a = 0, ab = 0, tested = 0;
+  for (let seed = 1; seed <= 12; seed++) { const w = strategy2WalkForward(world(seed)); tested += w.testedMatches; a += w.tiers.A.n; ab += w.tiers["A+B"].n; if (w.tiers["A+B"].n) worldsWithAB++; assert.ok(w.discardedSides > 0); }
+  assert.ok(tested > 0); assert.equal(a, 0, "classe A mai su rumore"); assert.ok(worldsWithAB <= 3, `mondi con A/B: ${worldsWithAB}/12`); assert.ok(ab / tested < 0.02, `quota A+B ${ab / tested}`);
+});
