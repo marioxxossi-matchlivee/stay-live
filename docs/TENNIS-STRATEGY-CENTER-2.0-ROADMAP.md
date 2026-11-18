@@ -37,6 +37,19 @@ Proxy dichiarato: quote di CHIUSURA di bookmaker non identificato; rigioco Elo+f
 
 **Lettura**: il modello ha un potere informativo inferiore al mercato; i disaccordi sono in gran parte errori del modello. Direzione di progetto (da validare): non usare la probabilità grezza ma una **probabilità rimodulata sul mercato**, adattata walk-forward (c = peso dell'informazione del modello oltre il mercato). L'audit ora la stima (sezione «Il modello aggiunge qualcosa al mercato?») e applica le stesse soglie alla probabilità rimodulata: se non resta nessuna selezione, il sistema deve astenersi.
 
+## Risultati del secondo audit (18/11/2026, 96.286 partite, 36.384 con quote)
+1. **Il modello non aggiunge informazione al mercato.** Regressione walk-forward: c = 0,023 ± 0,016 su tutto il campione (b = 1,24). Per categoria nessuna prova robusta: le 11 stime stanno tra −0,045 e +0,11; l'unica oltre 2 errori standard è WTA Tour (0,11 ± 0,052), che con 11 confronti resta compatibile col caso.
+2. **Rimodulare sul mercato non crea un vantaggio dimostrabile**: Brier 0,1853 contro 0,1861 del mercato (modello grezzo 0,2307); 147 selezioni, 89 vinte, quota media 1,68, ROI +0,8%, con errore standard di circa ±6–7 punti: indistinguibile da zero. Il b = 1,24 riflette la distorsione favorito/sfavorito delle quote di chiusura (gli sfavoriti sono pagati troppo poco), non un vantaggio del modello.
+3. **ITF e Challenger senza requisito di affidabilità: perdono tutti** (ROI da −13% a −32%; sovrastima di 10–14 punti). Il modello è ben calibrato sulla propria scala negli ITF (ECE 0,008–0,05) ma ha Brier peggiore del mercato in tutte le categorie: calibrazione non significa informazione.
+4. **Filtro ITF 8 punti: non supportato dal rigioco.** Mantenute (≤8 pt) n = 2.495, ROI −30,6%; escluse (>8 pt) n = 4.946, ROI −25,3%. Il filtro riduce la sovrastima (−9,1 contro −14,7 punti) ma non rende profittevole nessun gruppo e le mantenute rendono meno. Resta in Shadow Mode per il confronto prospettico, senza attivazione.
+5. **Rating congelati contro aggiornati**: confermato (Brier 0,2146→0,2105, ECE 0,034→0,013), effetto reale ma secondario.
+
+## Modulo sperimentale `functions/api/_tennis-strategy2.js` (non collegato alla produzione)
+Probabilità rimodulata sul mercato, classi A/B/C/D con motivazioni in italiano e valutazione delle doppie. Soglie fissate a priori: quota ≥ 1,50, EV rimodulato ≥ 4% (A: ≥ 6%), scarto massimo dal mercato 15 punti; B richiede c − 2,58·err. std. > 0 nella categoria, A richiede c − 3,29·err. std. > 0 (soglie severe perché la prova si ricalcola ogni mese su 11 categorie: su dati di solo rumore, con z = 2, circa 1 caso su 10 mostrava una falsa «prova»). Senza prova statistica la classe massima è C «da monitorare». Doppia: solo con due singole A/B, eventi non correlati, probabilità congiunta ≥ 30%, EV ≥ 8% e rapporto EV/rischio migliore delle singole: altrimenti zero doppie (il caso Peet + Vrancken Peeters, congiunta 14,5%, verrebbe scartato). L'audit ora ne misura classi, ROI ±2 errori standard e confronto con le regole attuali sulla stessa finestra.
+
+## Modifiche dell'utente incluse nell'albero di lavoro
+Log loss nelle sezioni calcio e tennis (`scripts/backtest-evita.js`, `scripts/publish-backtest.js`, `src/monitor-view.js`, `src/tennis/monitor.js`, `src/monitor.css`): nessuna sovrapposizione con i file di questo lavoro.
+
 ## Casi da ricostruire
 Cinque selezioni registrate in `tennis_strategy_picks` (tutte ITF, nessuna ancora conclusa): Cirpanli 17,48 (P 18,2% / mercato 5,5%), Tailleu 12,22 (21,4% / 7,8%), Peet 6,05 (33,1% / 18,9%), Vrancken Peeters 4,25 (43,9% / 29,3%), Novak 6,25 (29,4% / 15,2%). Dati coerenti con i valori indicati dall'utente. Storico prospettico della strategia: 5 giocate, 1 esecuzione, quindi **nessun risultato storico utilizzabile**: l'analisi storica usa il rigioco cronologico con le quote di chiusura (proxy, dichiarato).
 
@@ -44,7 +57,7 @@ Cinque selezioni registrate in `tennis_strategy_picks` (tutte ITF, nessuna ancor
 Sulle partite successive al taglio delle 80.000, confronta rating **congelati** (come il motore oggi) e **aggiornati** ogni giorno, sulle stesse partite e gli stessi lati: differenza media di probabilità, scarto medio dal mercato, Brier, ECE, numero/quota media/ROI delle selezioni attuali e quota di sfavoriti. Se i rating aggiornati riducono lo scarto dal mercato e le selezioni sugli sfavoriti, la correzione del tetto di lettura diventa il primo intervento (da attivare in Shadow Mode, non direttamente).
 
 ## File di questa tappa
-Nuovi: `scripts/tennis-strategy-audit.js`, `.github/workflows/tennis-strategy-audit.yml`, `tests/tennis-strategy-audit.test.js`, `supabase/migrations/202611180001_tennis_itf_shadow.sql`, questo documento. Modificati (correzione del refresh tennis, già consegnata): `scripts/tennis-sync.js`, `tests/tennis-sync.test.js`. Motore e strategie: invariati.
+Nuovi: `functions/api/_tennis-strategy2.js`, `scripts/tennis-strategy-audit.js`, `.github/workflows/tennis-strategy-audit.yml`, `tests/tennis-strategy-audit.test.js`, `supabase/migrations/202611180001_tennis_itf_shadow.sql`, questo documento. Modificati (correzione del refresh tennis, già consegnata): `scripts/tennis-sync.js`, `tests/tennis-sync.test.js`. Motore e strategie: invariati.
 
 ## (Elenco iniziale)
 - `scripts/tennis-strategy-audit.js` (sola lettura; rigioco cronologico senza look-ahead; tabelle per fascia di quota, favoriti/sfavoriti, categoria, scarto dal mercato, filtro ITF)
