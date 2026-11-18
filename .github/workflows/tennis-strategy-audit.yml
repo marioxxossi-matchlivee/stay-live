@@ -1,0 +1,27 @@
+name: Tennis — audit Strategy Center (sola lettura)
+
+# Strategy Center 2.0, Fase 1-2-4. SOLO LETTURA: nessuna chiamata al provider, nessuna scrittura su Supabase, nessuna strategia modificata.
+# Si lancia a mano. Il report compare nel riepilogo dell'esecuzione e come file scaricabile (artifact).
+on:
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Audit
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/tennis-strategy-audit.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tennis-strategy-audit
+          path: audit-out/
