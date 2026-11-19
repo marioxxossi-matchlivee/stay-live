@@ -1,0 +1,39 @@
+name: Registra quote ricerca calcio
+
+# Ogni 3 ore registra, PRIMA del calcio d'inizio, le quote 1X2, doppia chance, Over/Under, Exact Goals Number, Multigol a fasce e doppia chance+totale
+# delle partite dei prossimi 3 giorni in `football_research_odds` (a sola aggiunta). Non tocca partite, previsioni né il motore.
+# Rispetta il Budget Manager (priorità "background"). Per fermarlo: togli il blocco `schedule`. Prova senza chiamate: Run workflow con dry_run = true.
+# Secrets: API_FOOTBALL_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY. Richiede la migrazione 202611190001_football_research_odds.sql.
+on:
+  schedule:
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "true = mostra solo le partite che rileverebbe, senza chiamare l'API"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: registra-quote-ricerca
+  cancel-in-progress: false
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Registra le quote
+        env:
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DRY_RUN: ${{ inputs.dry_run == 'true' && '1' || '0' }}
+        run: node scripts/record-football-research-odds.js | tee -a "$GITHUB_STEP_SUMMARY"
