@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       fixture:
-        description: "ID API-Football di una partita (facoltativo; anche già finita)"
+        description: "ID API-Football di una partita, oppure auto (sceglie una futura e una finita da ~3 settimane in Serie A); vuoto = solo catalogo"
         required: false
         default: ""
 
