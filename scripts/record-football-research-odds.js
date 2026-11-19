@@ -53,7 +53,7 @@ async function main() {
   const env = { ...process.env, AF_SOURCE: "ricerca-quote" };
   const now = Date.now();
   const iso = (ms) => new Date(ms).toISOString();
-  const matches = await supabaseGetAll(env, "matches", { select: "game_id,league,kickoff_at,status", status: "eq.scheduled", kickoff_at: `gte.${iso(now)}`, order: "kickoff_at.asc" }, 1000, 10);
+  const matches = await supabaseGetAll(env, "matches", { select: "game_id,league,kickoff_at,status", status: "eq.scheduled", and: `(kickoff_at.gte.${iso(now)},kickoff_at.lt.${iso(now + WINDOW_H * H)})`, order: "kickoff_at.asc" }, 1000, 10);
   const prior = await supabaseGetAll(env, "football_research_odds", { select: "game_id,captured_at", captured_at: `gte.${iso(now - 24 * H)}`, order: "captured_at.desc" }, 1000, 50);
   const last = new Map(); for (const r of prior) if (!last.has(r.game_id)) last.set(r.game_id, r.captured_at);
   const todo = selectFixtures(matches, last, now, { max: Number(process.env.MAX_FIXTURES) || 60 });
