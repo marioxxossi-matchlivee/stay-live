@@ -18,6 +18,7 @@ export const STRATEGY2 = Object.freeze({
   zInteresting: 2.58,    // classe B
   zStrong: 3.29,         // classe A
   minCategoryN: 300,     // partite minime di addestramento per valutare una categoria
+  minClusters: 50,       // blocchi (torneo-settimana) minimi: con pochi blocchi l'errore standard «robusto» è instabile e troppo ottimista
   minTrainMonths: 3,
   doubleMinJointProb: 0.3,
   doubleMinEv: 0.08,
@@ -32,7 +33,7 @@ export const adjustProbability = (fit, pModel, mkt) => sigmoid(fit.a + fit.b * l
 
 /**
  * Classe di una selezione: A VALUE FORTE · B VALUE INTERESSANTE · C DA MONITORARE · D SCARTATA. `reasons` spiega la decisione in italiano.
- * evidence = { c, se } della categoria (da dati precedenti); assente → il campione non basta.
+ * evidence = { c, se, clusters } della categoria (da dati precedenti; se = il maggiore tra l'errore standard indipendente e quello robusto per blocchi); assente o con meno di minClusters blocchi → il campione non basta.
  */
 export function classifySide({ pAdj, pModel, mkt, odds, reliability, evidence }, cfg = STRATEGY2) {
   const edge = pAdj * odds - 1, reasons = [];
@@ -44,7 +45,7 @@ export function classifySide({ pAdj, pModel, mkt, odds, reliability, evidence },
     if (edge < cfg.minEv) reasons.push("vantaggio non dimostrato dopo la rimodulazione sul mercato");
   }
   if (reasons.length) return { tier: "D", edge, reasons };
-  if (!evidence || !Number.isFinite(evidence.c) || !Number.isFinite(evidence.se)) return { tier: "C", edge, reasons: ["campione insufficiente per questa categoria"] };
+  if (!evidence || !Number.isFinite(evidence.c) || !Number.isFinite(evidence.se) || !(evidence.clusters >= cfg.minClusters)) return { tier: "C", edge, reasons: ["campione insufficiente per questa categoria"] };
   if (evidence.c - cfg.zStrong * evidence.se > 0 && edge >= cfg.strongEv) return { tier: "A", edge, reasons: ["il modello aggiunge informazione al mercato in questa categoria (prova robusta)", "vantaggio netto dopo la rimodulazione"] };
   if (evidence.c - cfg.zInteresting * evidence.se > 0) return { tier: "B", edge, reasons: ["il modello aggiunge informazione al mercato in questa categoria", "prova non ancora robusta"] };
   return { tier: "C", edge, reasons: ["il modello non ha dimostrato di aggiungere informazione al mercato in questa categoria"] };
