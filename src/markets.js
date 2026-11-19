@@ -192,7 +192,8 @@ function detailsBody(m, cv, rules) {
 }
 
 /** Il blocco sotto le squadre. mode: "all" (tutti i mercati) | "bet" (solo i mercati con un BET). `open` = tendina aperta. */
-export function marketsHtml(m, { mode = "all", rules = RULES, open = false, cornerOverride = null, result = null, idPrefix = "mk" } = {}) {
+export function marketsHtml(m, { mode = "all", rules = RULES, open = false, cornerOverride = null, result = null, idPrefix = "mk", view = "old" } = {}) {
+  if (view === "new") return newMarketsHtml(m, { open, result, idPrefix });
   const mk = m.mk, cv = cornerView(m, rules, cornerOverride), final = result && Number.isFinite(result.h) && Number.isFinite(result.a) ? result : null;
   if (!mk) {
     // Elenco partite non ancora rigenerato (o pochi dati): resta visibile il consiglio principale del motore, con le sue cifre reali.
@@ -214,4 +215,44 @@ export function marketsHtml(m, { mode = "all", rules = RULES, open = false, corn
   const tendina = accordionHtml({ id: `${idPrefix}:${m.id}`, open, cls: "mcd", headCls: "mcd-head", head: "<span>Mercati e motivazioni</span>", body: `<div class="mcd-body">${detailsBody(m, cv, rules)}</div>` });
   const recap = final ? recapHtml(m, final, cv, rules) : "";
   return `${recap}<div class="mcm">${rows}</div>${why ? `<p class="mc-why"><b>${recKey ? (recBet ? "★ Consigliato · " : "◦ Più probabile, non consigliato · ") : ""}${esc(optLabel(hk))}</b> ${why}</p>` : ""}${tendina}`;
+}
+
+/* ======================= MODELLO NEW: 1X2, doppia chance, Multigol, combinazioni ======================= */
+import { NM_BANDS, NM_FAMILY_LABEL, NM_RESULTS, NM_VERSION, STATUS_LABEL, bandKey, fairFromOdds, newMarkets, newOutcomes, statusOf } from "../functions/api/_newmodel.js";
+
+const NM_SHORT = { home: "1", draw: "X", away: "2", dc1x: "1X", dcx2: "X2", dc12: "12" };
+const nmBandText = (b) => `${b[0]}-${b[1]}`;
+const nmTop = (keys, p) => keys.reduce((best, k) => (p[k] > p[best] ? k : best), keys[0]);
+/** Stato di validazione di un gruppo di mercati: uno solo se uguale per tutti, altrimenti «misto». */
+const nmStatus = (keys) => { const s = [...new Set(keys.map((k) => statusOf(k)))]; return s.length === 1 ? STATUS_LABEL[s[0]] : "stato misto"; };
+
+/**
+ * Scheda del MODELLO NEW. Legge solo `m.mk.st` (gol attesi) e le quote reali di 1X2/doppia chance in `m.mk.x[chiave].o`.
+ * Nessun BET/EVITA, nessun consiglio: probabilità e stato di validazione. Gol/NoGol, Over/Under e Corner non compaiono.
+ */
+export function newMarketsHtml(m, { open = false, result = null, idPrefix = "mk" } = {}) {
+  const st = m.mk?.st;
+  if (!st || !Number.isFinite(st.lh) || !Number.isFinite(st.la)) return `<div class="mcm">${none("Mercati", m.pick?.confidence === "insufficiente" ? `pochi dati: ${m.pick.sample} gare di storico` : "non ancora disponibili", "nm")}</div>`;
+  const p = newMarkets(st.lh, st.la).p, x = m.mk.x ?? {};
+  const final = result && Number.isFinite(result.h) && Number.isFinite(result.a) ? newOutcomes(result.h, result.a) : null;
+  const hit = (k) => (final ? final[k] === 1 : null);
+  const oddOf = (k) => x[k]?.o ?? null;
+  const line = (id, label, keys, lab) => row({ id, label }, keys.map((k) => cell(lab(k), p[k], { top: k === nmTop(keys, p), odd: oddOf(k), res: hit(k) })).join(""));
+  const rows = [
+    line("esito", NM_FAMILY_LABEL.esito, ["home", "draw", "away"], (k) => NM_SHORT[k]),
+    line("dc", NM_FAMILY_LABEL.dc, ["dc1x", "dcx2", "dc12"], (k) => NM_SHORT[k]),
+    line("multigol", NM_FAMILY_LABEL.multigol, NM_BANDS.map(bandKey), (k) => k.replace(/^mg(\d)(\d)$/, "$1-$2")),
+  ].join("");
+  const grid = NM_RESULTS.map((r) => row({ id: `cb-${r.key}`, label: r.label }, NM_BANDS.map((b) => cell(nmBandText(b), p[`${r.key}_${bandKey(b)}`], { res: hit(`${r.key}_${bandKey(b)}`) })).join(""))).join("");
+  // Quote reali (solo 1X2 e doppia chance): probabilità implicita; senza margine solo con tutti e tre gli esiti 1X2.
+  const fair = fairFromOdds({ home: oddOf("home"), draw: oddOf("draw"), away: oddOf("away") });
+  const odds = ["home", "draw", "away", "dc1x", "dcx2", "dc12"].filter((k) => oddOf(k) > 1).map((k) => `<li><b>${NM_SHORT[k]}</b> quota ${num(oddOf(k))} → implicita ${pct(1 / oddOf(k))}${fair && fair[k] != null ? ` (senza margine ${pct(fair[k])})` : ""} · modello ${pct(p[k])}</li>`).join("");
+  const statuses = ["esito", "dc", "multigol", "combo"].map((f) => `<li><b>${NM_FAMILY_LABEL[f]}</b> · ${nmStatus(f === "esito" ? ["home", "draw", "away"] : f === "dc" ? ["dc1x", "dcx2", "dc12"] : f === "multigol" ? NM_BANDS.map(bandKey) : NM_RESULTS.flatMap((r) => NM_BANDS.map((b) => `${r.key}_${bandKey(b)}`)))}</li>`).join("");
+  const body = `<section class="dt"><h5>Combinazioni risultato + Multigol<small>probabilità congiunte</small></h5><div class="mcm">${grid}</div><p class="dt-note">Ogni combinazione è calcolata sulla matrice dei punteggi, non moltiplicando le singole probabilità.</p></section>`
+    + `<section class="dt"><h5>Quote dei bookmaker</h5>${odds ? `<ul>${odds}</ul>` : `<p>Nessuna quota reale disponibile per questa partita.</p>`}<p class="dt-note">Il Multigol non ha quote nell'app: nessun confronto con il mercato su quel mercato.</p></section>`
+    + `<section class="dt"><h5>Stato di validazione</h5><ul>${statuses}</ul><p class="dt-note">«Non validato» = il backtest walk-forward non è ancora stato eseguito o il campione non basta.</p></section>`
+    + `<p class="dt-foot">${m.mk.s ?? "—"} gare di storico · gol attesi ${f1(st.lh)} – ${f1(st.la)}</p>`;
+  const tendina = accordionHtml({ id: `${idPrefix}:${m.id}`, open, cls: "mcd", headCls: "mcd-head", head: "<span>Combinazioni, quote e validazione</span>", body: `<div class="mcd-body">${body}</div>` });
+  const finale = final && result ? `<p class="mc-why"><b>Finale ${esc(result.h)}–${esc(result.a)}</b> · gli esiti usciti sono evidenziati.</p>` : "";
+  return `${finale}<div class="mcm">${rows}</div><p class="mc-why nm-note"><b>Modello NEW ${NM_VERSION}</b> sperimentale: probabilità statistiche, non consigli. 1X2 ${nmStatus(["home", "draw", "away"])} · Multigol ${nmStatus(NM_BANDS.map(bandKey))}.</p>${tendina}`;
 }

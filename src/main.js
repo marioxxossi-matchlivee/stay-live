@@ -21,7 +21,8 @@ import { enableSwipe } from "./gestures.js";
 import { accordionHtml, filterRows, groupByDay, playHeadHtml } from "./playlist.js";
 import { showToast } from "./toast.js";
 import { enableSheet } from "./sheet.js";
-import { marketsHtml } from "./markets.js";
+import { marketsHtml, newMarketsHtml } from "./markets.js";
+import { MODEL_VIEW, NEW_VIEW } from "./modelview.js";
 import { restoreBoardPayload } from "./snapshot.js";
 
 hideBrokenCrests();
@@ -32,6 +33,7 @@ const $ = (s, r = document) => r.querySelector(s);
 /** Fisarmoniche aperte (giocate, statistiche, nazioni): stanno in memoria, così sopravvivono ai ridisegni delle viste. */
 const openAcc = new Set();
 const reduceMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+document.documentElement.dataset.model = MODEL_VIEW;
 const state = {
   matches: [], leagues: [], continents: [], league: "all", navOpen: false, day: null, onlyBet: false, q: "", usage: null, selected: new Set(),
   n: 8, minOdds: MIN_ODDS_DEFAULT, loading: false, error: null, banner: null, syncTried: false, updatedAt: null,
@@ -171,7 +173,7 @@ function visibleMatches() {
     if (!matchesQuery(m)) return false;
     if (state.day === "results") return m.status === "final";
     if (!isOpen(m) || dayKey(m.kickoffAt) !== state.day) return false;
-    return !state.onlyBet || isBetM(m);
+    return !state.onlyBet || NEW_VIEW || isBetM(m);
   });
 }
 const sideHtml = (name, logo, goals) => `<span class="side">${crest(name, logo)}<b>${esc(name)}</b>${goals != null ? `<span class="score">${goals}</span>` : ""}</span>`;
@@ -211,7 +213,7 @@ function rowHtml(m, k = 0) {
   const open = isOpen(m);
   const check = open ? `<label class="chk"><input type="checkbox" data-sel="${esc(m.id)}" ${state.selected.has(m.id) ? "checked" : ""} aria-label="Seleziona ${esc(m.home)} – ${esc(m.away)}" /></label>` : `<span class="chk"></span>`;
   // Le due modalità condividono lo stesso motore e gli stessi dati: «Solo BET» mostra, delle partite di «Tutte», solo i mercati BET.
-  const body = open ? `<div class="mc-body">${marketsHtml({ ...m, corner: m.corner ?? cornerCache.get(m.id) ?? null }, { mode: state.onlyBet ? "bet" : "all", rules: state.rules ?? undefined, open: openAcc.has(`mk:${m.id}`) })}${dqDetailHtml(m.dq, { esc, updatedAt: state.updatedAt ?? null, time: (v) => fmtTime.format(new Date(v)) })}</div>` : "";
+  const body = open ? `<div class="mc-body">${marketsHtml({ ...m, corner: m.corner ?? cornerCache.get(m.id) ?? null }, { view: MODEL_VIEW, mode: state.onlyBet ? "bet" : "all", rules: state.rules ?? undefined, open: openAcc.has(`mk:${m.id}`) })}${dqDetailHtml(m.dq, { esc, updatedAt: state.updatedAt ?? null, time: (v) => fmtTime.format(new Date(v)) })}</div>` : "";
   return `<div class="row mc ${state.selected.has(m.id) ? "sel" : ""}${isBetM(m) && m.pick.confidence !== "insufficiente" ? " is-bet" : ""}" style="--i:${Math.min(k, 9)}">${check}
     <span class="mc-league">${esc(leagueName(m.league, true))}${open ? dqChipHtml(m.dq, esc) : ""}</span>${rowSaveHtml(m)}
     <button class="mc-vs" type="button" data-open="${esc(m.id)}" aria-label="Apri la scheda ${esc(m.home)} – ${esc(m.away)}">${versusHtml(m)}</button>${body}</div>`;
@@ -286,8 +288,8 @@ function render() {
   const n = list.length, one = n === 1;
   $("#summary").innerHTML = (state.loading && !state.matches.length ? `<span class="stat">Caricamento…</span>`
     : state.error ? `<span class="stat">Dati non disponibili</span>`
-    : `<span class="stat"><b>${n}</b> ${one ? "partita" : "partite"}</span>${state.day === "results" ? "" : `<span class="stat bet"><b>${bets}</b> con BET</span>`}`)
-    + (state.cornerNote && !state.loading && !state.error ? `<span class="stat note">${esc(state.cornerNote)}</span>` : "")
+    : `<span class="stat"><b>${n}</b> ${one ? "partita" : "partite"}</span>${state.day === "results" || NEW_VIEW ? "" : `<span class="stat bet"><b>${bets}</b> con BET</span>`}`)
+    + (!NEW_VIEW && state.cornerNote && !state.loading && !state.error ? `<span class="stat note">${esc(state.cornerNote)}</span>` : "")
     + (state.error ? "" : freshChipHtml());
   renderStatusCard();
   renderSaveDay();
@@ -440,19 +442,20 @@ function renderDetail() {
   const played = match.homeScore != null;
   const recs = (a.recommended ?? []).map((k) => a.selections.find((x) => x.key === k)).filter(Boolean);
   const rest = a.selections.filter((x) => !recs.includes(x));
-  const groups = [...new Set(rest.map((x) => x.market))];
+  const groups = NEW_VIEW ? [] : [...new Set(rest.map((x) => x.market))];
+  const nmPanel = NEW_VIEW ? `<section class="rec-sec"><h4>Mercati <small>modello NEW · sperimentale</small></h4>${newMarketsHtml({ id: match.id, home: match.home, away: match.away, mk: { s: a.sample, st: { lh: a.lambda?.home, la: a.lambda?.away }, x: Object.fromEntries((a.selections ?? []).map((q) => [q.key, { o: q.odds?.median ?? null }])) } }, { open: true, idPrefix: "dt", result: played ? { h: match.homeScore, a: match.awayScore } : null })}</section>` : "";
   const noPlay = `<article class="rec none"><header><b>Nessuna giocata consigliata</b></header><p>${esc(p?.reason ?? "Dati insufficienti.")}</p>${a.api?.advice ? `<p class="why-line">API-Football suggerisce ${esc(a.api.adviceIt?.label ?? a.api.advice)}, ma il calcolo prudente non lo conferma.</p>` : ""}</article>`;
   const body = `
     ${matchHeader({ home: match.home, away: match.away, homeLogo: match.homeLogo, awayLogo: match.awayLogo, chips: [leagueName(match.league)],
       centre: played ? `<strong class="af-big">${esc(match.homeScore)}<i>–</i>${esc(match.awayScore)}</strong>` : `<strong class="af-big">${esc(fmtTime.format(new Date(match.kickoffAt)))}</strong>`,
       sub: played ? kick : dayParts(dayKey(match.kickoffAt)).long })}
-    <section class="rec-sec"><h4>Cosa giocare <small>affidabilità ${esc(a.confidence)}</small></h4>${recs.length ? recs.map((x, i) => recCard(x, a, match.id, i)).join("") : noPlay}</section>
-    <section class="rec-sec" id="detail-corner" hidden></section>
+    ${NEW_VIEW ? nmPanel : `<section class="rec-sec"><h4>Cosa giocare <small>affidabilità ${esc(a.confidence)}</small></h4>${recs.length ? recs.map((x, i) => recCard(x, a, match.id, i)).join("") : noPlay}</section>`}
+    ${NEW_VIEW ? "" : `<section class="rec-sec" id="detail-corner" hidden></section>`}
     ${quotesBlock(a, match, detailState.data.afStatus)}
     ${apiBlock(a, detailState.data.afStatus)}
     <div id="pane-data" class="u-data"><div class="af-loading"><i></i>Scarico i dati da API-Football…</div></div>
     <details class="more"><summary>Tutti i mercati e come è calcolato</summary>
-      ${a.legs?.length ? `<section class="legs-sec"><h4>Per le multiple <small>le gambe più solide di questa partita</small></h4>${a.legs.map((l) => `<div class="leg-row"><b>${esc(l.label)}</b><span>prudente ${pct(l.pLow)} · quota ${num(l.odds)}${l.oddsSource === "mercato" ? "" : "*"}</span></div>`).join("")}${a.legs.some((l) => l.oddsSource !== "mercato") ? `<p class="api-note">* quota stimata: senza la quota di mercato.</p>` : ""}</section>` : ""}
+      ${!NEW_VIEW && a.legs?.length ? `<section class="legs-sec"><h4>Per le multiple <small>le gambe più solide di questa partita</small></h4>${a.legs.map((l) => `<div class="leg-row"><b>${esc(l.label)}</b><span>prudente ${pct(l.pLow)} · quota ${num(l.odds)}${l.oddsSource === "mercato" ? "" : "*"}</span></div>`).join("")}${a.legs.some((l) => l.oddsSource !== "mercato") ? `<p class="api-note">* quota stimata: senza la quota di mercato.</p>` : ""}</section>` : ""}
       <div class="kv">
         <div><small>Gol attesi</small><strong>${num(a.lambda.total)}</strong></div>
         <div><small>Basato su</small><strong>${a.basis === "api+mercato" ? "API + mercato + storico" : a.basis === "api" ? "API + storico" : a.basis === "mercato" ? "mercato + storico" : "solo storico"}</strong></div>
@@ -460,7 +463,7 @@ function renderDetail() {
       </div>
       <label class="hist" style="margin:0 0 6px">Storico usato
         <select id="detail-n">${[5, 8, 10].map((v) => `<option value="${v}" ${v === a.n ? "selected" : ""}>${v} gare</option>`).join("")}</select></label>
-      <h4>Altri mercati · inserisci la quota del bookmaker per il verdetto sul valore</h4>
+      ${NEW_VIEW ? "" : "<h4>Altri mercati · inserisci la quota del bookmaker per il verdetto sul valore</h4>"}
       ${groups.map((g) => `<div class="mk"><h5>${esc(g)}</h5>${rest.filter((x) => x.market === g).map((x) => selectionRow(x, a.sample, match.id)).join("")}</div>`).join("")}
       <h4>Come è stato calcolato, passo per passo</h4>
       ${explain(match, a)}
@@ -468,11 +471,11 @@ function renderDetail() {
       <div class="formrow">${formBox(match.home, a.inputs.home, match.homeLogo)}${formBox(match.away, a.inputs.away, match.awayLogo)}</div>
     </details>`;
   $("#detail-body").innerHTML = `<div id="pane-analysis">${body}</div>`;
-  for (const s of a.selections) applyOdds(s.key);
+  if (!NEW_VIEW) for (const s of a.selections) applyOdds(s.key);
   showDetailCorner();
   if (detailState.af) { showAf(detailState.af, detailState.id); scheduleAfRetry(); }       // l'analisi si ridisegna (ricalcolo): i dati già scaricati tornano subito
   else if (!detailState.afStarted) { detailState.afStarted = true; loadAf(detailState.id, 0); }
-  if (!cornerDone.has(detailState.id) || (played && !actualCache.has(detailState.id))) loadDetailCorner(detailState.id);
+  if (!NEW_VIEW && (!cornerDone.has(detailState.id) || (played && !actualCache.has(detailState.id)))) loadDetailCorner(detailState.id);
   scheduleAnalysisRetry();
 }
 
@@ -486,6 +489,7 @@ function showDetailCorner() {
   el.hidden = false;
 }
 async function loadDetailCorner(id) {
+  if (NEW_VIEW) return;
   const played = detailState?.data?.match?.homeScore != null;
   for (let tries = 0; tries < 4 && detailState?.id === id; tries += 1) {
     let r;
@@ -642,7 +646,7 @@ function singleCardHtml(i, { top = "", stake = "", actions = "", head = true }) 
       ${head ? `<span class="fx">${sideHtml(i.home, i.homeLogo, i.homeScore)}${sideHtml(i.away, i.awayLogo, i.awayScore)}</span>` : (i.homeScore != null && i.awayScore != null ? `<p class="pv-result">Risultato <b>${esc(i.homeScore)}–${esc(i.awayScore)}</b></p>` : "")}
       ${p ? `<div class="pv-pick"><span class="vd ${bet ? "bet" : "skip"}">${bet ? "BET" : "EVITA"}</span><b>${esc(p.label)}</b>${basisTag(p.basis)}<em>${pct(p.pLow)}</em></div>` : ""}
       <p class="pv-why">${esc(whyShort(i))}</p>
-      ${cornerHtml(i)}
+      ${NEW_VIEW ? "" : cornerHtml(i)}
       ${stake}${actions}
     </article>`;
 }
@@ -661,6 +665,7 @@ function applyCorners(items) { for (const i of items) { i.corner = i.corner ?? c
 let pvCornerRun = 0;
 /** Scarica in background i corner delle partite del preview (e quelli reali delle finite): il card si aggiorna da solo. */
 async function loadPreviewCorners() {
+  if (NEW_VIEW) return;
   const run = ++pvCornerRun, items = lastPreview?.items ?? [];
   const isFinal = (id) => items.find((i) => i.id === id)?.status === "final";
   let pending = items.map((i) => i.id).filter((id) => !cornerDone.has(id) && !(isFinal(id) && actualCache.has(id)));
@@ -1212,6 +1217,7 @@ $("#clear-plays").addEventListener("click", () => {
  */
 let cornerBusy = false, cornerLastRun = 0;
 async function autoCorners({ force = false } = {}) {
+  if (NEW_VIEW) return;
   if (cornerBusy || state.error || !state.matches.length) return;
   if (!force && Date.now() - cornerLastRun < 10 * 60e3) return;       // aperture ripetute della stessa vista: non si riprova subito
   const now = Date.now();
