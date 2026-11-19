@@ -1,0 +1,37 @@
+name: Tennis — Shadow Mode storico (sola lettura)
+
+# Confronto OLD (loadHistory a offset, tetto 80.000) contro NEW (paginazione a chiave, storico completo) sullo STESSO istante dei dati.
+# SOLA LETTURA: nessuna chiamata al provider sportivo, nessuna scrittura o migrazione su Supabase, nessun cambiamento al motore operativo.
+# Solo avvio manuale (nessuna programmazione). Parametro `shadow`: on = esegue il confronto, off = esce subito senza leggere nulla.
+# Il report compare nel riepilogo dell'esecuzione e come file scaricabile (artifact).
+on:
+  workflow_dispatch:
+    inputs:
+      shadow:
+        description: "Shadow Mode: on = confronta, off = non fa nulla"
+        type: choice
+        options: ["on", "off"]
+        default: "on"
+
+jobs:
+  shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Shadow Mode storico
+        env:
+          TENNIS_HISTORY_SHADOW: ${{ github.event.inputs.shadow }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/tennis-history-shadow.js
+      - uses: actions/upload-artifact@v4
+        if: ${{ github.event.inputs.shadow == 'on' }}
+        with:
+          name: tennis-history-shadow
+          path: audit-out/
