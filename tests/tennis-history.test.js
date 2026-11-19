@@ -51,5 +51,46 @@ test("i valori del filtro a chiave sono tra virgolette (virgole, parentesi, apic
 test("il caricamento a chiave NON è collegato al motore operativo (solo audit e test)", () => {
   const users = [], walk = (d) => { for (const f of fs.readdirSync(d, { withFileTypes: true })) { if (["node_modules", ".git"].includes(f.name)) continue; const p = `${d}/${f.name}`; if (f.isDirectory()) walk(p); else if (/\.(js|mjs|yml|yaml|toml|html)$/.test(f.name) && fs.readFileSync(p, "utf8").includes("_tennis-history")) users.push(p); } };
   for (const d of ["functions", "scripts", "src", ".github", "public"]) if (fs.existsSync(d)) walk(d);
-  assert.ok(users.every((u) => u === "scripts/tennis-strategy-audit.js"), `importatori non ammessi: ${users}`);
+  assert.ok(users.every((u) => [ "scripts/tennis-strategy-audit.js", "scripts/tennis-history-shadow.js" ].includes(u)), `importatori non ammessi: ${users}`); // Shadow Mode: script di sola lettura dedicato (aggiunto il 19/11/2026); motore e API restano esclusi
+});
+
+// ── Aggiunte 19/11/2026: robustezza del caricamento a chiave ──
+test("almeno 96.000 righe sintetiche, orari condivisi e match_key diversi: nessuna perdita né duplicato, ordine corretto, ultima pagina incompleta", async () => {
+  const rows = mkRows(96123, 5), t = fakeTable(rows), r = await loadFinishedKeyset(t.fetchPage);
+  assert.equal(r.rows.length, 96123); assert.equal(r.duplicates, 0); assert.equal(r.pages, 97); // 96 pagine piene + 1 incompleta (123 righe)
+  assert.deepEqual(r.rows.map((x) => x.match_key), t.sorted.map((x) => x.match_key));
+});
+test("pagina vuota: storico vuoto senza errori; pagina piena seguita da pagina vuota: fine regolare", async () => {
+  assert.deepEqual(await loadFinishedKeyset(async () => []), { rows: [], pages: 1, duplicates: 0, truncated: false });
+  const rows = mkRows(2000), t = fakeTable(rows), r = await loadFinishedKeyset(t.fetchPage); assert.equal(r.rows.length, 2000); assert.equal(r.pages, 3);
+});
+test("errore del database o di rete: errore esplicito con la pagina; nuovi tentativi solo se richiesti", async () => {
+  const t = fakeTable(mkRows(3000)); let n = 0;
+  const flaky = async (p) => { if (++n === 2) throw new Error("HTTP 503"); return t.fetchPage(p); };
+  await assert.rejects(() => loadFinishedKeyset(flaky, {}), /pagina 2: HTTP 503/);
+  n = 0; const ok = await loadFinishedKeyset(flaky, { retries: 1, sleep: async () => {} }); assert.equal(ok.rows.length, 3000);
+  await assert.rejects(() => loadFinishedKeyset(async () => { throw new Error("rete"); }, { retries: 2, sleep: async () => {} }), /pagina 1: rete/);
+  await assert.rejects(() => loadFinishedKeyset(async () => ({ rows: [] })), /risposta non valida/);
+});
+test("chiave o data mancante/non valida: errore esplicito, nessuna riga scartata in silenzio", async () => {
+  await assert.rejects(() => loadFinishedKeyset(async () => [{ starts_at: "2026-01-01T00:00:00Z" }], {}), /starts_at e match_key/);
+  await assert.rejects(() => loadFinishedKeyset(async () => [{ match_key: "a", starts_at: null }], {}), /starts_at e match_key/);
+  await assert.rejects(() => loadFinishedKeyset(async () => [{ match_key: "", starts_at: "2026-01-01T00:00:00Z" }], {}), /starts_at e match_key/);
+  await assert.rejects(() => loadFinishedKeyset(async () => [{ match_key: "a", starts_at: "non-una-data" }], {}), /data non valida/);
+});
+test("cursore che non avanza: pagina di sole righe già lette, stessa chiave, data in diminuzione; filtro `or` riservato", async () => {
+  const same = [{ match_key: "a", starts_at: "2026-01-01T00:00:00Z" }, { match_key: "b", starts_at: "2026-01-01T00:00:00Z" }];
+  await assert.rejects(() => loadFinishedKeyset(async () => same, { pageSize: 2 }), /non avanza/);
+  const pages = [[{ match_key: "a", starts_at: "2026-01-02T00:00:00Z" }], [{ match_key: "b", starts_at: "2026-01-01T00:00:00Z" }]]; let i = 0;
+  await assert.rejects(() => loadFinishedKeyset(async () => pages[i++], { pageSize: 1 }), /data in diminuzione/);
+  await assert.rejects(() => loadFinishedKeyset(async () => [], { query: { or: "(a.eq.1)" } }), /riservato/);
+});
+test("chiavi con caratteri speciali attraversano due pagine senza perdite", async () => {
+  const rows = ["a,b", 'c"d', "e)f", "g\\h", "i j", "k(l"].map((k) => ({ match_key: k, starts_at: "2026-01-01T00:00:00.000Z" }));
+  const sorted = [...rows].sort((x, y) => (x.match_key < y.match_key ? -1 : 1)); let calls = 0;
+  const fetchPage = async (p) => { calls++; if (!p.or) return sorted.slice(0, 3); const m = p.or.match(/match_key\.gt\."((?:[^"\\]|\\.)*)"\)\)$/); const last = m[1].replaceAll('\\"', '"').replaceAll("\\\\", "\\"); return sorted.filter((r) => r.match_key > last).slice(0, 3); };
+  const r = await loadFinishedKeyset(fetchPage, { pageSize: 3 }); assert.equal(r.rows.length, 6); assert.equal(new Set(r.rows.map((x) => x.match_key)).size, 6); assert.ok(calls >= 2);
+});
+test("il motore operativo (tennis-sync.js, functions/, src/) NON importa né il loader a chiave né la Shadow Mode", () => {
+  for (const f of ["scripts/tennis-sync.js", ...fs.readdirSync("functions/api").map((x) => `functions/api/${x}`)]) { if (f.endsWith("_tennis-history.js")) continue; const s = fs.readFileSync(f, "utf8"); assert.ok(!/_tennis-history|tennis-history-shadow/.test(s.replace(/\/\*[\s\S]*?\*\//g, "")), `${f} collegato al loader`); }
 });
