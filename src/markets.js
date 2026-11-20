@@ -11,7 +11,7 @@ import { esc, num, pct } from "./format.js";
 import { icon } from "./icons.js";
 import { accordionHtml } from "./playlist.js";
 import { SHORT_PICK, shortPick } from "./pickview.js";
-import { outcomes } from "../functions/api/model.js";
+import { MODEL, outcomes, scoreMatrix } from "../functions/api/model.js";
 
 const RULES = { thr: 0.6, maxUseful: 0.8, minEdge: 0.08, minPlay: 1.3, betSample: 5, margin: 1.03 };
 const sign = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(Math.round(v * 100))}`;
@@ -26,6 +26,19 @@ const GROUPS = [
   { id: "ou", label: "Over/Under", keys: ["over05", "over15", "under15", "over25", "under25", "over35", "under35"], shown: null },
   { id: "dc", label: "Doppia chance", keys: ["dc1x", "dcx2", "dc12"], shown: ["dc1x", "dcx2", "dc12"] },
 ];
+/** Fasce Multigol (gol totali, estremi inclusi). */
+export const MULTIGOL_BANDS = [[1, 3], [1, 4], [2, 4], [2, 5], [3, 6]];
+/**
+ * Probabilità delle fasce Multigol dai gol attesi del motore (stessa matrice dei punteggi di 1X2 e doppia chance, nessuna quota, nessuna fusione
+ * con API-Football). Null se i gol attesi non ci sono.
+ */
+export function multigolOf(mk) {
+  const st = mk?.st;
+  if (!st || !Number.isFinite(st.lh) || !Number.isFinite(st.la)) return null;
+  const tot = [];
+  scoreMatrix(st.lh, st.la, MODEL.rho).forEach((r, i) => r.forEach((v, j) => { tot[i + j] = (tot[i + j] ?? 0) + v; }));
+  return MULTIGOL_BANDS.map(([lo, hi]) => ({ lo, hi, p: tot.slice(lo, hi + 1).reduce((a, b) => a + (b ?? 0), 0) }));
+}
 const OU_LINES = ["15", "25", "35"];
 /** Per ogni soglia over/under il lato favorito dal motore (probabilità maggiore): una sola opzione per soglia. */
 const ouShown = (mk) => OU_LINES.map((l) => { const o = mk.x[`over${l}`], u = mk.x[`under${l}`]; return o && u ? (o.p >= u.p ? `over${l}` : `under${l}`) : (o ? `over${l}` : u ? `under${l}` : null); }).filter(Boolean);
@@ -138,6 +151,12 @@ function groupRow(m, g, mode, ctx = {}) {
   const betKey = shown.find((k) => mk.x[k].v) ?? null, hi = mode === "bet" && betKey ? betKey : top;
   return row(g, shown.map((k) => cell(optLabel(k), mk.x[k].p, { top: k === hi, bet: Boolean(mk.x[k].v), odd: mk.x[k].o, rec: k === ctx.recKey, recBet: ctx.recBet, res: ctx.final ? outcomes(ctx.final.h, ctx.final.a)[k] === 1 : null })).join(""));
 }
+function multigolRow(m, final) {
+  const bands = multigolOf(m.mk);
+  if (!bands) return none("Multigol", "non disponibile", "multigol");
+  const total = final ? final.h + final.a : null;
+  return row({ id: "multigol", label: "Multigol" }, bands.map((b) => cell(`${b.lo}-${b.hi}`, b.p, { res: total == null ? null : total >= b.lo && total <= b.hi })).join(""));
+}
 /** Un corner (over/under su una soglia) è uscito? null se i corner reali non sono noti. */
 const cornerHit = (o, total) => (Number.isFinite(total) ? (o.side === "over" ? total > o.line : total < o.line) : null);
 function cornerRow(m, cv, final = null) {
@@ -148,7 +167,7 @@ function cornerRow(m, cv, final = null) {
 
 /* ---------- Resoconto a partita finita: pronosticato contro reale ---------- */
 const RESULT_LABEL = { home: "1", draw: "X", away: "2" };
-export function recapHtml(m, final, cv, rules = RULES) {
+export function recapHtml(m, final, cv, rules = RULES, vis = null) {
   const mk = m.mk;
   if (!mk || !final) return "";
   const o = outcomes(final.h, final.a), total = final.h + final.a, rows = [];
@@ -159,7 +178,7 @@ export function recapHtml(m, final, cv, rules = RULES) {
   if (bests.gol) add("Gol", optLabel(bests.gol), o.btts ? "GG" : "NG", o[bests.gol] === 1);
   if (bests.ou) add("Over/Under", optLabel(bests.ou), `${total} gol`, o[bests.ou] === 1);
   if (bests.dc) add("Doppia chance", optLabel(bests.dc), real1x2, o[bests.dc] === 1);
-  if (cv?.state && cv.state !== "none") { const hit = cornerHit(cv.main, final.corners); add("Corner", `${sideName(cv.main.side)} ${num(cv.main.line, 1)}`, Number.isFinite(final.corners) ? `${final.corners} corner` : "non disponibile", hit); }
+  if (cv?.state && cv.state !== "none" && (!vis || vis.has("corner"))) { const hit = cornerHit(cv.main, final.corners); add("Corner", `${sideName(cv.main.side)} ${num(cv.main.line, 1)}`, Number.isFinite(final.corners) ? `${final.corners} corner` : "non disponibile", hit); }
   return `<div class="rc"><h5>Resoconto · finale ${esc(final.h)}–${esc(final.a)}<small>pronosticato · uscito</small></h5>${rows.join("")}</div>`;
 }
 
@@ -174,9 +193,9 @@ function headlineKey(m, rules) {
   return (useful.length ? useful : hl).sort((a, b) => (mk.x[b].v - mk.x[a].v) || mk.x[b].l - mk.x[a].l)[0] ?? null;
 }
 
-function detailsBody(m, cv, rules) {
+function detailsBody(m, cv, rules, vis = null) {
   const mk = m.mk, parts = [];
-  for (const g of GROUPS) {
+  for (const g of GROUPS.filter((x) => !vis || vis.has(x.id))) {
     const keys = g.keys.filter((k) => mk.x[k]);
     if (!keys.length) continue;
     const top = mk.b?.[g.id], shown = new Set(shownOf(g, mk)), rel = top ? reliabilityOf(mk.x[top], mk) : null;
@@ -187,72 +206,33 @@ function detailsBody(m, cv, rules) {
     }).join("");
     parts.push(`<section class="dt"><h5>${g.label}${rel ? `<small>affidabilità ${rel}</small>` : ""}</h5>${fact ? `<p>${esc(optLabel(top))}: ${fact}.</p>` : ""}${items ? `<ul>${items}</ul>` : ""}</section>`);
   }
-  if (cv.state !== "none") parts.push(`<section class="dt"><h5>Corner<small>affidabilità ${cv.reliability}</small></h5><p>${cornerMotivation(m, cv)}</p><p class="dt-note">${esc(cv.note)} Non diventa mai BET.</p></section>`);
+  if (vis?.has("multigol") && mk.st) parts.push(`<section class="dt"><h5>Multigol<small>solo modello</small></h5><p>Calcolato sui gol attesi del modello (${f1(mk.st.lh)} – ${f1(mk.st.la)}): somma delle probabilità dei punteggi con quel numero di gol totali. Nessuna quota e nessun dato API-Football: è una stima statistica, non ancora validata, e non è un consiglio.</p></section>`);
+  if (cv.state !== "none" && (!vis || vis.has("corner"))) parts.push(`<section class="dt"><h5>Corner<small>affidabilità ${cv.reliability}</small></h5><p>${cornerMotivation(m, cv)}</p><p class="dt-note">${esc(cv.note)} Non diventa mai BET.</p></section>`);
   return `${parts.join("")}<p class="dt-foot">${mk.s} gare di storico · fonti ${esc(mk.ba)} · forma: V vinta, N pari, P persa</p>`;
 }
 
 /** Il blocco sotto le squadre. mode: "all" (tutti i mercati) | "bet" (solo i mercati con un BET). `open` = tendina aperta. */
-export function marketsHtml(m, { mode = "all", rules = RULES, open = false, cornerOverride = null, result = null, idPrefix = "mk", view = "old" } = {}) {
-  if (view === "new") return newMarketsHtml(m, { open, result, idPrefix });
+export function marketsHtml(m, { mode = "all", rules = RULES, open = false, cornerOverride = null, result = null, idPrefix = "mk", visible = null } = {}) {
+  const vis = visible ? new Set(visible) : null, showCorner = !vis || vis.has("corner");
   const mk = m.mk, cv = cornerView(m, rules, cornerOverride), final = result && Number.isFinite(result.h) && Number.isFinite(result.a) ? result : null;
   if (!mk) {
     // Elenco partite non ancora rigenerato (o pochi dati): resta visibile il consiglio principale del motore, con le sue cifre reali.
     const pick = m.pick && m.pick.confidence !== "insufficiente" ? m.pick : null;
-    const corner = mode === "bet" || cv.state === "none" ? "" : cornerRow(m, cv);
+    const corner = mode === "bet" || cv.state === "none" || !showCorner ? "" : cornerRow(m, cv);
     if (!pick) return `<div class="mcm">${none("Mercati", m.pick?.confidence === "insufficiente" ? `pochi dati: ${m.pick.sample} gare di storico` : "non ancora disponibili")}${corner}</div>`;
     const bet = pick.verdict === "BET";
     const one = row({ id: "rec", label: bet ? "Consigliato" : "Pronostico" }, `<span class="c top${bet ? " bet" : ""}"><i>${esc(shortPick(pick))}</i><b>${pct(pick.p)}</b>${pick.odds?.median > 1 ? `<small>quota ${num(pick.odds.median)}</small>` : ""}</span>`);
     return `<div class="mcm">${one}${corner}</div>${bet && pick.reason ? `<p class="mc-why"><b>Perché</b> ${esc(pick.reason)}</p>` : ""}<p class="mc-why mc-wait">Gli altri mercati compaiono dopo il prossimo aggiornamento completo.</p>`;
   }
-  const groups = mode === "bet" ? betGroups(mk) : GROUPS;
+  const groups = (mode === "bet" ? betGroups(mk) : GROUPS).filter((g) => !vis || vis.has(g.id));
   // Il mercato consigliato dal motore tra tutti: il suo consiglio principale (in «Solo BET»: il primo BET).
   const recKey = mode === "bet" ? (mk.rec.find((k) => mk.x[k]) ?? null) : (m.pick?.key && mk.x[m.pick.key] ? m.pick.key : null);
   // ★ (in evidenza) solo per un BET vero: value bet su quota reale con dati sufficienti. ◦ (discreto) = la selezione più probabile, ma NON consigliata.
   const recBet = mode === "bet" || (m.pick?.verdict === "BET" && m.dq?.betOk !== false);
-  const rows = groups.map((g) => groupRow(m, g, mode, { recKey, recBet, final })).join("") + (mode === "bet" ? "" : cornerRow(m, cv, final));
+  const rows = groups.map((g) => groupRow(m, g, mode, { recKey, recBet, final })).join("") + (mode !== "bet" && vis?.has("multigol") ? multigolRow(m, final) : "") + (mode === "bet" || !showCorner ? "" : cornerRow(m, cv, final));
   const hk = recKey ?? headlineKey(m, rules);
   const why = hk ? motivationOf(m, hk, rules) : "";
-  const tendina = accordionHtml({ id: `${idPrefix}:${m.id}`, open, cls: "mcd", headCls: "mcd-head", head: "<span>Mercati e motivazioni</span>", body: `<div class="mcd-body">${detailsBody(m, cv, rules)}</div>` });
-  const recap = final ? recapHtml(m, final, cv, rules) : "";
+  const tendina = accordionHtml({ id: `${idPrefix}:${m.id}`, open, cls: "mcd", headCls: "mcd-head", head: "<span>Mercati e motivazioni</span>", body: `<div class="mcd-body">${detailsBody(m, cv, rules, vis)}</div>` });
+  const recap = final ? recapHtml(m, final, cv, rules, vis) : "";
   return `${recap}<div class="mcm">${rows}</div>${why ? `<p class="mc-why"><b>${recKey ? (recBet ? "★ Consigliato · " : "◦ Più probabile, non consigliato · ") : ""}${esc(optLabel(hk))}</b> ${why}</p>` : ""}${tendina}`;
-}
-
-/* ======================= MODELLO NEW: 1X2, doppia chance, Multigol, combinazioni ======================= */
-import { NM_BANDS, NM_FAMILY_LABEL, NM_RESULTS, NM_VERSION, STATUS_LABEL, bandKey, fairFromOdds, newMarkets, newOutcomes, statusOf } from "../functions/api/_newmodel.js";
-
-const NM_SHORT = { home: "1", draw: "X", away: "2", dc1x: "1X", dcx2: "X2", dc12: "12" };
-const nmBandText = (b) => `${b[0]}-${b[1]}`;
-const nmTop = (keys, p) => keys.reduce((best, k) => (p[k] > p[best] ? k : best), keys[0]);
-/** Stato di validazione di un gruppo di mercati: uno solo se uguale per tutti, altrimenti «misto». */
-const nmStatus = (keys) => { const s = [...new Set(keys.map((k) => statusOf(k)))]; return s.length === 1 ? STATUS_LABEL[s[0]] : "stato misto"; };
-
-/**
- * Scheda del MODELLO NEW. Legge solo `m.mk.st` (gol attesi) e le quote reali di 1X2/doppia chance in `m.mk.x[chiave].o`.
- * Nessun BET/EVITA, nessun consiglio: probabilità e stato di validazione. Gol/NoGol, Over/Under e Corner non compaiono.
- */
-export function newMarketsHtml(m, { open = false, result = null, idPrefix = "mk" } = {}) {
-  const st = m.mk?.st;
-  if (!st || !Number.isFinite(st.lh) || !Number.isFinite(st.la)) return `<div class="mcm">${none("Mercati", m.pick?.confidence === "insufficiente" ? `pochi dati: ${m.pick.sample} gare di storico` : "non ancora disponibili", "nm")}</div>`;
-  const p = newMarkets(st.lh, st.la).p, x = m.mk.x ?? {};
-  const final = result && Number.isFinite(result.h) && Number.isFinite(result.a) ? newOutcomes(result.h, result.a) : null;
-  const hit = (k) => (final ? final[k] === 1 : null);
-  const oddOf = (k) => x[k]?.o ?? null;
-  const line = (id, label, keys, lab) => row({ id, label }, keys.map((k) => cell(lab(k), p[k], { top: k === nmTop(keys, p), odd: oddOf(k), res: hit(k) })).join(""));
-  const rows = [
-    line("esito", NM_FAMILY_LABEL.esito, ["home", "draw", "away"], (k) => NM_SHORT[k]),
-    line("dc", NM_FAMILY_LABEL.dc, ["dc1x", "dcx2", "dc12"], (k) => NM_SHORT[k]),
-    line("multigol", NM_FAMILY_LABEL.multigol, NM_BANDS.map(bandKey), (k) => k.replace(/^mg(\d)(\d)$/, "$1-$2")),
-  ].join("");
-  const grid = NM_RESULTS.map((r) => row({ id: `cb-${r.key}`, label: r.label }, NM_BANDS.map((b) => cell(nmBandText(b), p[`${r.key}_${bandKey(b)}`], { res: hit(`${r.key}_${bandKey(b)}`) })).join(""))).join("");
-  // Quote reali (solo 1X2 e doppia chance): probabilità implicita; senza margine solo con tutti e tre gli esiti 1X2.
-  const fair = fairFromOdds({ home: oddOf("home"), draw: oddOf("draw"), away: oddOf("away") });
-  const odds = ["home", "draw", "away", "dc1x", "dcx2", "dc12"].filter((k) => oddOf(k) > 1).map((k) => `<li><b>${NM_SHORT[k]}</b> quota ${num(oddOf(k))} → implicita ${pct(1 / oddOf(k))}${fair && fair[k] != null ? ` (senza margine ${pct(fair[k])})` : ""} · modello ${pct(p[k])}</li>`).join("");
-  const statuses = ["esito", "dc", "multigol", "combo"].map((f) => `<li><b>${NM_FAMILY_LABEL[f]}</b> · ${nmStatus(f === "esito" ? ["home", "draw", "away"] : f === "dc" ? ["dc1x", "dcx2", "dc12"] : f === "multigol" ? NM_BANDS.map(bandKey) : NM_RESULTS.flatMap((r) => NM_BANDS.map((b) => `${r.key}_${bandKey(b)}`)))}</li>`).join("");
-  const body = `<section class="dt"><h5>Combinazioni risultato + Multigol<small>probabilità congiunte</small></h5><div class="mcm">${grid}</div><p class="dt-note">Ogni combinazione è calcolata sulla matrice dei punteggi, non moltiplicando le singole probabilità.</p></section>`
-    + `<section class="dt"><h5>Quote dei bookmaker</h5>${odds ? `<ul>${odds}</ul>` : `<p>Nessuna quota reale disponibile per questa partita.</p>`}<p class="dt-note">Il Multigol non ha quote nell'app: nessun confronto con il mercato su quel mercato.</p></section>`
-    + `<section class="dt"><h5>Stato di validazione</h5><ul>${statuses}</ul><p class="dt-note">«Non validato» = il backtest walk-forward non è ancora stato eseguito o il campione non basta.</p></section>`
-    + `<p class="dt-foot">${m.mk.s ?? "—"} gare di storico · gol attesi ${f1(st.lh)} – ${f1(st.la)}</p>`;
-  const tendina = accordionHtml({ id: `${idPrefix}:${m.id}`, open, cls: "mcd", headCls: "mcd-head", head: "<span>Combinazioni, quote e validazione</span>", body: `<div class="mcd-body">${body}</div>` });
-  const finale = final && result ? `<p class="mc-why"><b>Finale ${esc(result.h)}–${esc(result.a)}</b> · gli esiti usciti sono evidenziati.</p>` : "";
-  return `${finale}<div class="mcm">${rows}</div><p class="mc-why nm-note"><b>Modello NEW ${NM_VERSION}</b> sperimentale: probabilità statistiche, non consigli. 1X2 ${nmStatus(["home", "draw", "away"])} · Multigol ${nmStatus(NM_BANDS.map(bandKey))}.</p>${tendina}`;
 }
