@@ -1,5 +1,5 @@
 import { errorMessage, json, loadFinals, missingConfig, supabaseGet } from "./_lib.js";
-import { analyzeMatch, buildContext, MODEL, minOddsParam, withMinOdds } from "./model.js";
+import { VISIBLE_KEYS, analyzeMatch, buildContext, MODEL, minOddsParam, withMinOdds } from "./model.js";
 import { loadLogoIndex, withLogos } from "./_crests.js";
 import { brainStatusOf, loadBrainInputs } from "./_brain.js";
 import { legRows, predictionRow, recordLater } from "./_predictions.js";
@@ -24,7 +24,7 @@ export async function onRequest({ request, env, waitUntil }) {
     const none = { byGame: new Map(), state: new Map(), marketState: new Map(), retry: { pending: 0, afterMs: 0 } };
     const br = env.API_FOOTBALL_KEY ? await loadBrainInputs(env, [match], Date.now(), { maxMap: 2, maxLive: 4 }).catch((e) => { console.error("Stay Live brain:", errorMessage(e)); return none; }) : none;
     const mo = minOddsParam(url.searchParams), custom = mo != null && mo !== MODEL.minPlayOdds;      // quota minima scelta dall'utente nelle Impostazioni
-    const analysis = withMinOdds(mo, () => analyzeMatch(match, buildContext(finals), { n, ...(br.byGame.get(match.game_id) ?? {}) }));
+    const analysis = withMinOdds(mo, () => analyzeMatch(match, buildContext(finals), { n, only: VISIBLE_KEYS, ...(br.byGame.get(match.game_id) ?? {}) }));
     // Il registro misura il modello con le regole standard, non con quelle personali.
     if (n === 8 && !custom) { const row = predictionRow(match, analysis); if (row) await recordLater({ env, waitUntil }, [row], legRows(match, analysis)); }
     const afStatus = { ...brainStatusOf(br, [match.game_id]), off: !env.API_FOOTBALL_KEY };

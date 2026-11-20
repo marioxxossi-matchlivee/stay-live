@@ -1,4 +1,4 @@
-import { MODEL } from "./model.js";
+import { MARKET_SCOPE, MODEL } from "./model.js";
 import { errorMessage, supabaseUpsert } from "./_lib.js";
 
 /** Parametri che cambiano i pronostici: se ne cambi uno, la versione cambia e le statistiche non si mescolano con quelle vecchie. */
@@ -8,7 +8,7 @@ const VERSIONED = [
   "afDelta", "afMargin", "afAdviceShift", "afAgree", "afContrast",
 ];
 export function modelVersion(model = MODEL) {
-  const text = JSON.stringify(VERSIONED.map((k) => model[k]));
+  const text = JSON.stringify([...VERSIONED.map((k) => model[k]), MARKET_SCOPE]);
   let h = 0x811c9dc5;                                           // FNV-1a 32 bit
   for (let i = 0; i < text.length; i += 1) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
   return h.toString(16).padStart(8, "0");

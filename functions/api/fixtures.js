@@ -2,7 +2,7 @@ import { completenessOf } from "./_completeness.js";
 import {
   CONTINENTS, LEAGUES, SEASON, errorMessage, isActiveLeague, json, loadFinals, missingConfig, supabaseGet, supabaseGetAll, syncDue,
 } from "./_lib.js";
-import { analyzeMatch, buildContext, compactPick, marketsOf, ou25Of, rulesOf } from "./model.js";
+import { VISIBLE_KEYS, analyzeMatch, buildContext, compactPick, marketsOf, ou25Of, rulesOf } from "./model.js";
 import { loadCornerOdds } from "./_corners.js";
 import { loadLogoIndex, needsTeamList, withLogos } from "./_crests.js";
 import { loadBrainInputs } from "./_brain.js";
@@ -83,7 +83,7 @@ export async function buildFixtures(env) {
         const extra = br?.byGame.get(m.game_id) ?? null;
         const key = `${sig}|${m.game_id}|${m.kickoff_at}|${m.status}|${extra ? JSON.stringify(extra) : ""}`;
         let hit = MEMO.get(key);
-        if (!hit) { const analysis = analyzeMatch(m, ctx, { n: 8, ...(extra ?? {}) }); hit = { pick: compactPick(analysis), ou: ou25Of(analysis), mk: marketsOf(analysis) }; if (MEMO.size > 3000) MEMO.clear(); MEMO.set(key, hit); }
+        if (!hit) { const analysis = analyzeMatch(m, ctx, { n: 8, only: VISIBLE_KEYS, ...(extra ?? {}) }); hit = { pick: compactPick(analysis), ou: ou25Of(analysis), mk: marketsOf(analysis) }; if (MEMO.size > 3000) MEMO.clear(); MEMO.set(key, hit); }
         ({ pick, ou, mk } = hit);
       }
       return {

@@ -80,6 +80,11 @@ export const SELECTIONS = [
   { key: "nobtts", market: "Entrambe segnano", label: "No Gol" },
 ];
 
+/** Mercati su cui l'app ragiona e mostra i pronostici: 1X2 e doppia chance (il Multigol si legge dai gol attesi, senza quote). Gol/NoGol, Over/Under e corner sono esclusi. */
+export const VISIBLE_KEYS = ["home", "draw", "away", "dc1x", "dcx2", "dc12"];
+/** Perimetro dei mercati dell'app: entra nella versione del modello, così le statistiche prima e dopo la restrizione restano separate. */
+export const MARKET_SCOPE = "1x2+dc";
+
 export const isPreferred = (sel) => MODEL.preferredMarkets.includes(sel.market);
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -392,7 +397,7 @@ export const interestOrder = (x, y) => (y.verdict === "BET") - (x.verdict === "B
 
 const afRank = (s) => (s.agree === "conferma" ? 0 : s.agree === "contraddice" ? 2 : 1);
 
-export function analyzeMatch(match, ctx, { n = 8, af = null, market = null, inj = null } = {}) {
+export function analyzeMatch(match, ctx, { n = 8, af = null, market = null, inj = null, only = null } = {}) {
   const before = Date.parse(match.kickoff_at) || Date.now();
   const base = ctx.baseline(match.league);
   const home = teamForm(match.home_id, before, ctx, n);
@@ -420,7 +425,7 @@ export function analyzeMatch(match, ctx, { n = 8, af = null, market = null, inj 
   const absent = inj ? (inj.home ?? 0) + (inj.away ?? 0) : 0;
   const injPen = Math.min(8, absent) * MODEL.injPenalty;
 
-  const selections = SELECTIONS.map((s) => {
+  const selections = (only ? SELECTIONS.filter((s) => only.includes(s.key)) : SELECTIONS).map((s) => {
     const src = {
       storico: { p: p[s.key], low: Math.min(low[s.key], p[s.key]) },
       api: afP?.p[s.key] != null ? { p: afP.p[s.key], low: afP.low[s.key] } : null,

@@ -1,5 +1,5 @@
 import { errorMessage, json, loadFinals, missingConfig, supabaseGet } from "./_lib.js";
-import { MODEL, analyzeMatch, buildContext, buildMultiples, compactPick, minOddsParam, ou25Of, withMinOdds } from "./model.js";
+import { MODEL, VISIBLE_KEYS, analyzeMatch, buildContext, buildMultiples, compactPick, minOddsParam, ou25Of, withMinOdds } from "./model.js";
 import { loadCornerOdds } from "./_corners.js";
 import { loadLogoIndex, withLogos } from "./_crests.js";
 import { brainStatusOf, loadBrainInputs } from "./_brain.js";
@@ -34,7 +34,7 @@ export async function onRequest({ request, env, waitUntil }) {
     const rec = [], recLegs = [], ver = modelVersion(), nowMs = Date.now();      // registro dei pronostici (prima del calcio d'inizio), per misurare l'affidabilità
     const mo = minOddsParam(params), personal = mo != null && mo !== MODEL.minPlayOdds;      // quota minima scelta nelle Impostazioni: il registro resta con le regole standard
     const items = withMinOdds(mo, () => matches.map((m) => {
-      let a = analyzeMatch(m, ctx, { n, ...(br.byGame.get(m.game_id) ?? {}) });
+      let a = analyzeMatch(m, ctx, { n, only: VISIBLE_KEYS, ...(br.byGame.get(m.game_id) ?? {}) });
       if (!custom && n === 8 && !personal) { const row = predictionRow(m, a, { now: nowMs, ver }); if (row) { rec.push(row); recLegs.push(...legRows(m, a, { now: nowMs, ver })); } }
       if (custom) {
         const best = ou25Of(a)?.best;
