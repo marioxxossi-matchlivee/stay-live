@@ -31,7 +31,7 @@ test("la query OLD e la trasformazione coincidono con quelle del vero loadHistor
 });
 test("il codice operativo di loadHistory è invariato: offset, 80 pagine da 1.000", () => {
   const src = fs.readFileSync("scripts/tennis-sync.js", "utf8"); assert.ok(/order: "starts_at\.asc,match_key\.asc" \}, 1000, 80\);/.test(src));
-  assert.ok(!/_tennis-history|tennis-history-shadow/.test(src), "tennis-sync.js non deve richiamare né il loader a chiave né la Shadow Mode");
+  assert.ok(!/tennis-history-shadow/.test(src), "tennis-sync.js non deve richiamare la Shadow Mode"); assert.ok(/export const historyLoaderMode/.test(src) && /=== "keyset" \? "keyset" : "offset"/.test(src), "interruttore con predefinito offset");
 });
 test("oltre 80.000 righe: OLD si ferma al tetto, NEW le legge tutte; le perse sono le più recenti; nessuna duplicazione", async () => {
   const rows = synth(96400), t = table(rows);
@@ -94,7 +94,7 @@ test("lo script è di SOLA LETTURA e isolato: nessuna scrittura, nessun importat
   assert.ok(/method: "GET"/.test(src));
   const wf = fs.readFileSync(".github/workflows/tennis-history-shadow.yml", "utf8"); assert.ok(!/schedule:|TENNIS_API_KEY|db push|migration/i.test(wf)); assert.ok(/workflow_dispatch/.test(wf));
   const walk = (d, out = []) => { for (const f of fs.readdirSync(d, { withFileTypes: true })) { if (["node_modules", ".git", "tests"].includes(f.name)) continue; const p = `${d}/${f.name}`; if (f.isDirectory()) walk(p, out); else if (/\.(js|mjs|yml|yaml|toml|html)$/.test(f.name) && fs.readFileSync(p, "utf8").includes("tennis-history-shadow") && p !== "./.github/workflows/tennis-history-shadow.yml") out.push(p); } return out; };
-  assert.deepEqual(walk(".").filter((p) => !/^\.\/scripts\/tennis-history-shadow\.js$/.test(p)), []);
+  assert.deepEqual(walk(".").filter((p) => !/^\.\/scripts\/tennis-(history-(shadow|monitor)|strategy-audit-v5)\.js$/.test(p)), []); // consumatori ammessi: solo script di sola lettura
 });
 test("interruttore: senza TENNIS_HISTORY_SHADOW=on lo script non legge nulla ed esce con 0; con 'off' idem", () => {
   assert.equal(SHADOW_ENABLED({}), false); assert.equal(SHADOW_ENABLED({ TENNIS_HISTORY_SHADOW: "off" }), false); assert.equal(SHADOW_ENABLED({ TENNIS_HISTORY_SHADOW: "on" }), true);

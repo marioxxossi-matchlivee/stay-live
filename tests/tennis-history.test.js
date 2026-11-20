@@ -51,7 +51,7 @@ test("i valori del filtro a chiave sono tra virgolette (virgole, parentesi, apic
 test("il caricamento a chiave NON è collegato al motore operativo (solo audit e test)", () => {
   const users = [], walk = (d) => { for (const f of fs.readdirSync(d, { withFileTypes: true })) { if (["node_modules", ".git"].includes(f.name)) continue; const p = `${d}/${f.name}`; if (f.isDirectory()) walk(p); else if (/\.(js|mjs|yml|yaml|toml|html)$/.test(f.name) && fs.readFileSync(p, "utf8").includes("_tennis-history")) users.push(p); } };
   for (const d of ["functions", "scripts", "src", ".github", "public"]) if (fs.existsSync(d)) walk(d);
-  assert.ok(users.every((u) => [ "scripts/tennis-strategy-audit.js", "scripts/tennis-history-shadow.js" ].includes(u)), `importatori non ammessi: ${users}`); // Shadow Mode: script di sola lettura dedicato (aggiunto il 19/11/2026); motore e API restano esclusi
+  assert.ok(users.every((u) => [ "scripts/tennis-strategy-audit.js", "scripts/tennis-history-shadow.js", "scripts/tennis-history-monitor.js", "scripts/tennis-strategy-audit-v5.js", "scripts/tennis-sync.js" ].includes(u)), `importatori non ammessi: ${users}`); // Shadow Mode (19/11/2026) e interruttore di tennis-sync.js (predefinito offset): le API in functions/ restano escluse
 });
 
 // ── Aggiunte 19/11/2026: robustezza del caricamento a chiave ──
@@ -91,6 +91,8 @@ test("chiavi con caratteri speciali attraversano due pagine senza perdite", asyn
   const fetchPage = async (p) => { calls++; if (!p.or) return sorted.slice(0, 3); const m = p.or.match(/match_key\.gt\."((?:[^"\\]|\\.)*)"\)\)$/); const last = m[1].replaceAll('\\"', '"').replaceAll("\\\\", "\\"); return sorted.filter((r) => r.match_key > last).slice(0, 3); };
   const r = await loadFinishedKeyset(fetchPage, { pageSize: 3 }); assert.equal(r.rows.length, 6); assert.equal(new Set(r.rows.map((x) => x.match_key)).size, 6); assert.ok(calls >= 2);
 });
-test("il motore operativo (tennis-sync.js, functions/, src/) NON importa né il loader a chiave né la Shadow Mode", () => {
-  for (const f of ["scripts/tennis-sync.js", ...fs.readdirSync("functions/api").map((x) => `functions/api/${x}`)]) { if (f.endsWith("_tennis-history.js")) continue; const s = fs.readFileSync(f, "utf8"); assert.ok(!/_tennis-history|tennis-history-shadow/.test(s.replace(/\/\*[\s\S]*?\*\//g, "")), `${f} collegato al loader`); }
+test("il loader a chiave è collegato a tennis-sync.js SOLO dietro interruttore (predefinito offset); API, app e Shadow Mode restano separate", () => {
+  const sync = fs.readFileSync("scripts/tennis-sync.js", "utf8");
+  assert.ok(/historyLoaderMode/.test(sync) && !/tennis-history-shadow/.test(sync), "tennis-sync.js non deve importare la Shadow Mode");
+  for (const f of fs.readdirSync("functions/api").map((x) => `functions/api/${x}`)) { if (f.endsWith("_tennis-history.js")) continue; const s = fs.readFileSync(f, "utf8"); assert.ok(!/_tennis-history|tennis-history-shadow/.test(s.replace(/\/\*[\s\S]*?\*\//g, "")), `${f} collegato al loader`); }
 });
