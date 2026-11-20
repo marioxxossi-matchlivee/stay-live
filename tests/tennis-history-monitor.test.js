@@ -40,3 +40,11 @@ test("il report dichiara l'esito e il workflow è di sola lettura, con avvio pro
   const wf = fs.readFileSync(".github/workflows/tennis-history-monitor.yml", "utf8"); assert.ok(/schedule:/.test(wf) && /contents: read/.test(wf) && !/TENNIS_API_KEY|db push|migration/i.test(wf));
   const src = fs.readFileSync("scripts/tennis-history-monitor.js", "utf8").replace(/\/\*[\s\S]*?\*\//g, ""); assert.ok(!/supabaseUpsert|supabasePatch|supabaseDelete|makeDb|\.rpc\(|method: "(POST|PATCH|PUT|DELETE)"/.test(src));
 });
+
+test("partite concluse con inizio nel futuro: ATTENZIONE con conteggio, anticipo massimo ed esempi (il caso del 20/11/2026)", () => {
+  const rows = mk(300), fut = [...rows, { ...rows[0], match_key: "kF1", starts_at: new Date(NOW + 12 * 3600e3).toISOString() }, { ...rows[0], match_key: "kF2", starts_at: new Date(NOW + 2 * 3600e3).toISOString() }];
+  const h = evaluateHealth(base(fut)), c = h.checks.find((x) => x.id === "concluse con data futura"); assert.equal(c.level, "attenzione"); assert.match(c.detail, /2 partite concluse.*12\.0 ore avanti.*kF1/);
+  assert.match(h.checks.find((x) => x.id === "ultima data").detail, /NEL FUTURO/);
+  assert.equal(level(evaluateHealth(base(mk(300))), "concluse con data futura"), "ok");
+  assert.equal(level(evaluateHealth(base([...mk(300), { ...mk(1)[0], match_key: "kN", starts_at: new Date(NOW + 10 * 60e3).toISOString() }])), "concluse con data futura"), "ok"); // entro la tolleranza di 30 minuti
+});
