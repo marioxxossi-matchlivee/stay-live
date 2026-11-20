@@ -237,7 +237,7 @@ export function makeReaders(env) {
       const total = Number(String(res.headers.get("content-range") ?? "").split("/")[1]);
       return Number.isFinite(total) ? total : null;
     },
-    realOld: (now) => loadHistory({ getAll: (table, query, pageSize, maxPages) => supabaseGetAll(env, table, query, pageSize, maxPages) }, now), // il vero percorso operativo, con il suo tetto
+    realOld: (now) => loadHistory({ getAll: (table, query, pageSize, maxPages) => supabaseGetAll(env, table, query, pageSize, maxPages) }, now, CFG.historyDays, { loader: "offset" }), // il vero percorso operativo, con il suo tetto
   };
 }
 

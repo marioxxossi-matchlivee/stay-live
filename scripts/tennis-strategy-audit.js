@@ -16,6 +16,7 @@ import { loadFinishedKeyset } from "../functions/api/_tennis-history.js";
 import { RatingBook, predictMatch, normalizeSurface, TENNIS_MODEL } from "../functions/api/_tennis-model.js";
 import { TENNIS_BET, noVig } from "../functions/api/_tennis-bet.js";
 import { STRATEGY2, classifySide, adjustProbability } from "../functions/api/_tennis-strategy2.js";
+export { STRATEGY2 }; // riesportata per l'audit v5 (solo lettura della configurazione)
 
 export const BANDS = [[1.2, 1.5, "1,20–1,50"], [1.5, 2, "1,50–2,00"], [2, 3, "2,00–3,00"], [3, 5, "3,00–5,00"], [5, 10, "5,00–10,00"], [10, Infinity, "oltre 10,00"]];
 export const bandOf = (odds) => BANDS.find(([a, b]) => odds >= a && odds < b)?.[2] ?? "sotto 1,20";
@@ -286,7 +287,7 @@ export function strategy2WalkForward(sides, cfg = STRATEGY2) {
         const pm = s === 1 ? x.p : 1 - x.p, mk = s === 1 ? x.mkt : 1 - x.mkt, pa = s === 1 ? q : 1 - q, o = x.o[s - 1];
         const c = classifySide({ pAdj: pa, pModel: pm, mkt: mk, odds: o, reliability: x.rel, evidence: ev[x.label] }, cfg);
         if (c.tier === "D") { dSides++; dReasons[c.reasons[0]] = (dReasons[c.reasons[0]] ?? 0) + 1; continue; }
-        best.push({ tier: c.tier, edge: c.edge, p: pa, odds: o, mkt: mk, y: s === 1 ? x.y : 1 - x.y, label: x.label, isUnderdog: pa < 0.5 });
+        best.push({ tier: c.tier, edge: c.edge, p: pa, odds: o, mkt: mk, y: s === 1 ? x.y : 1 - x.y, label: x.label, isUnderdog: pa < 0.5, key: x.key, g: x.g, t: x.t });
       }
       best.sort((a, b) => b.edge - a.edge); if (best[0]) picks[best[0].tier].push(best[0]);
     }
@@ -294,7 +295,9 @@ export function strategy2WalkForward(sides, cfg = STRATEGY2) {
   const t0 = months[cfg.minTrainMonths] ? Date.parse(`${months[cfg.minTrainMonths]}-01T00:00:00Z`) : Infinity;
   const current = pickBestPerMatch(sides.filter((x) => x.t >= t0 && passesCurrentRules(x, TENNIS_BET, { ignoreReliability: true })));
   const all = [...picks.A, ...picks.B, ...picks.C];
-  return { firstTestMonth: months[cfg.minTrainMonths] ?? null, testedMatches: tested, tiers: { A: summarizeSides(picks.A), B: summarizeSides(picks.B), C: summarizeSides(picks.C), "A+B": summarizeSides([...picks.A, ...picks.B]), "A+B+C": summarizeSides(all) }, underdogShare: { "A+B+C": all.length ? r(all.filter((x) => x.isUnderdog).length / all.length) : null, regoleAttuali: current.length ? r(current.filter((x) => x.isUnderdog).length / current.length) : null }, discardedSides: dSides, discardReasons: dReasons, currentRulesSameWindow: summarizeSides(current), byCategoryAB: groupBy([...picks.A, ...picks.B], (x) => x.label) };
+  const result = { firstTestMonth: months[cfg.minTrainMonths] ?? null, testedMatches: tested, tiers: { A: summarizeSides(picks.A), B: summarizeSides(picks.B), C: summarizeSides(picks.C), "A+B": summarizeSides([...picks.A, ...picks.B]), "A+B+C": summarizeSides(all) }, underdogShare: { "A+B+C": all.length ? r(all.filter((x) => x.isUnderdog).length / all.length) : null, regoleAttuali: current.length ? r(current.filter((x) => x.isUnderdog).length / current.length) : null }, discardedSides: dSides, discardReasons: dReasons, currentRulesSameWindow: summarizeSides(current), byCategoryAB: groupBy([...picks.A, ...picks.B], (x) => x.label) };
+  Object.defineProperty(result, "_picks", { value: picks, enumerable: false }); // selezioni con blocco e data, solo per l'audit v5 (non entra nel JSON)
+  return result;
 }
 
 /** Deriva dei rating: giocatori attivi DOPO il taglio, rating Elo e forma con lo storico congelato al taglio (come il motore oggi) contro lo storico completo. Solo lettura del RatingBook. */

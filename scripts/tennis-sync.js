@@ -12,7 +12,8 @@
  */
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
-import { errorMessage, supabaseDelete, supabaseGetAll, supabasePatch, supabaseUpsert } from "../functions/api/_lib.js";
+import { errorMessage, supabaseDelete, supabaseGet, supabaseGetAll, supabasePatch, supabaseUpsert } from "../functions/api/_lib.js";
+import { loadFinishedKeyset } from "../functions/api/_tennis-history.js";
 import { createClient, DIRECT_BASE, TennisApiError } from "../functions/api/_tennis-client.js";
 import { TOURS, normalizeUpcoming, normalizeResult, normalizeLive, normalizeRankingPage, normalizeMatchStats, normalizeTournamentFilters, readPage, readLiveFeed } from "../functions/api/_tennis-provider.js";
 import { RatingBook, predictMatch, normalizeSurface, inferBestOf, TENNIS_MODEL } from "../functions/api/_tennis-model.js";
@@ -37,6 +38,7 @@ export function makeDb(env) {
   const hdr = { apikey: env.SUPABASE_SERVICE_ROLE_KEY, authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, "content-type": "application/json" };
   return {
     getAll: (table, query, pageSize = 1000, maxPages = 40) => supabaseGetAll(env, table, query, pageSize, maxPages),
+    fetchPage: (params) => supabaseGet(env, "tennis_matches", params), // sola lettura: usata solo dal caricamento a chiave (interruttore sotto)
     upsert: (table, rows, conflict) => (rows.length ? supabaseUpsert(env, table, rows, conflict) : Promise.resolve()),
     patch: (table, filter, body) => supabasePatch(env, table, filter, body),
     del: (table, filter) => supabaseDelete(env, table, filter),
@@ -122,9 +124,23 @@ export async function saveMatches(db, upcoming, results, now) {
   return { upcoming: up.length, results: rs.length, players: players.size };
 }
 
+/**
+ * Interruttore del caricamento storico. PREDEFINITO "offset": il percorso operativo storico (80 pagine × 1.000 righe = tetto di 80.000 partite).
+ * "keyset" (paginazione a chiave, storico completo, errore esplicito oltre il limite di sicurezza) si attiva SOLO con TENNIS_HISTORY_LOADER=keyset:
+ * nessun workflow lo imposta; attivarlo è una decisione separata, annullarla = togliere la variabile. La Shadow Mode confronta i due percorsi.
+ */
+export const historyLoaderMode = (env = process.env) => (String(env.TENNIS_HISTORY_LOADER ?? "").trim().toLowerCase() === "keyset" ? "keyset" : "offset");
+
 /** Storico per il modello: SOLO incontri conclusi regolarmente (completed) con vincitore, in ordine cronologico. */
-export async function loadHistory(db, now, days = CFG.historyDays) {
-  const rows = await db.getAll("tennis_matches", { select: "p1_id,p2_id,winner,starts_at,surface,best_of,tour,category,p1_name,p2_name", status: "eq.finished", winner: "not.is.null", starts_at: `gte.${iso(now - days * DAY)}`, order: "starts_at.asc,match_key.asc" }, 1000, 80);
+export async function loadHistory(db, now, days = CFG.historyDays, { loader = historyLoaderMode() } = {}) {
+  const base = { select: "p1_id,p2_id,winner,starts_at,surface,best_of,tour,category,p1_name,p2_name", status: "eq.finished", winner: "not.is.null", starts_at: `gte.${iso(now - days * DAY)}` };
+  let rows;
+  if (loader === "keyset") {
+    if (typeof db.fetchPage !== "function") throw new Error("Caricamento a chiave non disponibile: manca db.fetchPage.");
+    rows = (await loadFinishedKeyset(db.fetchPage, { query: { ...base, select: `match_key,${base.select}` }, retries: 2 })).rows;
+  } else {
+    rows = await db.getAll("tennis_matches", { select: base.select, status: base.status, winner: base.winner, starts_at: base.starts_at, order: "starts_at.asc,match_key.asc" }, 1000, 80);
+  }
   return rows.filter((r) => r.winner === 1 || r.winner === 2).map((r) => ({ t: Date.parse(r.starts_at), winnerId: r.winner === 1 ? r.p1_id : r.p2_id, loserId: r.winner === 1 ? r.p2_id : r.p1_id, surface: r.surface, tour: r.tour, bestOf: r.best_of, category: r.category, p1Name: r.p1_name, p2Name: r.p2_name }));
 }
 
@@ -282,7 +298,7 @@ export async function runRefresh({ api, db, now }) {
     await db.upsert("tennis_itf_shadow", shadow, "match_key");
     meta.itfShadow = { rows: shadow.length, excluded: shadow.filter((x) => x.outcome === "excluded").length, wouldRemoveBet: shadow.filter((x) => x.would_remove).length, notEvaluable: shadow.filter((x) => x.outcome === "not_evaluable").length };
   } catch (e) { meta.itfShadowError = String(e?.message ?? e).slice(0, 200); }
-  meta.predictions = { total: rows.length, published: rows.filter((r) => r.published).length, abstained: rows.filter((r) => !r.published).length, bet: rows.filter((r) => r.bet?.verdict === "BET").length, historyMatches: history.length, calibrated: !!calibrator };
+  meta.predictions = { total: rows.length, published: rows.filter((r) => r.published).length, abstained: rows.filter((r) => !r.published).length, bet: rows.filter((r) => r.bet?.verdict === "BET").length, historyMatches: history.length, historyLoader: historyLoaderMode(), calibrated: !!calibrator };
   await buildAndStoreSnapshot(db, now, { job: "refresh", api, jobMeta: meta });
   // Giro parziale (es. un circuito in errore): resta valido, con l'avviso in meta.errors. Se il provider non ha dato nulla, il giro risulta fallito
   // ma solo DOPO aver ricalcolato pronostici e snapshot dai dati già presenti, così l'app non resta ferma.
