@@ -62,5 +62,9 @@ export function evaluateDouble(a, b, cfg = STRATEGY2) {
   if (pJoint < cfg.doubleMinJointProb) reasons.push("probabilità congiunta troppo bassa");
   if (ev < cfg.doubleMinEv) reasons.push("vantaggio della doppia insufficiente");
   if (!reasons.length && ratio(pJoint, oddsJoint) < best) reasons.push("peggiore delle singole a parità di rischio");
-  return { propose: reasons.length === 0, pJoint, oddsJoint, ev, reasons };
+  // LIMITE DOCUMENTATO: pJoint = prodotto delle probabilità singole = ipotesi di INDIPENDENZA, mai verificata. Tornei diversi non dimostrano l'indipendenza
+  // (stessa giornata, stessa superficie, stessi errori sistematici del modello e del mercato possono correlare i risultati). Finché non esiste una stima validata
+  // delle probabilità congiunte (vedi `jointIndependenceCheck` in scripts/tennis-strategy-audit-v5.js e la validazione prospettica), una doppia NON è validata
+  // e non va presentata con un vantaggio statistico: `propose` resta una proposta sperimentale in Shadow Mode, non una prova.
+  return { propose: reasons.length === 0, pJoint, oddsJoint, ev, reasons, validated: false, independenceAssumed: true, limitation: "Probabilità congiunta = prodotto delle singole (indipendenza assunta, non verificata): doppia non validata, nessun vantaggio statistico attribuibile." };
 }
