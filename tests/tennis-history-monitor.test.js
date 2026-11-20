@@ -45,6 +45,9 @@ test("partite concluse con inizio nel futuro: ATTENZIONE con conteggio, anticipo
   const rows = mk(300), fut = [...rows, { ...rows[0], match_key: "kF1", starts_at: new Date(NOW + 12 * 3600e3).toISOString() }, { ...rows[0], match_key: "kF2", starts_at: new Date(NOW + 2 * 3600e3).toISOString() }];
   const h = evaluateHealth(base(fut)), c = h.checks.find((x) => x.id === "concluse con data futura"); assert.equal(c.level, "attenzione"); assert.match(c.detail, /2 partite concluse.*12\.0 ore avanti.*kF1/);
   assert.match(h.checks.find((x) => x.id === "ultima data").detail, /NEL FUTURO/);
+  assert.equal(level(h, "ultima data"), "attenzione"); // coerente con il controllo «concluse con data futura» (prima restava OK)
   assert.equal(level(evaluateHealth(base(mk(300))), "concluse con data futura"), "ok");
   assert.equal(level(evaluateHealth(base([...mk(300), { ...mk(1)[0], match_key: "kN", starts_at: new Date(NOW + 10 * 60e3).toISOString() }])), "concluse con data futura"), "ok"); // entro la tolleranza di 30 minuti
+  const tol = evaluateHealth(base([...mk(300), { ...mk(1)[0], match_key: "kN", starts_at: new Date(NOW + 10 * 60e3).toISOString() }])); assert.equal(level(tol, "ultima data"), "ok"); // anche «ultima data» tollera 30 minuti
+  assert.equal(level(evaluateHealth(base([...mk(300), { ...mk(1)[0], match_key: "kM", starts_at: new Date(NOW + 31 * 60e3).toISOString() }])), "ultima data"), "attenzione"); // oltre la soglia
 });
