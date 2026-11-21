@@ -90,6 +90,17 @@ Controllo indipendente sui numeri reali (medie della tabella): log loss mercato 
 
 **Evidenze ancora necessarie prima di qualunque promozione:** (1) Δ log loss contro il mercato con intervallo > 0 e Holm < 0,05 su almeno 300 partite e 50 blocchi, fuori campione; (2) quote disponibili al momento della previsione (oggi solo chiusura, bookmaker non identificato) e non solo la chiusura; (3) per le classi, almeno 300 selezioni e 50 blocchi fuori campione; (4) per le doppie, una stima validata delle probabilità congiunte; (5) validazione prospettica (solo progettata: `docs/VALIDAZIONE-PROSPETTICA-TENNIS.md`). Finché mancano, l'astensione è il comportamento corretto.
 
+## 0f. LIVE OBSERVATION (osservazione prospettica in Shadow Mode): stato al 21/11/2026 (revisione 2)
+**Stato: codice e test locali pronti; migrazione NON applicata (verificato: 0 tabelle `tennis_observation*` sul database remoto); aggancio SPENTO (`TENNIS_LIVE_OBSERVATION` non impostata, `tennis-sync.yml` invariato); nessun dato prospettico raccolto; nessun risultato di validazione.**
+- Architettura: tabelle `tennis_observations` (anagrafica immutabile) e `tennis_observation_versions` (append-only: rev 1 = valutazione iniziale permanente, rev 2… = revisioni separate), vista `tennis_observation_results` (risultato per `match_key` + controllo degli id, mai per nome). SQL in `supabase/migrations/202611210001_tennis_live_observation.sql`, in attesa di autorizzazione esplicita.
+- Rating: `ratings_ver` è l'impronta del CONTENUTO dello storico usato (data, vincitore, perdente, superficie, circuito di ogni partita + conteggio + loader), calcolata sull'array già in memoria. Una sua variazione genera la revisione `ratings_version` anche a probabilità invariata; storico invariato = nessuna riga.
+- Anti look-ahead indipendente: prima di ogni registrazione si controlla lo storico effettivamente usato; con una partita conclusa a data successiva all'istante di elaborazione (o storico vuoto) NON si registra nulla, la diagnostica riporta motivo, numero, data più recente e campione, e nulla viene corretto. Ogni versione conserva `history_last_at`, con vincolo SQL `history_last_at <= recorded_at`.
+- Fotografia dei dati: valori numerici (punti vinti al servizio e in risposta, partite, punti di servizio, ranking, H2H, Elo generale e di superficie, forma, componenti), `null` se assenti; verificata per ricostruzione contro `predictMatch`.
+- Storico completo: `/api/tennis-observation` a pagine con cursore, filtri `from`/`to`/`key`, totale esatto, tutte le revisioni, nessun limite temporale, errore invece di troncamento; l'interfaccia mostra «mostrate X di Y» e dichiara parziali le metriche finché lo storico non è completo.
+- Permessi: GRANT espliciti solo a `service_role` (select/insert sulle due tabelle, select sulla vista), nessun permesso ad `anon`/`authenticated`; RLS attiva senza policy.
+- Aggancio al `refresh` (`scripts/tennis-sync.js`): una chiamata protetta da try/catch; non modifica `predictMatch`, `computePredictions`, `loadHistory`, `buildBook`, il loader a offset, `tennis_predictions` né le probabilità operative; KEYSET non attivo.
+- Le metriche prospettiche usano solo la valutazione iniziale e solo partite concluse con risultato verificato; sotto 300 osservazioni e 50 blocchi sono dichiarate insufficienti. I risultati storici restano non predittivi (§0e).
+
 ## 1. Completato e verificato (con esito riproducibile)
 | Cosa | Verifica |
 |---|---|
