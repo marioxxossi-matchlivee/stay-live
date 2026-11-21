@@ -1,0 +1,31 @@
+/* LIVE OBSERVATION dentro «Affidabilità»: riusa le classi mn-* di monitor.css; qui solo il necessario. */
+.lo-card { padding: 0; overflow: hidden; }
+.lo-card > .mn-note, .lo-card > .lo-tabs, .lo-card > .mn-kpis, .lo-card > .lo-list, .lo-card > .lo-filters, .lo-card > .mn-emptybox, .lo-card > section { margin-left: 14px; margin-right: 14px; }
+.lo-card > :last-child { margin-bottom: 14px; }
+.lo-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 0; background: none; text-align: left; font: inherit; color: var(--ink); cursor: pointer; }
+.lo-toggle b { display: block; font: 800 15px var(--body); letter-spacing: .02em; }
+.lo-toggle small { display: block; margin-top: 2px; font: 500 12px var(--body); color: var(--muted, #667); }
+.lo-toggle i { font: 700 20px var(--body); font-style: normal; }
+.lo-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 10px; }
+.lo-tabs button { flex: none; height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); font: 700 13px var(--body); color: var(--ink); }
+.lo-tabs button[aria-pressed="true"] { background: var(--ink); color: var(--card); }
+.lo-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+.lo-filters select, .lo-filters input { height: 36px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 0 8px; font: 500 13px var(--body); color: var(--ink); min-width: 0; }
+.lo-filters input { grid-column: 1 / -1; }
+.lo-list { display: grid; gap: 8px; }
+.lo-row { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); }
+.lo-head { display: flex; width: 100%; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 0; background: none; text-align: left; font: inherit; color: var(--ink); }
+.lo-t, .lo-r { display: grid; gap: 3px; min-width: 0; }
+.lo-r { justify-items: end; text-align: right; }
+.lo-head small { font: 500 12px var(--body); color: var(--muted, #667); }
+.lo-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font: 700 11px var(--body); background: #e8edf7; color: #2b3a55; }
+.lo-concluded { background: #dff3e6; color: #17603a; } .lo-live { background: #fff0d6; color: #8a5a00; }
+.lo-awaiting_result, .lo-identity_mismatch, .lo-interrupted { background: #fde3e3; color: #8b2020; }
+.lo-detail { padding: 0 12px 12px; border-top: 1px solid var(--line); }
+.lo-detail h4 { margin: 12px 0 4px; font: 800 12px var(--body); text-transform: uppercase; letter-spacing: .04em; }
+.lo-chron { margin: 0; padding-left: 18px; font: 500 13px var(--body); }
+.lo-diag.bad { color: #8b2020; font-weight: 700; }
+@media (prefers-reduced-motion: no-preference) { .lo-row { transition: box-shadow .2s ease; } .lo-row.open { box-shadow: 0 2px 10px rgba(20, 30, 60, .08); } }
+.lo-more { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 14px 14px; }
+.lo-more button { height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); font: 700 13px var(--body); color: var(--ink); }
+.lo-more button[disabled] { opacity: .6; }
