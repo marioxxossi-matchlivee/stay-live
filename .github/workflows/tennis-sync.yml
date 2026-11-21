@@ -65,4 +65,6 @@ jobs:
           TENNIS_API_BASE: ${{ secrets.TENNIS_API_BASE }}
           BACKFILL_DAYS: ${{ github.event.inputs.backfill_days }}
           BACKFILL_DATES: ${{ github.event.inputs.backfill_dates }}
+          # LIVE OBSERVATION si attiva esclusivamente nei refresh; resta spenta in live, static e backfill.
+          TENNIS_LIVE_OBSERVATION: ${{ steps.mode.outputs.mode == 'refresh' && 'on' || 'off' }}
         run: node scripts/tennis-sync.js "${{ steps.mode.outputs.mode }}"
