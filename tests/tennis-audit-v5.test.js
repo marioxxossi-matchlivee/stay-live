@@ -83,3 +83,18 @@ test("audit v5 e workflow: sola lettura, avvio manuale, mai importati dal motore
   for (const f of ["scripts/tennis-sync.js", ...fs.readdirSync("functions/api").map((x) => `functions/api/${x}`)]) assert.ok(!/from\s+["'][^"']*tennis-strategy-audit-v5/.test(fs.readFileSync(f, "utf8")), f);
   void threeWayComparison; void MIN_GROUP_N;
 });
+
+test("convenzione dei segni: Δ = perdita del primo − perdita del secondo (> 0 = vince il secondo); le etichette la dichiarano", () => {
+  const g = report.threeWay.groups[0], m = g.metrics;
+  // Δ mercato−NEW = log loss medio del mercato − log loss medio di NEW (stima puntuale = differenza delle medie, a meno degli arrotondamenti a 4 decimali)
+  assert.ok(Math.abs(g.newVsMarket.logLoss.est - (m.market.logLoss - m.new.logLoss)) < 3e-4);
+  assert.ok(Math.abs(g.newVsMarket.brier.est - (m.market.brier - m.new.brier)) < 3e-4);
+  assert.ok(Math.abs(g.newVsOld.logLoss.est - (m.old.logLoss - m.new.logLoss)) < 3e-4);
+  assert.ok(Math.abs(g.newVsOld.brier.est - (m.old.brier - m.new.brier)) < 3e-4);
+  // dati fittizi con esito sempre = favorito del mercato: mercato meglio di NEW ⇒ Δ negativo
+  const r2 = [{ g: "a", y: 1, pOld: 0.5, pNew: 0.6, mkt: 0.9 }, { g: "b", y: 0, pOld: 0.5, pNew: 0.4, mkt: 0.1 }, { g: "c", y: 1, pOld: 0.5, pNew: 0.6, mkt: 0.9 }];
+  const e = evalGroup(r2); assert.ok(e.newVsMarket.logLoss.est < 0); assert.ok(e.newVsOld.logLoss.est > 0);
+  // etichette: nessuna intestazione ambigua «NEW−mercato», convenzione esplicita nel report in Markdown
+  const src = fs.readFileSync(new URL("../scripts/tennis-strategy-audit-v5.js", import.meta.url), "utf8");
+  assert.ok(!/Δ log loss NEW−mercato/.test(src)); assert.match(src, /perdita mercato − perdita NEW/); assert.match(src, /solo mercato ricalibrato − mercato\+modello/);
+});
