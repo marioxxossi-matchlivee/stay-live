@@ -125,7 +125,7 @@ export function buildReportV5(rows, { cap = OPERATIVE_HISTORY_CAP, hist = {}, wi
     rep.strategy2 = { firstTestMonth: s2.firstTestMonth, testedMatches: s2.testedMatches, tiers: s2.tiers };
   }
   const tw = rep.threeWay, all = tw?.available ? tw.groups[0] : null;
-  rep.conclusion = all ? `Sulle ${all.n} partite perse dall'OLD: NEW vs OLD Δlog loss ${all.newVsOld.logLoss.est} [${all.newVsOld.logLoss.lo} ; ${all.newVsOld.logLoss.hi}]; NEW vs mercato Δlog loss ${all.newVsMarket.logLoss.est} [${all.newVsMarket.logLoss.lo} ; ${all.newVsMarket.logLoss.hi}] → ${all.verdictVsMarket}.` : "Confronto OLD/NEW non disponibile.";
+  rep.conclusion = all ? `Sulle ${all.n} partite perse dall'OLD: NEW vs OLD Δlog loss ${all.newVsOld.logLoss.est} [${all.newVsOld.logLoss.lo} ; ${all.newVsOld.logLoss.hi}]; NEW vs mercato Δlog loss (perdita mercato − perdita NEW; < 0 = NEW peggiore) ${all.newVsMarket.logLoss.est} [${all.newVsMarket.logLoss.lo} ; ${all.newVsMarket.logLoss.hi}] → ${all.verdictVsMarket}.` : "Confronto OLD/NEW non disponibile.";
   rep.limits = "Quote di CHIUSURA; rigioco Elo+forma senza statistiche di servizio, H2H e ranking storici; differenze OLD→NEW misurano la disponibilità dei dati, non un vantaggio sul mercato. L'astensione resta il comportamento corretto finché non c'è prova robusta di informazione aggiuntiva.";
   return rep;
 }
@@ -134,15 +134,15 @@ const f = (x) => (x == null ? "n.d." : x), cell = (c) => (c ? `${f(c.est)} [${f(
 export function renderReportV5(rep) {
   const tw = rep.threeWay; let md = `## Audit v5 — storico completo (sola lettura)\nPartite: ${rep.matches} (${rep.firstMatch} → ${rep.lastMatch}); righe lette ${rep.history.rows} in ${f(rep.history.pages)} pagine; troncato: ${rep.history.truncated ? "SÌ" : "no"}; impronta ${String(rep.history.fingerprint).slice(0, 12)}.\n> ${rep.limits}\n\n`;
   if (tw?.available) {
-    md += `### OLD (congelato) · NEW (storico completo) · MERCATO — stesse ${tw.comparableMatches} partite dopo ${tw.afterCutoff}\n| gruppo | n | Brier OLD / NEW / mercato | log loss OLD / NEW / mercato | ECE OLD / NEW / mercato | accuratezza OLD / NEW / mercato | Δ log loss NEW−mercato [IC 95%] | blocchi | p Holm | stato |\n|---|---|---|---|---|---|---|---|---|---|\n`;
+    md += `### OLD (congelato) · NEW (storico completo) · MERCATO — stesse ${tw.comparableMatches} partite dopo ${tw.afterCutoff}\n| gruppo | n | Brier OLD / NEW / mercato | log loss OLD / NEW / mercato | ECE OLD / NEW / mercato | accuratezza OLD / NEW / mercato | Δ log loss = perdita mercato − perdita NEW [IC 95%] (>0: NEW meglio) | blocchi | p Holm | stato |\n|---|---|---|---|---|---|---|---|---|---|\n`;
     for (const g of tw.groups) { const m = g.metrics, t = (k) => `${f(m.old[k])} / ${f(m.new[k])} / ${f(m.market[k])}`; md += `| ${g.family}: ${g.name} | ${g.n} | ${t("brier")} | ${t("logLoss")} | ${t("ece")} | ${t("accuracy")} | ${cell(g.newVsMarket.logLoss)} | ${f(g.newVsMarket.logLoss.clusters)} | ${f(g.holmP)} | ${g.verdictVsMarket} |\n`; }
-    md += `\nΔ > 0 = NEW migliore del mercato (la perdita del mercato meno quella di NEW). ${tw.note}\nNEW contro OLD (complessivo): Δ log loss ${cell(tw.groups[0].newVsOld.logLoss)}, Δ Brier ${cell(tw.groups[0].newVsOld.brier)}.\n`;
+    md += `\nConvenzione dei segni (tutti i Δ): Δ = perdita del primo termine − perdita del secondo; Δ > 0 = vince il secondo. Qui: Δ = perdita del mercato − perdita di NEW, quindi Δ > 0 = NEW migliore del mercato e Δ < 0 = NEW peggiore del mercato. «NEW contro OLD»: Δ = perdita OLD − perdita NEW (> 0 = NEW migliore). ${tw.note}\nNEW contro OLD (complessivo; Δ = perdita OLD − perdita NEW): Δ log loss ${cell(tw.groups[0].newVsOld.logLoss)}, Δ Brier ${cell(tw.groups[0].newVsOld.brier)}.\n`;
   } else md += `### OLD / NEW / MERCATO\n${tw?.reason ?? "non disponibile"}\n`;
   if (rep.classes) {
-    md += `\n### Classi Strategy Center 2.0 (walk-forward da ${rep.walkForward.firstTestMonth}, ${rep.walkForward.testedMatches} partite)\n| classe | selezioni | Δ log loss vs mercato [IC] | ROI [IC] (non usato) | stato |\n|---|---|---|---|---|\n`;
+    md += `\n### Classi Strategy Center 2.0 (walk-forward da ${rep.walkForward.firstTestMonth}, ${rep.walkForward.testedMatches} partite)\n| classe | selezioni | Δ log loss = perdita mercato − perdita probabilità rimodulata [IC] (>0: meglio del mercato) | ROI [IC] (non usato) | stato |\n|---|---|---|---|---|\n`;
     for (const [k, v] of Object.entries(rep.classes)) md += `| ${k} | ${v.n} | ${cell(v.logLossVsMarket)} | ${cell(v.roi)} | ${v.status}${v.why.length ? ` — ${v.why.join("; ")}` : ""} |\n`;
     md += `\n### Doppie\nCoppie ${rep.doubles.pairs}; osservato ${f(rep.doubles.observedBothWin)} contro atteso ${f(rep.doubles.expectedBothWin)} (prodotto delle singole); Δ ${cell(rep.doubles.difference)}. **Non validate.** ${rep.doubles.limitation}\n`;
-    md += `\n### Walk-forward: il modello aggiunge informazione al mercato?\nΔ log loss mercato+modello contro solo mercato: ${cell(rep.walkForward.oos.infoLogLoss)}; modello grezzo contro mercato: ${cell(rep.walkForward.oos.rawModelVsMarketLL)}.\n`;
+    md += `\n### Walk-forward: il modello aggiunge informazione al mercato?\nConvenzione: Δ = perdita del primo termine − perdita del secondo; > 0 = vince il secondo. Δ log loss (solo mercato ricalibrato − mercato+modello): ${cell(rep.walkForward.oos.infoLogLoss)} (> 0: il modello aggiunge informazione); Δ log loss (mercato − modello grezzo): ${cell(rep.walkForward.oos.rawModelVsMarketLL)} (< 0: il modello grezzo è peggiore del mercato).\n`;
   }
   return md + `\n**Conclusione:** ${rep.conclusion}\n`;
 }
