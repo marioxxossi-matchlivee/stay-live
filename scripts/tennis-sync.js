@@ -21,6 +21,7 @@ import { chronologicalBacktest, fitPlatt, groupSummary, MIN_RELIABLE_SAMPLE } fr
 import { evaluateBet } from "../functions/api/_tennis-bet.js";
 import { buildBoard } from "../functions/api/_tennis-snapshot.js";
 import { computeItfShadow } from "../functions/api/_tennis-itf-shadow.js";
+import { recordLiveObservation, insertIgnore } from "../functions/api/_tennis-observation-run.js";
 import { buildStrategy } from "../functions/api/_tennis-strategy.js";
 import { planRecords, buildStrategyHistory } from "../functions/api/_tennis-strategy-track.js";
 
@@ -42,6 +43,7 @@ export function makeDb(env) {
     upsert: (table, rows, conflict) => (rows.length ? supabaseUpsert(env, table, rows, conflict) : Promise.resolve()),
     patch: (table, filter, body) => supabasePatch(env, table, filter, body),
     del: (table, filter) => supabaseDelete(env, table, filter),
+    insertIgnore: (table, rows, conflict) => (rows.length ? insertIgnore(env, table, rows, conflict) : Promise.resolve()), // solo LIVE OBSERVATION (INSERT che ignora i duplicati)
     async rpc(name, args) {
       const res = await fetch(new URL(`/rest/v1/rpc/${name}`, env.SUPABASE_URL), { method: "POST", headers: hdr, body: JSON.stringify(args) });
       if (!res.ok) throw new Error(`Supabase rpc ${name}: HTTP ${res.status}`);
@@ -298,6 +300,8 @@ export async function runRefresh({ api, db, now }) {
     await db.upsert("tennis_itf_shadow", shadow, "match_key");
     meta.itfShadow = { rows: shadow.length, excluded: shadow.filter((x) => x.outcome === "excluded").length, wouldRemoveBet: shadow.filter((x) => x.would_remove).length, notEvaluable: shadow.filter((x) => x.outcome === "not_evaluable").length };
   } catch (e) { meta.itfShadowError = String(e?.message ?? e).slice(0, 200); }
+  // LIVE OBSERVATION (sola osservazione, SPENTA se TENNIS_LIVE_OBSERVATION non è "on"): registra la valutazione pre-match già calcolata. Non lancia mai: l'esito (o l'errore) va in meta.liveObservation.
+  meta.liveObservation = await recordLiveObservation({ db, matches, rows, book, stats: mapBy(stats, "player_id"), ranks: mapBy(rankings, (r) => `${r.tour}|${r.player_id}`), now, history, loader: historyLoaderMode() });
   meta.predictions = { total: rows.length, published: rows.filter((r) => r.published).length, abstained: rows.filter((r) => !r.published).length, bet: rows.filter((r) => r.bet?.verdict === "BET").length, historyMatches: history.length, historyLoader: historyLoaderMode(), calibrated: !!calibrator };
   await buildAndStoreSnapshot(db, now, { job: "refresh", api, jobMeta: meta });
   // Giro parziale (es. un circuito in errore): resta valido, con l'avviso in meta.errors. Se il provider non ha dato nulla, il giro risulta fallito
