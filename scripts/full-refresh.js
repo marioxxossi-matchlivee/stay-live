@@ -17,6 +17,7 @@ import { LEAGUES, SEASON, errorMessage, supabaseDelete, supabaseGet, supabaseGet
 import { AF_LEAGUES, betIdsFrom, dayKey, loadSections, planFor, seasonFor, ttlFor } from "../functions/api/_apifootball.js";
 import { loadBrainInputs } from "../functions/api/_brain.js";
 import { loadCornerOdds } from "../functions/api/_corners.js";
+import { FEATURES } from "../functions/api/_features.js";
 import { backfillCorners, selectBackfill } from "../functions/api/_cornerstats.js";
 import { COMPONENT_LABEL, TEMP_RE, buildTasks, classify, countClasses, coverageFlags, dueTasks, emptyCounts, pendingSummary, pruneTasks, statusOf } from "../functions/api/_diag.js";
 import { budgetFor, capFor } from "../functions/api/_budget.js";
@@ -33,6 +34,7 @@ export const FRESH_NEAR = 3.5 * H, FRESH_MID = 7.5 * H, FRESH_FAR = 11 * H;   //
 export const SOON_MS = 12 * H;                                   // entro 12 ore dal calcio d'inizio: dati rinnovati a ogni giro
 export const NEAR_MS = 48 * H;                                   // "vicine": quote e schede si riscaricano a ogni giro
 export const RESERVE_FOR_DETAILS = 1500;                         // sotto questi crediti restanti si salta la fase 4
+const NO_CORNERS = { state: new Map(), errors: new Map(), retry: { pending: 0, afterMs: 0 } };   // corner disattivati: nessuna richiesta, nessuna attesa
 export const RESERVE_HISTORY = 2500;                             // e i corner storici (la parte meno urgente)
 export const HISTORY_CAP = { full: 200, recover: 0 };           // corner storici: lavoro di fondo, solo nel giro completo e solo con crediti avanzati          // richieste massime per giro per i corner storici
 /**
@@ -233,7 +235,7 @@ async function runRefreshInner(env, { mode = "full", trigger = "schedule", log =
       if (round > 1 && left <= 0) { meta.notes.push(`Budget di crediti del giro raggiunto (${runBudget}): il resto al prossimo giro.`); break; }
       const live = Number.isFinite(left) ? Math.max(10, Math.min(80, Math.floor((left - 25) / 2))) : 80;
       br = await loadBrainInputs(env, target, t, { live: true, maxMap: 25, maxLive: live, freshFor, emptyFor, maps: br?.maps, source: env.AF_SOURCE });
-      cr = await loadCornerOdds(env, target, t, { live: true, maxMap: 25, maxLive: live, freshFor, emptyFor, maps: br.maps, source: env.AF_SOURCE });
+      cr = FEATURES.corners ? await loadCornerOdds(env, target, t, { live: true, maxMap: 25, maxLive: live, freshFor, emptyFor, maps: br.maps, source: env.AF_SOURCE }) : NO_CORNERS;
       const pending = (br.retry?.pending ?? 0) + (cr.retry?.pending ?? 0);
       const usage = await readUsage(env, t);
       if (usage?.remaining != null && usage.remaining < 300) { meta.budgetStop = true; meta.notes.push(`Crediti giornalieri quasi esauriti (${usage.remaining} restanti): scarico interrotto, riprende da solo.`); break; }
@@ -245,14 +247,14 @@ async function runRefreshInner(env, { mode = "full", trigger = "schedule", log =
       await wait(Math.max(3000, br.retry?.afterMs ?? 0, cr.retry?.afterMs ?? 0));
     }
     const brR = rest.length ? await loadBrainInputs(env, rest, Date.now(), { live: false, maps: br?.maps }) : null;
-    const crR = rest.length ? await loadCornerOdds(env, rest, Date.now(), { live: false, maps: brR?.maps ?? br?.maps }) : null;
+    const crR = rest.length && FEATURES.corners ? await loadCornerOdds(env, rest, Date.now(), { live: false, maps: brR?.maps ?? br?.maps }) : null;
     const sPred = (id) => (targetSet.has(id) ? br : brR)?.state?.get(id) ?? "missing", sMkt = (id) => (targetSet.has(id) ? br : brR)?.marketState?.get(id) ?? "missing", sCor = (id) => (targetSet.has(id) ? cr : crR)?.state?.get(id) ?? "missing";
     const eOf = (id, key) => (targetSet.has(id) ? br : brR)?.errors?.get(`${id}|${key}`), eCor = (id) => (targetSet.has(id) ? cr : crR)?.errors?.get(id);
     const per = new Map();                          // game_id -> classi dei componenti (per "elaborate / in attesa")
     for (const m of open) {
       const id = m.game_id, fl = flags.get(m.league) ?? null;
       const at = (c) => attemptsOf.get(`${c}:${id}`) ?? 0;
-      const rows = [["prediction", sPred(id), eOf(id, "pred")], ["market", sMkt(id), eOf(id, "market")], ["corners", sCor(id), eCor(id)]];
+      const rows = [["prediction", sPred(id), eOf(id, "pred")], ["market", sMkt(id), eOf(id, "market")], ...(FEATURES.corners ? [["corners", sCor(id), eCor(id)]] : [])];
       for (const [comp, state, error] of rows) {
         const cls = classify(comp, { state, error, kickoff: m.kickoff_at, now, flags: fl });
         meta.components[comp][cls] += 1;
@@ -310,8 +312,9 @@ async function runRefreshInner(env, { mode = "full", trigger = "schedule", log =
     for (const t of mode === "recover" ? prevTasks.filter((t) => t.component === "details" && open.some((m) => m.game_id === t.scope) && !near.some((m) => m.game_id === t.scope)) : []) items.push({ component: "details", scope: t.scope, league: t.league, cls: t.state, error: t.last_error, carry: true });
 
     /* 5 · corner storici reali (modello corner) */
-    log("5 Corner storici (statistiche reali)…");
-    try {
+    log(FEATURES.corners ? "5 Corner storici (statistiche reali)…" : "5 Corner storici: disattivati (nessuna richiesta)");
+    if (!FEATURES.corners) meta.cornerHistory = { disabled: true, stored: 0, backlog: 0, fetched: 0 };
+    else try {
       const usage5 = await readUsage(env, Date.now());
       const finals = await supabaseGetAll(env, "matches", { select: "game_id,league,kickoff_at,home_id,away_id", status: "eq.final", season: `eq.${SEASON}`, order: "kickoff_at.desc,game_id.asc" });   // con game_id (loadFinals non lo include)
       const have = new Set((await supabaseGetAll(env, "match_corners", { select: "game_id", season: `eq.${SEASON}` }, 1000, 20)).map((r) => r.game_id));

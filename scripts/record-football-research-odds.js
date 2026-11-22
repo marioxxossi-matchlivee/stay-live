@@ -10,7 +10,7 @@ import { AF_LEAGUES, afFetch } from "../functions/api/_apifootball.js";
 import { AfBudgetBlocked } from "../functions/api/_budget.js";
 import { supabaseGetAll, supabaseUpsert } from "../functions/api/_lib.js";
 
-export const WANTED_BETS = new Set([1, 12, 5, 38, 349, 186, 223, 183]);
+export const WANTED_BETS = new Set([1, 12, 38, 349, 186, 223]);   // 1X2, doppia chance e mercati sui gol totali (Multigol): niente Over/Under
 export const WINDOW_H = 72;          // partite nelle prossime 72 ore
 export const NEAR_H = 6;             // entro 6 ore dal calcio d'inizio: rilevazioni più frequenti (chiusura)
 export const GAP_NEAR_H = 2.5, GAP_FAR_H = 11;
