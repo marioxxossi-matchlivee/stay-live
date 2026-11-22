@@ -177,3 +177,6 @@ main,.tn-main{position:relative;isolation:isolate}
 .cr.warn .cr-meter i{background:#e0900f}.cr.warn .cr-big{color:var(--sl-warn)}
 .cr.bad .cr-meter i{background:var(--sl-danger)}.cr.bad .cr-big{color:var(--sl-danger)}
 .cr-foot{margin:0;font:500 12.5px var(--sl-font);color:var(--sl-mute)}
+
+.mx-note{margin:2px 2px 6px;font-size:12px;color:var(--sl-ink-2)}
+.mx-note b{color:var(--sl-ink)}
