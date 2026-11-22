@@ -14,7 +14,7 @@ import { DEFAULT_FILTERS, SURFACE_LABEL, CATEGORY_LABEL, GENDER_LABEL, facets, f
 import { detailHtml, emptyHtml, rowHtml, canSave } from "./view.js";
 import { tennisMonitorHtml } from "./monitor.js";
 import { PL_FILTERS, listHtml as playsListHtml, playsViewHtml, settingsHtml } from "./playsview.js";
-import { computeView, loadBankroll, saveBankroll, sanitizeView, settingsFromFields } from "./strategy.js";
+import { buildDashboard, sanitizeTab, DEFAULT_STRATEGY } from "./strategy.js";
 import { strategyHtml } from "./strategyview.js";
 import "./observation.css";
 import { liveObservationHtml, DEFAULT_LO } from "./observation.js";
@@ -41,7 +41,7 @@ const writeCache = (data) => { try { localStorage.setItem(CACHE_KEY, JSON.string
 export function mountTennis(root) {
   const state = {
     matches: [], history: null, diagnostics: null, builtAt: null, filters: { ...DEFAULT_FILTERS }, day: null, onlyBet: false, fOpen: false,
-    tab: "matches", sView: sanitizeView(null), bank: loadBankroll(), sShowAll: false, strategyHist: null, plays: loadTPlays(), playFilter: "all", open: new Set(), mnTab: "live", lo: { ...DEFAULT_LO, f: { ...DEFAULT_LO.f } },
+    tab: "matches", sTab: DEFAULT_STRATEGY.tab, plays: loadTPlays(), playFilter: "all", open: new Set(), mnTab: "live", lo: { ...DEFAULT_LO, f: { ...DEFAULT_LO.f } },
     loading: false, error: null, fromCache: false, lastLoad: 0, animate: true,
   };
 
@@ -165,27 +165,32 @@ export function mountTennis(root) {
   }
   function renderStrategy() {
     const pane = $("#tn-pane-strategy"), y = window.scrollY;
-    const model = computeView(state.matches, state.sView, state.bank, state.history, Date.now());
-    pane.innerHTML = strategyHtml(model, { open: state.open, showAll: state.sShowAll }, { history: state.strategyHist, hasData: state.matches.length > 0 });
+    const dash = state.lo.data ? buildDashboard(state.lo.data, Date.now()) : null;
+    pane.innerHTML = strategyHtml(dash, { tab: sanitizeTab(state.sTab) }, { loading: state.lo.loading, error: state.lo.error });
     window.scrollTo({ top: y });
   }
   function renderPlays() { $("#tn-pane-plays").innerHTML = playsViewHtml(evaluated(), { filter: state.playFilter, open: state.open, history: state.history }); }
   /** LIVE OBSERVATION: sola lettura da /api/tennis-observation, a pagine (cursore). Si carica solo all'apertura; «Carica altre»/«Carica tutto» recuperano il resto dello storico. */
+  /** Ridisegna le schede che leggono il registro LIVE OBSERVATION (Strategia e Affidabilità), solo se visibili. */
+  function renderObservationViews() { if (state.tab === "strategy") renderStrategy(); else if (state.tab === "reliability") renderReliability(); }
   async function loadObservation({ more = false, all = false } = {}) {
     if (state.lo.loading) return;
-    state.lo.loading = true; state.lo.error = null; renderReliability();
+    state.lo.loading = true; state.lo.error = null; renderObservationViews();
     try {
+      let first = !state.lo.data || !(more || all);
       do {
-        const cur = more || all ? state.lo.data?.nextCursor : null;
-        if ((more || all) && !cur) break;
+        const prev = state.lo.data, cur = first ? null : prev?.nextCursor;
+        if (!first && !cur) break;
+        first = false;
         const r = await getJson(`/api/tennis-observation?limit=100${cur ? `&before=${encodeURIComponent(cur)}` : ""}`, 30000);
         if (!r.ok) throw new Error(r.body?.error ?? `Risposta ${r.status}`);
-        const b = r.body, prev = state.lo.data;
+        const b = r.body;
         state.lo.data = prev && cur ? { ...b, observations: [...prev.observations, ...b.observations], versions: [...prev.versions, ...b.versions], total: prev.total ?? b.total, diagnostics: prev.diagnostics, builtAt: prev.builtAt } : b;
         if (!b.available) break;
+        if (all) renderObservationViews();   // avanzamento visibile: «caricate X di Y»
       } while (all && state.lo.data?.nextCursor);
     } catch (e) { state.lo.error = String(e?.message ?? e); }
-    finally { state.lo.loading = false; renderReliability(); }
+    finally { state.lo.loading = false; renderObservationViews(); }
   }
   function renderReliability() { $("#tn-pane-reliability").innerHTML = `<section class="mn-intro"><h1>Affidabilità</h1><p>Quanto sono credibili i pronostici. Ogni numero ha la sua incertezza: con pochi casi non si conclude nulla.</p></section>${state.history ? tennisMonitorHtml(state.history, state.mnTab) : `<div class="mn-emptybox"><h3>Storico non ancora disponibile</h3><p>Comparirà dopo le prime partite concluse con un pronostico registrato prima dell'inizio.</p></div>`}${liveObservationHtml(state.lo, state.matches)}`; }
   function renderSettings() { $("#tn-pane-settings").innerHTML = settingsHtml(state.diagnostics, state.builtAt, state.plays.length); }
@@ -204,6 +209,7 @@ export function mountTennis(root) {
     if (state.tab === t) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
     state.tab = t; if (t === "matches") state.animate = true;
     render(); window.scrollTo({ top: 0 });
+    if (t === "strategy" && !state.lo.loading && (!state.lo.data || (state.lo.data.available && state.lo.data.nextCursor))) void loadObservation({ all: true });
     const pane = $(`#tn-pane-${t}`); pane.classList.remove("enter"); void pane.offsetWidth; pane.classList.add("enter");
   }
 
@@ -212,7 +218,6 @@ export function mountTennis(root) {
     const payload = data?.payload ?? {};
     state.matches = sanitizeMatches(payload.matches);
     state.history = payload.history ?? null;
-    state.strategyHist = payload.strategy ?? null;
     state.diagnostics = payload.diagnostics ?? null;
     state.builtAt = data?.built_at ?? payload.updatedAt ?? null;
     state.fromCache = cached;
@@ -228,7 +233,7 @@ export function mountTennis(root) {
     try {
       const r = await getJson("/api/tennis-board");
       state.lastLoad = Date.now();
-      if (r.status === 404) { state.matches = []; state.history = null; state.strategyHist = null; state.diagnostics = null; state.builtAt = null; setBanner(""); }
+      if (r.status === 404) { state.matches = []; state.history = null; state.diagnostics = null; state.builtAt = null; setBanner(""); }
       else if (r.ok && r.body?.payload) { apply(r.body); writeCache(r.body); }
       else throw new Error(r.body?.error ?? `Risposta ${r.status}`);
     } catch (e) {
@@ -301,27 +306,19 @@ export function mountTennis(root) {
     const day = t.closest("[data-day]"); if (day) { state.day = day.dataset.day; state.animate = true; return render(); }
     if (t.closest("#tn-ftoggle")) { state.fOpen = !state.fOpen; return render(); }
     for (const [attr, k] of [["data-tour", "tour"], ["data-cat", "category"], ["data-surface", "surface"]]) { const el = t.closest(`[${attr}]`); if (el) { state.filters[k] = el.getAttribute(attr); state.animate = true; return render(); } }
-    const sr = t.closest("[data-srange]"); if (sr) { state.sView = sanitizeView({ ...state.sView, range: sr.dataset.srange }); return renderStrategy(); }
-    const st = t.closest("[data-stour]"); if (st) { state.sView = sanitizeView({ ...state.sView, tour: st.dataset.stour }); return renderStrategy(); }
-    const sp = t.closest("[data-sprofile]"); if (sp) { state.bank = { ...state.bank, stakePct: Number(sp.dataset.sprofile) }; saveBankroll(state.bank); return renderStrategy(); }
-    if (t.closest("[data-sall]")) { state.sShowAll = true; return renderStrategy(); }
-    const sx = t.closest("[data-sx]"); if (sx) { const id = sx.dataset.sx, box = sx.closest(".sc-card, .sc-d"), open = !box.classList.contains("open"); box.classList.toggle("open", open); sx.setAttribute("aria-expanded", String(open)); box.querySelector(":scope > .sc-detail")?.toggleAttribute("inert", !open); open ? state.open.add(id) : state.open.delete(id); return; }
     const plf = t.closest("[data-plf]"); if (plf) return setPlayFilter(plf.dataset.plf);
     if (t.closest("[data-lo-toggle]")) { state.lo.open = !state.lo.open; renderReliability(); if (state.lo.open && !state.lo.data) loadObservation(); return; }
+    const stb = t.closest("[data-stab]"); if (stb) { state.sTab = sanitizeTab(stb.dataset.stab); return renderStrategy(); }
     if (t.closest("[data-lo-more]")) return loadObservation({ more: true });
     if (t.closest("[data-lo-all]")) return loadObservation({ all: true });
-    const lot = t.closest("[data-lo-tab]"); if (lot) { state.lo.tab = lot.dataset.loTab; state.lo.openKey = null; return renderReliability(); }
+    if (t.closest("[data-lo-rows]")) { state.lo.rows += 25; return renderReliability(); }
+    const lot = t.closest("[data-lo-tab]"); if (lot) { state.lo.tab = lot.dataset.loTab; state.lo.openKey = null; state.lo.rows = 25; return renderReliability(); }
     const lor = t.closest("[data-lo-row]"); if (lor) { state.lo.openKey = state.lo.openKey === lor.dataset.loRow ? null : lor.dataset.loRow; return renderReliability(); }
     const mn = t.closest("[data-mn]"); if (mn) { state.mnTab = mn.dataset.mn; return renderReliability(); }
     if (t.closest("#tn-clear-plays") && state.plays.length && confirm(`Eliminare le ${state.plays.length} giocate salvate? Non si può annullare.`)) { state.plays = []; render(); }
   });
   root.addEventListener("change", (e) => {
-    const lof = e.target.closest?.("[data-lo-f]"); if (lof) { state.lo.f = { ...state.lo.f, [lof.dataset.loF]: lof.value || "all" }; if (lof.dataset.loF === "q") state.lo.f.q = lof.value; return renderReliability(); }
-    if (e.target.closest?.("#tn-pane-strategy") && e.target.matches?.("input")) {
-      const v = (id) => root.querySelector(id)?.value;
-      state.bank = settingsFromFields({ bankroll: v("#sc-bankroll"), stakePct: v("#sc-stakepct"), dailyPct: v("#sc-daily"), weeklyPct: v("#sc-weekly") });
-      saveBankroll(state.bank); return renderStrategy();
-    }
+    const lof = e.target.closest?.("[data-lo-f]"); if (lof) { state.lo.f = { ...state.lo.f, [lof.dataset.loF]: lof.value || "all" }; state.lo.rows = 25; if (lof.dataset.loF === "q") state.lo.f.q = lof.value; return renderReliability(); }
     if (e.target.id === "tn-tournament") { state.filters.tournament = e.target.value; state.animate = true; render(); } });
   let qTimer;
   root.addEventListener("input", (e) => {

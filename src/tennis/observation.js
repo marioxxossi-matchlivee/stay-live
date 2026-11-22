@@ -8,7 +8,7 @@ export const STATE_LABEL = { upcoming: "Da giocare", awaiting_result: "In attesa
 const REASON_LABEL = { ratings_version: "Rating (storico) aggiornato", initial: "Valutazione iniziale", rescheduled: "Orario cambiato", model_version: "Nuova versione del modello", publication: "Pubblicazione cambiata", probability: "Probabilità cambiata", missing_data: "Dati mancanti cambiati" };
 const fmt = new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: TZ });
 const when = (t) => (t ? fmt.format(new Date(t)) : "—");
-export const DEFAULT_LO = Object.freeze({ open: false, tab: "overview", data: null, loading: false, error: null, openKey: null, f: { state: "all", tournament: "all", surface: "all", model: "all", q: "" } });
+export const DEFAULT_LO = Object.freeze({ open: false, tab: "overview", rows: 25, data: null, loading: false, error: null, openKey: null, f: { state: "all", tournament: "all", surface: "all", model: "all", q: "" } });
 
 /** Dal payload dell'API a righe pronte (iniziale = rev 1, ultima, stato dal collegamento per match_key). */
 export function buildModel(payload, now = Date.now()) {
@@ -48,12 +48,12 @@ export function detailHtml(i) {
   const cmp = i.state === "concluded" && v?.published ? (() => { const hit = (v.pick === i.winner); return `Valutazione iniziale: ${prob(v)} (favorito: giocatore ${v.pick}). Vincitore: giocatore ${i.winner}${o.score ? ` (${esc(o.score)})` : ""}. ${hit ? "Il favorito ha vinto." : "Il favorito ha perso."} Un singolo esito non dice nulla sulla qualità del modello.`; })()
     : i.state === "concluded" ? "Partita conclusa, ma la valutazione iniziale era un'astensione: esclusa dalle metriche." : i.state === "awaiting_result" ? "Orario superato senza un risultato verificato: la partita NON è considerata conclusa." : i.state === "identity_mismatch" ? "Gli id dei giocatori non coincidono con la partita: nessun collegamento." : "Nessun esito ancora.";
   const valid = i.state === "concluded" && v?.published ? "Entra nelle metriche (solo la valutazione iniziale)." : "Non entra nelle metriche: " + (i.state === "concluded" ? "valutazione iniziale non pubblicata." : "partita non conclusa con un risultato verificato.");
-  const row = (l, a, b) => `<tr><th>${esc(l)}</th><td>${a}</td><td>${b}</td></tr>`;
+  const kv = (l, a, b) => `<div><dt>${esc(l)}</dt><dd>${esc(a)}</dd><dd>${esc(b)}</dd></div>`;
   return `<div class="lo-detail">
     <h4>Informazioni generali</h4><p class="mn-note">${esc(o.tour?.toUpperCase())} · ${esc(o.category ?? "categoria n.d.")} · registrata il ${when(o.first_recorded_at)} · inizio programmato iniziale ${when(o.first_starts_at)}</p>
     <h4>Valutazione iniziale (permanente)</h4>${v ? `<p class="mn-note">${prob(v)} · affidabilità ${esc(v.reliability ?? "n.d.")} · modello ${esc(v.model_ver)} · ${when(v.recorded_at)}${v.abstain_reason ? ` · ${esc(v.abstain_reason)}` : ""}</p>` : `<p class="mn-note">Nessuna valutazione registrata.</p>`}
-    <h4>Dati usati dal modello</h4>${v ? `<div class="mn-scroll"><table class="mn-table"><thead><tr><th></th><th>${esc(o.p1_name ?? "G1")}</th><th>${esc(o.p2_name ?? "G2")}</th></tr></thead><tbody>
-      ${row("Elo usato", num(v.elo1, 0), num(v.elo2, 0))}${row("Forma", num(v.form1, 2), num(v.form2, 2))}${row("Partite di supporto", p1.matches ?? "—", p2.matches ?? "—")}${row("Ranking", inp.rank?.p1 ?? "—", inp.rank?.p2 ?? "—")}${row("Punti vinti al servizio", pct(inp.stats?.p1?.serve, 1), pct(inp.stats?.p2?.serve, 1))}${row("Punti vinti in risposta", pct(inp.stats?.p1?.ret, 1), pct(inp.stats?.p2?.ret, 1))}${row("Partite nelle statistiche", inp.stats?.p1?.matches ?? "—", inp.stats?.p2?.matches ?? "—")}${row("Elo generale / superficie", `${num(p1.eloAll, 0)} / ${num(p1.eloSurface, 0)}`, `${num(p2.eloAll, 0)} / ${num(p2.eloSurface, 0)}`)}</tbody></table></div>
+    <h4>Dati usati dal modello</h4>${v ? `<p class="lo-legend"><span><i>1</i>${esc(o.p1_name ?? "Giocatore 1")}</span><span><i>2</i>${esc(o.p2_name ?? "Giocatore 2")}</span></p><dl class="lo-kv">
+      ${kv("Elo usato", num(v.elo1, 0), num(v.elo2, 0))}${kv("Forma", num(v.form1, 2), num(v.form2, 2))}${kv("Elo generale / superficie", `${num(p1.eloAll, 0)} · ${num(p1.eloSurface, 0)}`, `${num(p2.eloAll, 0)} · ${num(p2.eloSurface, 0)}`)}${kv("Partite di supporto", p1.matches ?? "—", p2.matches ?? "—")}${kv("Ranking", inp.rank?.p1 ?? "—", inp.rank?.p2 ?? "—")}${kv("Punti vinti al servizio", pct(inp.stats?.p1?.serve, 1), pct(inp.stats?.p2?.serve, 1))}${kv("Punti vinti in risposta", pct(inp.stats?.p1?.ret, 1), pct(inp.stats?.p2?.ret, 1))}${kv("Partite nelle statistiche", inp.stats?.p1?.matches ?? "—", inp.stats?.p2?.matches ?? "—")}</dl>
       <p class="mn-note">Scontri diretti: ${inp.h2h ? `${inp.h2h.p1Wins}–${inp.h2h.p2Wins}` : "non disponibili"} · storico caricato: ${esc(v.history_loader ?? "n.d.")}, ${v.history_matches ?? "n.d."} partite · ultima data nello storico ${when(v.history_last_at)} · rating ${esc((v.ratings_ver ?? "n.d.").slice(0, 12))}</p>` : ""}
     <h4>Dati mancanti</h4><p class="mn-note">${(v?.missing ?? []).length ? esc(v.missing.join("; ")) : v ? "Nessuno dichiarato dal modello." : "—"}</p>
     <h4>Cronologia delle valutazioni</h4><ol class="lo-chron">${i.versions.map((x) => `<li><b>rev ${x.rev}</b> · ${when(x.recorded_at)} · ${esc(REASON_LABEL[x.reason] ?? x.reason)} · ${prob(x)} · ${esc(x.model_ver)}</li>`).join("") || "<li>—</li>"}</ol>
@@ -70,8 +70,12 @@ function filtersHtml(model, f) {
     <input type="search" data-lo-f="q" value="${esc(f.q)}" placeholder="Giocatore" aria-label="Giocatore" /></div>`;
 }
 
-function listHtml(items, openKey, empty) {
-  return items.length ? `<div class="lo-list">${items.map((i) => rowHtml(i, i.key === openKey)).join("")}</div>` : `<div class="mn-emptybox"><h3>${esc(empty)}</h3></div>`;
+export const ROWS_STEP = 25;
+function listHtml(items, openKey, empty, rows = ROWS_STEP) {
+  if (!items.length) return `<div class="mn-emptybox"><h3>${esc(empty)}</h3></div>`;
+  const shown = items.slice(0, rows), rest = items.length - shown.length;
+  const open = openKey && !shown.some((i) => i.key === openKey) ? items.find((i) => i.key === openKey) : null;   // la riga aperta resta visibile
+  return `<div class="lo-list">${shown.concat(open ? [open] : []).map((i) => rowHtml(i, i.key === openKey)).join("")}</div>${rest > 0 ? `<div class="lo-more"><button type="button" data-lo-rows>Mostra altre ${Math.min(ROWS_STEP, rest)} (${rest} nascoste)</button></div>` : `<p class="mn-note">${items.length} ${items.length === 1 ? "partita" : "partite"}.</p>`}`;
 }
 
 function metricsHtml(model, lo) {
@@ -115,9 +119,9 @@ export function liveObservationHtml(lo, board = [], now = Date.now()) {
     const last = it.flatMap((i) => i.versions.map((v) => v.recorded_at)).sort().at(-1);
     body = `<div class="mn-kpis mn-kpis--5"><div><b>${upcoming.length}</b><span>future osservate</span></div><div><b>${unobs}</b><span>non ancora elaborate</span></div><div><b>${it.length}</b><span>registrate</span></div><div><b>${it.filter((i) => i.state === "concluded").length}</b><span>concluse</span></div><div><b>${it.filter((i) => i.incomplete).length}</b><span>dati incompleti</span></div></div>
       <p class="mn-note">Ultima registrazione: ${when(last)} · ${it.filter((i) => i.state === "awaiting_result").length} in attesa del risultato (non considerate concluse) · ${model.items.length} osservazioni caricate${model.total != null ? ` su ${model.total}` : ""}.</p>${diagHtml(model.diagnostics)}`;
-  } else if (lo.tab === "future") body = listHtml(upcoming.sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt)), lo.openKey, "Nessuna partita futura osservata") + moreHtml(model, lo);
-  else if (lo.tab === "registered") body = filtersHtml(model, lo.f) + listHtml(filterItems(it, lo.f), lo.openKey, "Nessuna osservazione con questi filtri") + moreHtml(model, lo);
-  else if (lo.tab === "done") body = listHtml(it.filter((i) => i.state === "concluded"), lo.openKey, "Nessuna partita conclusa tra quelle osservate") + moreHtml(model, lo);
+  } else if (lo.tab === "future") body = listHtml(upcoming.sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt)), lo.openKey, "Nessuna partita futura osservata", lo.rows) + moreHtml(model, lo);
+  else if (lo.tab === "registered") body = filtersHtml(model, lo.f) + listHtml(filterItems(it, lo.f), lo.openKey, "Nessuna osservazione con questi filtri", lo.rows) + moreHtml(model, lo);
+  else if (lo.tab === "done") body = listHtml(it.filter((i) => i.state === "concluded"), lo.openKey, "Nessuna partita conclusa tra quelle osservate", lo.rows) + moreHtml(model, lo);
   else body = metricsHtml(model, lo);
   return `${head}${tabs}${body}</section>`;
 }
