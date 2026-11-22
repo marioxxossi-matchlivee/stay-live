@@ -40,12 +40,28 @@ const versions = (rows) => {
   return [...m].map(([ver, list]) => ({ ver, picks: statOf(done(list)), bet: statOf(done(list).filter((r) => r.bet?.verdict === "BET")) }));
 };
 
+/** Ultime 48 ore: pronostici (probabilità del favorito) per partite iniziate nelle ultime 48 ore e già concluse. */
+export function window48(rows, now = Date.now()) {
+  const w = done(rows ?? []).filter((r) => Date.parse(r.startsAt) >= now - 48 * 3600e3 && Date.parse(r.startsAt) <= now);
+  if (!w.length) return { n: 0 };
+  const clip = (p) => Math.min(1 - 1e-6, Math.max(1e-6, p)), mean = (f) => w.reduce((t, r) => t + f(r), 0) / w.length;
+  const y = (r) => (r.hit ? 1 : 0);
+  return { n: w.length, won: w.reduce((t, r) => t + y(r), 0), rate: mean(y), claimed: mean(favP), brier: mean((r) => (favP(r) - y(r)) ** 2), logLoss: mean((r) => -Math.log(y(r) ? clip(favP(r)) : 1 - clip(favP(r)))) };
+}
+function windowCard(w) {
+  if (!w.n) return `<section class="mn-card"><h3>Ultime 48 ore</h3><p class="mn-empty">Nessuna partita iniziata nelle ultime 48 ore e già conclusa con un pronostico.</p></section>`;
+  return `<section class="mn-card"><h3>Ultime 48 ore</h3>
+    <div class="mn-kpis mn-kpis--5"><div><b>${w.n}</b><span>partite concluse</span></div><div><b>${P(w.rate, 0)}</b><span>centrati</span></div><div><b>${P(w.claimed, 0)}</b><span>dichiarato</span></div><div><b>${num(w.brier, 3)}</b><span>Brier</span></div><div><b>${num(w.logLoss, 3)}</b><span>Log loss</span></div></div>
+    <p class="mn-note">Probabilità del vincitore pronosticato contro l'esito reale, partite iniziate nelle ultime 48 ore. ${w.n < 60 ? "Con pochi casi i valori oscillano molto. " : ""}Riferimenti: Brier 0,250 e log loss 0,693 sono il lancio di moneta.</p></section>`;
+}
+
 export function liveHtml(h) {
   const rows = h?.rows ?? [], conc = done(rows), pending = rows.filter((r) => r.published && r.hit === null).length, abst = rows.filter((r) => !r.published).length;
   const head = `<section class="mn-card"><h3>Pronostici registrati</h3>
     <div class="mn-kpis"><div><b>${rows.length}</b><span>partite registrate</span></div><div><b>${conc.length}</b><span>concluse</span></div><div><b>${pending}</b><span>in attesa</span></div><div><b>${abst}</b><span>astenute</span></div></div>
     <p class="mn-note">Ogni pronostico è salvato prima dell'inizio e non si modifica più. Il modello si astiene quando i dati non bastano: le astensioni non contano né come vinte né come perse.</p></section>`;
-  if (!conc.length) return head + `<div class="mn-emptybox"><h3>Ancora nessun caso concluso</h3><p>Le percentuali compaiono man mano che le partite finiscono.</p></div>`;
+  const win = windowCard(window48(rows));
+  if (!conc.length) return head + win + `<div class="mn-emptybox"><h3>Ancora nessun caso concluso</h3><p>Le percentuali compaiono man mano che le partite finiscono.</p></div>`;
   const picks = groupCard("Pronostici · il vincitore", statOf(conc), { verdict: h.verdict ?? "" , min: h.minSample ?? 300 });
   const betRows = conc.filter((r) => r.bet?.verdict === "BET" && Number.isFinite(r.bet.odds));
   const bet = groupCard("BET · le scelte con quota conveniente", statOf(betRows), { min: 300, note: betRows.length ? "" : "Nessun BET concluso con quota reale." });
@@ -60,7 +76,7 @@ export function liveHtml(h) {
   const vs = versions(rows).filter((v) => v.picks.n);
   const ver = vs.length > 1 || (vs.length === 1 && vs[0].ver !== "n.d.") ? `<section class="mn-card"><h3>Per versione del modello</h3><div class="mn-scroll"><table class="mn-table"><thead><tr><th>Versione</th><th>Pronostici</th><th>BET</th></tr></thead><tbody>${vs.map((v) => `<tr><th>${esc(v.ver)}</th><td>${v.picks.won}/${v.picks.n} (${P(v.picks.rate)})</td><td>${v.bet.n ? `${v.bet.won}/${v.bet.n} (${P(v.bet.rate)})` : "—"}</td></tr>`).join("")}</tbody></table></div><p class="mn-note">Ogni modifica al modello cambia la versione: i casi di versioni diverse non sono del tutto confrontabili.</p></section>` : "";
   const cmp = betRows.length && avoidRows.length ? `<section class="mn-card mn-cmp"><h3>BET contro EVITA</h3><p class="mn-verdict">${esc(statOf(betRows).rate > statOf(avoidRows).rate ? "I BET escono più spesso degli EVITA: la distinzione funziona." : "I BET non escono più spesso degli EVITA: per ora la distinzione non aggiunge nulla.")}</p><p class="mn-note">Differenza BET − EVITA: ${esc(pt(statOf(betRows).rate - statOf(avoidRows).rate))}.</p></section>` : "";
-  return head + picks + bet + avoid + cmp + all + ver;
+  return head + win + picks + bet + avoid + cmp + all + ver;
 }
 
 export function backtestHtml(b) {
