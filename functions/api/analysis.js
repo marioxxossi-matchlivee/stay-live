@@ -26,7 +26,7 @@ export async function onRequest({ request, env, waitUntil }) {
     const mo = minOddsParam(url.searchParams), custom = mo != null && mo !== MODEL.minPlayOdds;      // quota minima scelta dall'utente nelle Impostazioni
     const analysis = withMinOdds(mo, () => analyzeMatch(match, buildContext(finals), { n, only: VISIBLE_KEYS, ...(br.byGame.get(match.game_id) ?? {}) }));
     // Il registro misura il modello con le regole standard, non con quelle personali.
-    if (n === 8 && !custom) { const row = predictionRow(match, analysis); if (row) await recordLater({ env, waitUntil }, [row], legRows(match, analysis)); }
+    if (n === 8 && !custom) { const row = predictionRow(match, analysis); if (row) await recordLater({ env, waitUntil }, [row], legRows(match, analysis, { multigol: true })); }
     const afStatus = { ...brainStatusOf(br, [match.game_id]), off: !env.API_FOOTBALL_KEY };
     return json({
       match: { id: match.game_id, league: match.league, kickoffAt: match.kickoff_at, status: match.status, home: match.home_name, away: match.away_name, ...withLogos(match, logos), homeScore: match.home_score, awayScore: match.away_score, neutral: match.neutral_site },

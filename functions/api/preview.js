@@ -35,7 +35,7 @@ export async function onRequest({ request, env, waitUntil }) {
     const mo = minOddsParam(params), personal = mo != null && mo !== MODEL.minPlayOdds;      // quota minima scelta nelle Impostazioni: il registro resta con le regole standard
     const items = withMinOdds(mo, () => matches.map((m) => {
       let a = analyzeMatch(m, ctx, { n, only: VISIBLE_KEYS, ...(br.byGame.get(m.game_id) ?? {}) });
-      if (!custom && n === 8 && !personal) { const row = predictionRow(m, a, { now: nowMs, ver }); if (row) { rec.push(row); recLegs.push(...legRows(m, a, { now: nowMs, ver })); } }
+      if (!custom && n === 8 && !personal) { const row = predictionRow(m, a, { now: nowMs, ver }); if (row) { rec.push(row); recLegs.push(...legRows(m, a, { now: nowMs, ver, multigol: true })); } }
       if (custom) {
         const best = ou25Of(a)?.best;
         const sel = best && a.selections.find((s) => s.key === best.key);

@@ -30,7 +30,7 @@ export async function onRequest({ request, env }) {
     const ver = modelVersion();
     const analyses = matches.map((m) => [m, analyzeMatch(m, ctx, { n: 8, only: VISIBLE_KEYS, ...(br.byGame.get(m.game_id) ?? {}) })]);
     const rows = analyses.map(([m, a]) => predictionRow(m, a, { now, ver })).filter(Boolean);
-    const legs = analyses.flatMap(([m, a]) => legRows(m, a, { now, ver }));
+    const legs = analyses.flatMap(([m, a]) => legRows(m, a, { now, ver, multigol: true }));
     const [stored, storedLegs] = await Promise.all([recordPredictions(env, rows), recordLegs(env, legs)]);
     const by = (f) => rows.reduce((o, r) => ({ ...o, [f(r)]: (o[f(r)] ?? 0) + 1 }), {});
     return json({ ok: true, matches: matches.length, stored, legs: storedLegs, bets: rows.filter((r) => r.verdict === "BET").length, basis: by((r) => r.basis ?? "?"), version: ver });

@@ -5,6 +5,7 @@
  * Ogni errore diventa un campo `error` nella sezione: il chiamante non riceve mai eccezioni per colpa del provider.
  */
 import { LEAGUES, SEASON, supabaseGet, supabaseUpsert } from "./_lib.js";
+import { FEATURES } from "./_features.js";
 import { bestTeam } from "./_scrape.js";
 import { AfBudgetBlocked, budgetFor } from "./_budget.js";
 import { emptyRecheckMs, tierOf } from "./_policy.js";
@@ -71,12 +72,12 @@ export function planFor({ fixtureId, leagueId, season, homeId, awayId, kickoff, 
     { section: "fixture", endpoint: "fixtures", params: { id: fixtureId }, ttl: ttlFor("fixture", c) },
     { section: "injuries", endpoint: "injuries", params: { fixture: fixtureId }, ttl: ttlFor("injuries", c) },
     { section: "predictions", endpoint: "predictions", params: { fixture: fixtureId }, ttl: ttlFor("predictions", c) },
-    { section: "oddsGoals", endpoint: "odds", params: { fixture: fixtureId, bet: betIds.goals }, ttl: ttlFor("odds", c), emptyFresh },
+    ...(FEATURES.goalMarkets ? [{ section: "oddsGoals", endpoint: "odds", params: { fixture: fixtureId, bet: betIds.goals }, ttl: ttlFor("odds", c), emptyFresh }] : []),
     { section: "odds1x2", endpoint: "odds", params: { fixture: fixtureId, bet: betIds.winner ?? 1 }, ttl: ttlFor("odds", c), emptyFresh },
     { section: "coverage", endpoint: "leagues", params: { id: leagueId, season }, ttl: ttlFor("coverage", c) },
   ];
   if (extra) {
-    plan.push({ section: "oddsCorners", endpoint: "odds", params: { fixture: fixtureId, bet: betIds.corners }, ttl: ttlFor("odds", c), emptyFresh });
+    if (FEATURES.corners) plan.push({ section: "oddsCorners", endpoint: "odds", params: { fixture: fixtureId, bet: betIds.corners }, ttl: ttlFor("odds", c), emptyFresh });
     plan.push({ section: "standings", endpoint: "standings", params: { league: leagueId, season }, ttl: ttlFor("standings", c) });
     if (homeId && awayId) {
       plan.push({ section: "h2h", endpoint: "fixtures/headtohead", params: { h2h: `${homeId}-${awayId}`, last: 10 }, ttl: ttlFor("h2h", c) });

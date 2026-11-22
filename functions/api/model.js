@@ -82,6 +82,25 @@ export const SELECTIONS = [
 
 /** Mercati su cui l'app ragiona e mostra i pronostici: 1X2 e doppia chance (il Multigol si legge dai gol attesi, senza quote). Gol/NoGol, Over/Under e corner sono esclusi. */
 export const VISIBLE_KEYS = ["home", "draw", "away", "dc1x", "dcx2", "dc12"];
+/** Fasce Multigol (gol totali, estremi inclusi). */
+export const MULTIGOL_BANDS = [[1, 3], [1, 4], [2, 4], [2, 5], [3, 6]];
+/**
+ * Multigol dai gol attesi: con gol indipendenti i gol totali sono Poisson(lh + la), esatto. `pick` = fascia che il modello si aspetta:
+ * quella con la probabilità più alta PER GOL COPERTO (p / ampiezza), a parità la più stretta. Non è la più probabile in assoluto
+ * (le fasce larghe lo sono sempre): è quella più concentrata attorno ai gol attesi. Stessa regola della funzione SQL `mg_bands`.
+ */
+export function multigolOf(lh, la) {
+  if (!Number.isFinite(lh) || !Number.isFinite(la) || lh + la <= 0) return null;
+  const lam = lh + la, pmf = [Math.exp(-lam)];
+  for (let k = 1; k <= 40; k += 1) pmf.push(pmf[k - 1] * lam / k);
+  const bands = MULTIGOL_BANDS.map(([lo, hi]) => ({ lo, hi, key: `mg${lo}${hi}`, p: pmf.slice(lo, hi + 1).reduce((t, v) => t + v, 0) }));
+  let pick = null;
+  for (const b of bands) {
+    const w = b.hi - b.lo + 1, dens = b.p / w;
+    if (!pick || dens > pick.dens + 1e-12 || (Math.abs(dens - pick.dens) <= 1e-12 && w < pick.w)) pick = { band: b, dens, w };
+  }
+  return { lambda: lam, bands, pick: pick.band };
+}
 /** Perimetro dei mercati dell'app: entra nella versione del modello, così le statistiche prima e dopo la restrizione restano separate. */
 export const MARKET_SCOPE = "1x2+dc";
 

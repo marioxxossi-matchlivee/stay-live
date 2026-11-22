@@ -1,3 +1,4 @@
+import { FEATURES } from "./_features.js";
 import { errorMessage, json, missingConfig, supabaseGet } from "./_lib.js";
 import { loadCornerActuals, loadCornerOdds } from "./_corners.js";
 
@@ -10,6 +11,7 @@ const COLS = "game_id,league,season,kickoff_at,status,home_id,away_id,home_name,
  * Quello già scaricato resta in cache (la stessa della scheda dati): non si riscarica finché non può essere cambiato.
  */
 export async function onRequest({ request, env }) {
+  if (!FEATURES.corners) return json({ disabled: true, items: [], note: "Corner disattivati: nessuna richiesta al provider." });   // nessun credito speso
   const ids = [...new Set((new URL(request.url).searchParams.get("ids") ?? "").split(",").map((s) => s.trim()).filter(Boolean))];
   if (!ids.length || ids.length > 40 || !ids.every((id) => /^[\w-]{3,80}$/.test(id))) return json({ error: "Indica da 1 a 40 partite." }, 400);
   const wantsRefresh = new URL(request.url).searchParams.has("since");

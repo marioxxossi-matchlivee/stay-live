@@ -4,6 +4,7 @@
  * (cache valida = nessuna richiesta; limite superato = ci si ferma e si segnala `retry`, il browser richiede da solo).
  */
 import { AF_LEAGUES, RETRY_HINT, betIdsFrom, loadSections, ttlFor } from "./_apifootball.js";
+import { FEATURES } from "./_features.js";
 import { parseAfPrediction, resolveMaps } from "./_afpredict.js";
 import { marketFrom } from "./_market.js";
 import { emptyRecheckMs, tierOf } from "./_policy.js";
@@ -62,12 +63,12 @@ export async function loadBrainInputs(env, matches, now = Date.now(), { live = t
   const reqs = [
     ...mapped.map((m) => ({ section: `${m.game_id}|pred`, endpoint: "predictions", params: { fixture: fx(m) }, ttl: ttl("predictions", m), fresh: fresh("predictions", m), tier: tierFor(m) })),
     ...(market ? mapped.flatMap((m) => [
-      { section: `${m.game_id}|goals`, endpoint: "odds", params: { fixture: fx(m), bet: bets.goals }, ttl: ttl("odds", m), fresh: fresh("odds", m), emptyFresh: emptyOf("odds", m), tier: tierFor(m) },
+      ...(FEATURES.goalMarkets ? [{ section: `${m.game_id}|goals`, endpoint: "odds", params: { fixture: fx(m), bet: bets.goals }, ttl: ttl("odds", m), fresh: fresh("odds", m), emptyFresh: emptyOf("odds", m), tier: tierFor(m) }] : []),
       { section: `${m.game_id}|x12`, endpoint: "odds", params: { fixture: fx(m), bet: bets.winner }, ttl: ttl("odds", m), fresh: fresh("odds", m), emptyFresh: emptyOf("odds", m), tier: tierFor(m) },
     ]) : []),
     ...extra.flatMap((m) => [
       { section: `${m.game_id}|dc`, endpoint: "odds", params: { fixture: fx(m), bet: bets.doubleChance }, ttl: ttl("odds", m), fresh: freshExtra(m), emptyFresh: emptyOf("odds", m), tier: tierFor(m) },
-      { section: `${m.game_id}|btts`, endpoint: "odds", params: { fixture: fx(m), bet: bets.btts }, ttl: ttl("odds", m), fresh: freshExtra(m), emptyFresh: emptyOf("odds", m), tier: tierFor(m) },
+      ...(FEATURES.goalMarkets ? [{ section: `${m.game_id}|btts`, endpoint: "odds", params: { fixture: fx(m), bet: bets.btts }, ttl: ttl("odds", m), fresh: freshExtra(m), emptyFresh: emptyOf("odds", m), tier: tierFor(m) }] : []),
     ]),
   ];
   const sections = {};

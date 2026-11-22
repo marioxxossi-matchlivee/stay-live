@@ -5,6 +5,7 @@
  * Non modifica il modello, la logica EV o le soglie: decide solo SE mostrare l'opportunità BET (`betOk`).
  */
 import { emptyRecheckMs } from "./_policy.js";
+import { FEATURES } from "./_features.js";
 
 const MIN = 60e3;
 const FAR_MS = 3 * 3600e3;
@@ -25,7 +26,7 @@ export function completenessOf({ now = Date.now(), kickoff, odds, predictions, s
   };
   const hasErr = tasks.some((t) => t.state === "error") || Object.values(parts).includes("error");
   const retrying = updating || tasks.some((t) => t.state === "temporary") || Object.values(parts).includes("waiting");
-  const need = ["odds", "predictions", "stats", "corners"];
+  const need = FEATURES.corners ? ["odds", "predictions", "stats", "corners"] : ["odds", "predictions", "stats"];
   const missing = need.filter((k) => parts[k] === "missing" || parts[k] === "error" || parts[k] === "waiting");
   let status = "complete";
   if (hasErr) status = "error";
