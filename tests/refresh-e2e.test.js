@@ -155,9 +155,11 @@ test("giro completo + recupero automatico, con API-Football come unica fonte", a
     assert.ok(storedMatches.length >= LEAGUES.length * 2 && snap.meta.v === 2 && snap.meta.status === "partial");
     assert.ok(storedMatches.some((m) => m.pick), "i pronostici del modello sono calcolati");
     assert.equal(snap.payload.matches.length, 0, "il manifest non contiene il grande array delle partite");
-    // corner storici reali scaricati e salvati (con le sole partite finite delle squadre in campo)
-    assert.ok(w.db.match_corners.length > 0 && w.db.match_corners.every((r) => r.available && r.home_corners === 6 && r.away_corners === 4));
-    assert.equal(m1.components.cornerStats.ok, w.db.match_corners.length);
+    // corner disattivati: nessun corner storico scaricato, nessuna richiesta di statistiche, nessuna quota corner
+    assert.equal(w.db.match_corners.length, 0);
+    assert.equal(m1.components.cornerStats.ok, 0);
+    assert.equal(m1.cornerHistory?.disabled, true);
+    assert.equal(w.log.af.filter((c) => c.startsWith("fixtures/statistics")).length, 0, "nessuna richiesta di statistiche corner");
     assert.equal(w.db.refresh_runs.length, 1);
     assert.ok(m1.requests.thisRun > 0 && m1.requests.remaining < 7500 && m1.requests.limit === 7500, JSON.stringify(m1.requests));
     // le chiamate ai dati del pronostico di una partita completata non si ripetono: cache

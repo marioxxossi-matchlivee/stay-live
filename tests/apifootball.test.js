@@ -1,4 +1,5 @@
 import test from "node:test";
+import { FEATURES } from "../functions/api/_features.js";
 import assert from "node:assert/strict";
 import { AF_LEAGUES, afFetch, rateGate, betIdsFrom, pickCoach, cacheKey, directMap, fetchAfSeason, leagueCheck, normalizeAfFixture, pickFixture, planFor, seasonFor, summarizeOdds, ttlFor } from "../functions/api/_apifootball.js";
 import { LEAGUES } from "../functions/api/_lib.js";
@@ -35,14 +36,26 @@ test("TTL: piu' frequente vicino al match, stabile a partita finita", () => {
   assert.equal(ttlFor("odds-bets", {}), 30 * 86400e3);
 });
 
-test("piano richieste: essenziale 6 sezioni, 13 con i dati extra (7 senza squadre note)", () => {
+test("piano richieste: essenziale 5 sezioni, 11 con i dati extra (6 senza squadre note); niente quote Over/Under né corner", () => {
   const base = { fixtureId: 99, leagueId: 135, season: 2026, kickoff: Date.parse("2026-10-31T19:45:00Z"), now: Date.parse("2026-10-30T12:00:00Z") };
-  assert.deepEqual(planFor({ ...base, homeId: 489, awayId: 505 }).map((r) => r.section), ["fixture", "injuries", "predictions", "oddsGoals", "odds1x2", "coverage"]);
+  assert.deepEqual(planFor({ ...base, homeId: 489, awayId: 505 }).map((r) => r.section), ["fixture", "injuries", "predictions", "odds1x2", "coverage"]);
   const full = planFor({ ...base, homeId: 489, awayId: 505, extra: true });
-  assert.deepEqual(full.map((r) => r.section).sort(), ["coachAway", "coachHome", "coverage", "fixture", "h2h", "injuries", "odds1x2", "oddsCorners", "oddsGoals", "predictions", "standings", "teamAway", "teamHome"]);
+  assert.deepEqual(full.map((r) => r.section).sort(), ["coachAway", "coachHome", "coverage", "fixture", "h2h", "injuries", "odds1x2", "predictions", "standings", "teamAway", "teamHome"]);
   assert.deepEqual(full.find((r) => r.section === "h2h").params, { h2h: "489-505", last: 10 });
-  assert.deepEqual(full.find((r) => r.section === "oddsCorners").params, { fixture: 99, bet: 45 });
-  assert.equal(planFor({ ...base, extra: true }).length, 8);   // senza squadre note: niente h2h, statistiche e allenatori
+  assert.ok(!full.some((r) => r.params?.bet === 45 || r.params?.bet === 5), "nessuna richiesta di quote corner o Over/Under");
+  assert.equal(planFor({ ...base, extra: true }).length, 6);   // senza squadre note: niente h2h, statistiche e allenatori
+});
+
+test("piano richieste: riattivando i flag tornano quote gol e corner (interruttore in _features.js)", () => {
+  const base = { fixtureId: 99, leagueId: 135, season: 2026, kickoff: Date.parse("2026-10-31T19:45:00Z"), now: Date.parse("2026-10-30T12:00:00Z"), homeId: 489, awayId: 505 };
+  const old = { ...FEATURES };
+  try {
+    FEATURES.goalMarkets = true; FEATURES.corners = true;
+    assert.deepEqual(planFor(base).map((r) => r.section), ["fixture", "injuries", "predictions", "oddsGoals", "odds1x2", "coverage"]);
+    const full = planFor({ ...base, extra: true });
+    assert.deepEqual(full.find((r) => r.section === "oddsCorners").params, { fixture: 99, bet: 45 });
+    assert.equal(full.length, 13);
+  } finally { Object.assign(FEATURES, old); }
 });
 
 test("abbinamento partita: orario e squadre; 'Milan' non diventa 'Inter'", () => {

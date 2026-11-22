@@ -66,7 +66,7 @@ test("monitor senza dati: nessuna eccezione, nessun numero inventato", () => {
 test("endpoint /api/monitor: solo lettura", () => {
   const src = fs.readFileSync(new URL("../functions/api/monitor.js", import.meta.url), "utf8");
   assert.doesNotMatch(src, /supabase(Upsert|Patch|Delete)|method:\s*"(POST|PATCH|DELETE|PUT)"/);
-  assert.match(src, /monitor_legs_agg/); assert.match(src, /reliability-backtest/);
+  assert.match(src, /monitor_legs_agg/); assert.match(src, /monitor_window_agg/); assert.match(src, /monitor_mg_pick_agg/);
 });
 
 // ── pubblicazione del backtest sulle partite storiche ──
