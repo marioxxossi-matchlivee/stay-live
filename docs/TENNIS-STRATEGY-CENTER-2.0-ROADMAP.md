@@ -101,6 +101,13 @@ Controllo indipendente sui numeri reali (medie della tabella): log loss mercato 
 - Aggancio al `refresh` (`scripts/tennis-sync.js`): una chiamata protetta da try/catch; non modifica `predictMatch`, `computePredictions`, `loadHistory`, `buildBook`, il loader a offset, `tennis_predictions` né le probabilità operative; KEYSET non attivo.
 - Le metriche prospettiche usano solo la valutazione iniziale e solo partite concluse con risultato verificato; sotto 300 osservazioni e 50 blocchi sono dichiarate insufficienti. I risultati storici restano non predittivi (§0e).
 
+## 0g. Restyling «Strategia» e responsive globale (22/11/2026): solo interfaccia
+**Stato: pronto per revisione; nessun commit, deploy, migrazione o modifica a motore, database, workflow o secret.**
+- «Strategia» è ora un cruscotto di analisi statistica a tema chiaro con cinque aree (Panoramica, ATP · WTA, Superfici, Calibrazione, Integrità), alimentato esclusivamente dal registro LIVE OBSERVATION (valutazioni registrate prima dell'inizio, metriche sulla sola valutazione iniziale). Ogni risultato porta uno stato: Validato, Non validato, In osservazione, Campione insufficiente, Non disponibile. «Validato» richiede il confronto con le quote di mercato al momento della previsione, oggi assente: nessun gruppo può risultare validato.
+- Rimossi dalla presentazione: pronostici e singole consigliate, doppie, classi A/B/C/D, percentuali di puntata, simulazione del capitale, esempio del video. I moduli backend `_tennis-strategy*.js` e `_tennis-bankroll.js` sono invariati (ancora usati da `tennis-sync.js`, dal tracciamento e dai loro test); `_tennis-bankroll.js` non è più usato da alcuna interfaccia.
+- Responsive: viewport senza zoom manuale (`maximum-scale=1`, `user-scalable=no`) più guardie per iOS (pinch e doppio tocco), campi a 16px su telefono, barra a 5 voci proporzionata, tabelle convertite in schede, griglie dei filtri e controlli segmentati contenuti nei pannelli. Verificato nel browser alle larghezze 320, 360, 375, 390, 412, 430, 768, 1024, 1440 su tutte le schede, il dettaglio partita, i filtri, le schede espandibili e LIVE OBSERVATION.
+- Limiti noti: i controlli visivi usano dati simulati e l'app calcio con risposte vuote; nessuna prova su dispositivi fisici Android/iOS.
+
 ## 1. Completato e verificato (con esito riproducibile)
 | Cosa | Verifica |
 |---|---|
