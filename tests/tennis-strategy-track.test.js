@@ -4,8 +4,6 @@ import fs from "node:fs";
 import { buildStrategy } from "../functions/api/_tennis-strategy.js";
 import { planRecords, settleLeg, settleDouble, buildStrategyHistory, recordedBeforeStart } from "../functions/api/_tennis-strategy-track.js";
 import { recordStrategy, loadStrategyHistory } from "../scripts/tennis-sync.js";
-import { computeView, settingsFromFields, sanitizeView, videoExample } from "../src/tennis/strategy.js";
-import { strategyHtml } from "../src/tennis/strategyview.js";
 
 const NOW = Date.parse("2026-11-17T10:00:00Z"), H = 3600e3;
 const bt = { published: 800, summary: { n: 800, calibration: [{ from: 0.65, to: 0.7, n: 200, meanP: 0.675, hitRate: 0.67 }] }, byTour: { atp: { n: 400 }, wta: { n: 400 } }, bySurface: { hard: { n: 500 } } };
@@ -65,14 +63,4 @@ test("recordStrategy: scrive run e giocate una sola volta (rieseguibile)", async
   const h = await loadStrategyHistory(db); assert.equal(h.total.singles, n);
 });
 
-test("interfaccia: nessun dato, nessuna Value, nessuna doppia, bankroll e storico", () => {
-  const settings = settingsFromFields({ bankroll: "1000", stakePct: "1", dailyPct: "3", weeklyPct: "8" });
-  assert.equal(settings.stakePct, 0.01);
-  const m = computeView([], { range: "bad", tour: "x" }, settings, null, NOW); assert.deepEqual(m.view, sanitizeView(null));
-  assert.match(strategyHtml(m, { open: new Set() }, { hasData: false }), /Nessun dato tennis/);
-  const html = strategyHtml(m, { open: new Set() }, { history: null, hasData: true });
-  assert.match(html, /NESSUNA DOPPIA CONSIGLIATA/); assert.match(html, /Nessuna opportunità sufficientemente valida|Nessuna partita pre-match/); assert.match(html, /Esempio del video/); assert.match(html, /47,50/);
-  const full = computeView([mk("a"), mk("b", 6)], { range: "d7", tour: "all" }, settings, { backtest: bt }, NOW);
-  const h2 = strategyHtml(full, { open: new Set() }, { history: null, hasData: true }); assert.match(h2, /Graduatoria Value/); assert.match(h2, /Tracciamento non ancora attivo/);
-  assert.equal(videoExample().steps[1].stake, 47.5);
-});
+// L'interfaccia «Strategia» (valore atteso, doppie, capitale) è stata sostituita dal cruscotto statistico: vedi tests/tennis-strategy-dashboard.test.js.
