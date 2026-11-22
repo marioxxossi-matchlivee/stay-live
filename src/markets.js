@@ -11,7 +11,7 @@ import { esc, num, pct } from "./format.js";
 import { icon } from "./icons.js";
 import { accordionHtml } from "./playlist.js";
 import { SHORT_PICK, shortPick } from "./pickview.js";
-import { MODEL, outcomes, scoreMatrix } from "../functions/api/model.js";
+import { MULTIGOL_BANDS, multigolOf as multigolFromGoals, outcomes } from "../functions/api/model.js";
 
 const RULES = { thr: 0.6, maxUseful: 0.8, minEdge: 0.08, minPlay: 1.3, betSample: 5, margin: 1.03 };
 const sign = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(Math.round(v * 100))}`;
@@ -26,19 +26,9 @@ const GROUPS = [
   { id: "ou", label: "Over/Under", keys: ["over05", "over15", "under15", "over25", "under25", "over35", "under35"], shown: null },
   { id: "dc", label: "Doppia chance", keys: ["dc1x", "dcx2", "dc12"], shown: ["dc1x", "dcx2", "dc12"] },
 ];
-/** Fasce Multigol (gol totali, estremi inclusi). */
-export const MULTIGOL_BANDS = [[1, 3], [1, 4], [2, 4], [2, 5], [3, 6]];
-/**
- * Probabilità delle fasce Multigol dai gol attesi del motore (stessa matrice dei punteggi di 1X2 e doppia chance, nessuna quota, nessuna fusione
- * con API-Football). Null se i gol attesi non ci sono.
- */
-export function multigolOf(mk) {
-  const st = mk?.st;
-  if (!st || !Number.isFinite(st.lh) || !Number.isFinite(st.la)) return null;
-  const tot = [];
-  scoreMatrix(st.lh, st.la, MODEL.rho).forEach((r, i) => r.forEach((v, j) => { tot[i + j] = (tot[i + j] ?? 0) + v; }));
-  return MULTIGOL_BANDS.map(([lo, hi]) => ({ lo, hi, p: tot.slice(lo, hi + 1).reduce((a, b) => a + (b ?? 0), 0) }));
-}
+export { MULTIGOL_BANDS };
+/** Multigol dai gol attesi del motore (nessuna quota, nessuna fusione con API-Football): { lambda, bands, pick } oppure null. */
+export function multigolOf(mk) { return multigolFromGoals(mk?.st?.lh, mk?.st?.la); }
 const OU_LINES = ["15", "25", "35"];
 /** Per ogni soglia over/under il lato favorito dal motore (probabilità maggiore): una sola opzione per soglia. */
 const ouShown = (mk) => OU_LINES.map((l) => { const o = mk.x[`over${l}`], u = mk.x[`under${l}`]; return o && u ? (o.p >= u.p ? `over${l}` : `under${l}`) : (o ? `over${l}` : u ? `under${l}` : null); }).filter(Boolean);
@@ -152,10 +142,12 @@ function groupRow(m, g, mode, ctx = {}) {
   return row(g, shown.map((k) => cell(optLabel(k), mk.x[k].p, { top: k === hi, bet: Boolean(mk.x[k].v), odd: mk.x[k].o, rec: k === ctx.recKey, recBet: ctx.recBet, res: ctx.final ? outcomes(ctx.final.h, ctx.final.a)[k] === 1 : null })).join(""));
 }
 function multigolRow(m, final) {
-  const bands = multigolOf(m.mk);
-  if (!bands) return none("Multigol", "non disponibile", "multigol");
+  const mg = multigolOf(m.mk);
+  if (!mg) return none("Multigol", "non disponibile", "multigol");
   const total = final ? final.h + final.a : null;
-  return row({ id: "multigol", label: "Multigol" }, bands.map((b) => cell(`${b.lo}-${b.hi}`, b.p, { res: total == null ? null : total >= b.lo && total <= b.hi })).join(""));
+  const cells = mg.bands.map((b) => cell(`${b.lo}-${b.hi}`, b.p, { top: b.key === mg.pick.key, res: total == null ? null : total >= b.lo && total <= b.hi })).join("");
+  return row({ id: "multigol", label: "Multigol" }, cells)
+    + `<p class="mx-note">Gol attesi <b>${f1(mg.lambda)}</b> · il modello si aspetta <b>${mg.pick.lo}-${mg.pick.hi}</b> (${pct(mg.pick.p)})</p>`;
 }
 /** Un corner (over/under su una soglia) è uscito? null se i corner reali non sono noti. */
 const cornerHit = (o, total) => (Number.isFinite(total) ? (o.side === "over" ? total > o.line : total < o.line) : null);
@@ -206,7 +198,7 @@ function detailsBody(m, cv, rules, vis = null) {
     }).join("");
     parts.push(`<section class="dt"><h5>${g.label}${rel ? `<small>affidabilità ${rel}</small>` : ""}</h5>${fact ? `<p>${esc(optLabel(top))}: ${fact}.</p>` : ""}${items ? `<ul>${items}</ul>` : ""}</section>`);
   }
-  if (vis?.has("multigol") && mk.st) parts.push(`<section class="dt"><h5>Multigol<small>solo modello</small></h5><p>Calcolato sui gol attesi del modello (${f1(mk.st.lh)} – ${f1(mk.st.la)}): somma delle probabilità dei punteggi con quel numero di gol totali. Nessuna quota e nessun dato API-Football: è una stima statistica, non ancora validata, e non è un consiglio.</p></section>`);
+  if (vis?.has("multigol") && mk.st) { const g = multigolOf(mk); if (g) parts.push(`<section class="dt"><h5>Multigol<small>solo modello</small></h5><p>Gol attesi ${f1(mk.st.lh)} + ${f1(mk.st.la)} = <b>${f1(g.lambda)}</b>. Le percentuali sono la probabilità che i gol totali cadano nella fascia. La fascia evidenziata, <b>${g.pick.lo}-${g.pick.hi}</b>, è quella che il modello si aspetta: ha la probabilità più alta per gol coperto, non in assoluto (una fascia più larga esce sempre più spesso). Nessuna quota e nessun dato API-Football.</p></section>`); }
   if (cv.state !== "none" && (!vis || vis.has("corner"))) parts.push(`<section class="dt"><h5>Corner<small>affidabilità ${cv.reliability}</small></h5><p>${cornerMotivation(m, cv)}</p><p class="dt-note">${esc(cv.note)} Non diventa mai BET.</p></section>`);
   return `${parts.join("")}<p class="dt-foot">${mk.s} gare di storico · fonti ${esc(mk.ba)} · forma: V vinta, N pari, P persa</p>`;
 }

@@ -60,3 +60,59 @@ export function monitorHtml(d, tab = "live") {
   return `<div class="mn-seg" id="mn-tabs" style="--i:${tab === "live" ? 0 : 1}" role="group" aria-label="Sezione"><button type="button" data-mn="live" aria-pressed="${tab === "live"}">Dal vivo · ${d.registered.partite}</button><button type="button" data-mn="hist" aria-pressed="${tab === "hist"}">${esc(hist)}</button></div>${tab === "live" ? liveHtml(d) : backtestHtml(d.backtest)}`;
 }
 
+
+/* ======================= Affidabilità del modello attuale: 1X2, doppia chance, Multigol ======================= */
+const f3 = (v) => (v == null || !Number.isFinite(v) ? "—" : num(v, 3));
+const REF = "Riferimenti: Brier 0,250 e log loss 0,693 sono il lancio di moneta; più bassi sono, meglio è.";
+const dayIt = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString("it-IT", { timeZone: "Europe/Rome", weekday: "short", day: "numeric", month: "short" });
+
+function winCard(d) {
+  const w = d.window48;
+  if (!w.total.n) return `<section class="mn-card"><h3>Ultime 48 ore</h3><p class="mn-empty">Nessuna partita iniziata nelle ultime 48 ore e già conclusa con un pronostico registrato.</p></section>`;
+  const t = w.total, mg = w.multigolAtteso;
+  return `<section class="mn-card"><h3>Ultime 48 ore</h3>
+    <div class="mn-kpis mn-kpis--5"><div><b>${w.partite}</b><span>partite concluse</span></div><div><b>${t.n}</b><span>esiti valutati</span></div><div><b>${f3(t.brier)}</b><span>Brier</span></div><div><b>${f3(t.logLoss)}</b><span>Log loss</span></div><div><b>${P(t.rate, 0)}</b><span>usciti (dichiarato ${P(t.claimed, 0)})</span></div></div>
+    <div class="mn-scroll"><table class="mn-table"><thead><tr><th>Mercato</th><th>Partite</th><th>Brier</th><th>Log loss</th><th>Usciti</th><th>Dichiarato</th></tr></thead><tbody>${w.families.map((f) => `<tr><th>${esc(f.label)}</th><td>${f.partite || "—"}</td><td>${f3(f.brier)}</td><td>${f3(f.logLoss)}</td><td>${P(f.rate, 1)}</td><td>${P(f.claimed, 1)}</td></tr>`).join("")}</tbody></table></div>
+    ${mg.n ? `<p class="mn-note"><b>Fascia Multigol attesa dal modello:</b> centrata ${mg.won} volte su ${mg.n} (${P(mg.rate, 0)}; dichiarato ${P(mg.claimed, 0)}).</p>` : ""}
+    <p class="mn-note">Partite iniziate nelle ultime 48 ore e già concluse. ${w.partite < 60 ? "Con pochi casi i valori oscillano molto: guarda anche il quadro complessivo più sotto. " : ""}${esc(REF)}</p></section>`;
+}
+
+function dailyCard(d) {
+  if (!d.daily.length) return "";
+  const rows = d.daily.slice(0, 10).map((x) => `<tr><th>${esc(dayIt(x.day))}</th><td>${x.partite || "—"}</td><td>${f3(x.families.esito.brier)}</td><td>${f3(x.families.esito.logLoss)}</td><td>${f3(x.families.dc.brier)}</td><td>${f3(x.families.multigol.brier)}</td><td>${f3(x.families.multigol.logLoss)}</td></tr>`).join("");
+  return `<section class="mn-card"><h3>Andamento giorno per giorno</h3><div class="mn-scroll"><table class="mn-table"><thead><tr><th>Giorno</th><th>Partite</th><th>1X2 Brier</th><th>1X2 Log loss</th><th>DC Brier</th><th>MG Brier</th><th>MG Log loss</th></tr></thead><tbody>${rows}</tbody></table></div><p class="mn-note">Giorno di inizio partita, ora italiana. Un solo giorno con poche partite non dice nulla: conta la tendenza.</p></section>`;
+}
+
+function familyCard(f, d) {
+  const t = f.total;
+  if (!t.n) return `<section class="mn-card"><h3>${esc(f.label)}</h3><p class="mn-empty">Ancora nessun caso concluso.</p></section>`;
+  const gap = (x) => (x.gap == null ? "—" : esc(pt(x.gap)));
+  return `<section class="mn-card"><h3>${esc(f.label)}</h3>
+    <div class="mn-kpis mn-kpis--5"><div><b>${t.n}</b><span>esiti valutati</span></div><div><b>${P(t.rate, 1)}</b><span>usciti</span></div><div><b>${P(t.claimed, 1)}</b><span>dichiarato</span></div><div><b>${f3(t.brier)}</b><span>Brier</span></div><div><b>${f3(t.logLoss)}</b><span>Log loss</span></div></div>
+    <div class="mn-scroll"><table class="mn-table"><thead><tr><th>Esito</th><th>Casi</th><th>Dichiarato</th><th>Reale</th><th>Scarto</th><th>Brier</th></tr></thead><tbody>${f.keys.map((k) => `<tr><th>${esc(k.label)}</th><td>${k.n}</td><td>${P(k.claimed, 1)}</td><td>${P(k.rate, 1)}</td><td>${gap(k)}</td><td>${f3(k.brier)}</td></tr>`).join("")}</tbody></table></div>
+    ${t.n < d.minSample ? `<p class="mn-prog">Campione: ${t.n} su ${d.minSample} necessari per un giudizio solido.<span><i style="width:${Math.min(100, (t.n / d.minSample) * 100).toFixed(0)}%"></i></span></p>` : ""}
+    ${f.id === "multigol" ? `<p class="mn-note">Il Multigol è calcolato dai gol attesi del modello (senza quote né API-Football).</p>` : `<p class="mn-note">Le percentuali dichiarate sono quelle mostrate dall'app (modello, API-Football e quote).</p>`}</section>`;
+}
+
+function mgPickCard(d) {
+  const m = d.multigolAtteso;
+  if (!m.n) return `<section class="mn-card"><h3>Fascia Multigol attesa</h3><p class="mn-empty">Ancora nessun caso concluso.</p></section>`;
+  return `<section class="mn-card"><h3>Fascia Multigol attesa dal modello</h3>
+    <div class="mn-big"><b>${P(m.rate)}</b><span>centrata ${m.won} volte su ${m.n}</span></div>${bar(m.rate, m.claimed, `Percentuale reale ${P(m.rate)}`)}
+    <dl class="mn-kv"><div><dt>Intervallo al 95%</dt><dd>${esc(ci(m))}</dd></div><div><dt>Dichiarato dal modello</dt><dd>${P(m.claimed)}</dd></div><div><dt>Scarto reale − dichiarato</dt><dd>${esc(pt(m.gap))}</dd></div></dl>
+    <div class="mn-scroll"><table class="mn-table"><thead><tr><th>Fascia attesa</th><th>Volte</th><th>Centrata</th></tr></thead><tbody>${m.byBand.map((b) => `<tr><th>${esc(b.label)}</th><td>${b.n}</td><td>${P(b.rate, 0)}</td></tr>`).join("")}</tbody></table></div>
+    ${m.n < d.minSample ? `<p class="mn-prog">Campione: ${m.n} su ${d.minSample} necessari per un giudizio solido.<span><i style="width:${Math.min(100, (m.n / d.minSample) * 100).toFixed(0)}%"></i></span></p>` : ""}
+    <p class="mn-note">È la fascia con più probabilità per gol coperto, non la più probabile in assoluto. ${m.reconstructed ? `${m.reconstructed} casi su ${m.n} sono ricostruiti dalle probabilità del modello salvate prima della partita.` : ""}</p></section>`;
+}
+
+export function modelMonitorHtml(d) {
+  const r = d.registered;
+  const head = `<section class="mn-card"><h3>Pronostici registrati</h3>
+    <div class="mn-kpis"><div><b>${r.partite}</b><span>partite registrate</span></div><div><b>${r.concluse}</b><span>concluse</span></div><div><b>${r.in_attesa}</b><span>in attesa</span></div><div><b>${r.rinviate_o_annullate + r.non_valutabili + r.senza_risultato}</b><span>non valutabili</span></div></div>
+    <p class="mn-note">Ogni pronostico è salvato prima del calcio d'inizio e non si modifica più. ${d.since ? `Dal ${esc(dateIt(d.since))}.` : ""} Si aggiorna da solo a ogni partita conclusa.</p></section>`;
+  const picks = d.picks.bet.n + d.picks.evita.n
+    ? groupCard("BET · le scelte consigliate (1X2 e doppia chance)", d.picks.bet, { min: d.minSample }) + groupCard("EVITA · le scelte sconsigliate", d.picks.evita, { note: "EVITA non significa che perde: il modello non la ritiene conveniente.", min: d.minSample })
+    : "";
+  const cal = d.calibration.some((b) => b.n) ? `<section class="mn-card"><h3>Taratura: dichiarato contro reale</h3><p class="mn-note">Tutti gli esiti del modello insieme (1X2, doppia chance, Multigol).</p>${calTable(d.calibration)}</section>` : "";
+  return head + winCard(d) + dailyCard(d) + d.families.map((f) => familyCard(f, d)).join("") + mgPickCard(d) + picks + cal;
+}
