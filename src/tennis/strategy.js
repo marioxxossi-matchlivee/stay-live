@@ -1,7 +1,7 @@
 // Stay Live Tennis — «Strategia»: cruscotto di analisi statistica e controllo del modello (logica PURA, nessun DOM: si testa con node --test).
 // Fonte unica dei dati: il registro LIVE OBSERVATION (valutazioni registrate PRIMA dell'inizio, confrontate coi risultati). Nessuna indicazione di gioco,
 // nessuna puntata, nessuna classe: solo quanto il modello si comporta sulle partite osservate e quanto sono affidabili i dati.
-import { prospectiveMetrics, OBSERVATION } from "../../functions/api/_tennis-observation.js";
+import { prospectiveMetrics, blockBootstrap, OBSERVATION } from "../../functions/api/_tennis-observation.js";
 import { buildModel } from "./observation.js";
 
 export const STRATEGY_TABS = [["overview", "Panoramica"], ["tours", "ATP · WTA"], ["surfaces", "Superfici"], ["calibration", "Calibrazione"], ["integrity", "Integrità"]];
@@ -37,8 +37,11 @@ const toItem = (i) => ({ initial: i.initial, state: i.state, winner: i.winner, s
 const WAITING = new Set(["upcoming", "live", "awaiting_result"]);
 
 function group(items) {
-  const m = prospectiveMetrics(items.map(toItem)), status = validationStatus(m, items.length);
-  return { total: items.length, concluded: items.filter((i) => i.state === "concluded").length, metrics: m, status };
+  const m = prospectiveMetrics(items.map(toItem));
+  // Intervallo al 95% dell'accuratezza (stessi blocchi torneo-settimana e stesso seme delle altre metriche); ECE: nessun intervallo stimato.
+  const rows = items.filter((i) => i.state === "concluded" && i.initial?.published).map((i) => ({ hit: (Number(i.initial.p1) >= 0.5 ? 1 : 2) === i.winner ? 1 : 0, startsAt: i.startsAt, tournamentId: i.tournamentId, tournament: i.tournament }));
+  if (m.accuracy && rows.length) m.accuracy = { ...m.accuracy, ...blockBootstrap(rows, (r) => r.hit) };
+  return { total: items.length, concluded: items.filter((i) => i.state === "concluded").length, metrics: m, status: validationStatus(m, items.length) };
 }
 const pct1 = (a, b) => (b ? a / b : null);
 
@@ -61,8 +64,15 @@ export function buildDashboard(payload, now = Date.now()) {
     identity: items.filter((i) => i.state === "identity_mismatch").length, noSurface,
     sync: { enabled: diag?.enabled ?? null, error: diag?.error ?? null, blocked: diag?.blocked ?? null, lastOk: diag?.lastOk ?? null, newObservations: diag?.newObservations ?? null, newVersions: diag?.newVersions ?? null, unavailable: !!diag?.unavailable },
   };
+  const latest = versions.slice().sort((x, y) => String(y.recorded_at).localeCompare(String(x.recorded_at)))[0] ?? null, groups = [{ label: "Complessivo", ...all }, ...tours, ...surfaces];
+  const system = {
+    models: [...new Set(versions.map((v) => v.model_ver).filter(Boolean))].sort(), loader: latest?.history_loader ?? null, historyMatches: latest?.history_matches ?? null, historyLastAt: latest?.history_last_at ?? null,
+    ratingsVer: latest?.ratings_ver ?? null, lastRecorded: lastRec, lastOk: diag?.lastOk ?? null, registryEnabled: diag?.enabled ?? null, error: diag?.error ?? null,
+    sufficient: groups.filter((g) => g.metrics.sufficient).map((g) => g.label), notValidated: groups.filter((g) => g.status !== "validated" && g.status !== "unavailable").length, groupsTotal: groups.filter((g) => g.status !== "unavailable").length,
+    keysetActive: latest?.history_loader === "keyset",
+  };
   return {
-    available: true, complete: model.complete, loaded: items.length, total: model.total ?? items.length,
+    available: true, system, complete: model.complete, loaded: items.length, total: model.total ?? items.length,
     overview: { total: items.length, concluded: all.concluded, waiting, valid: m.valid, blocks: m.blocks, sufficient: m.sufficient, status: all.status, minSample: m.minSample, minBlocks: m.minBlocks,
       quality: pct1(complete, items.length), lastUpdate: lastRec ?? diag?.lastOk ?? null, brier: m.brier, logLoss: m.logLoss },
     all, tours, surfaces, calibration: { ...m.calibration, valid: m.valid, status: all.status, sufficient: m.sufficient, blocks: m.blocks }, integrity,

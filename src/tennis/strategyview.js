@@ -20,6 +20,24 @@ export function tabsHtml(tab) {
 /** Barra «n / soglia»: mostra quanto manca per poter leggere il risultato. */
 const progress = (label, v, need) => `<div class="sd-prog"><div><span>${esc(label)}</span><b>${esc(v)} / ${esc(need)}</b></div>${bar(v, need)}</div>`;
 
+/** Stato del sistema: cosa è operativo, cosa è sperimentale, quale versione, quanto è aggiornato. La parte «dai dati» è letta dal registro; la parte «dichiarata» no. */
+export function systemHtml(d) {
+  const y = d.system, o = d.overview, row = (k, v) => `<li><span>${esc(k)}</span><b>${v}</b></li>`;
+  const models = y.models.length ? y.models.map(esc).join(", ") : "n.d.";
+  const loader = y.loader == null ? "n.d." : `${esc(y.loader === "offset" ? "a offset" : y.loader === "keyset" ? "a chiave (KEYSET)" : y.loader)}${y.historyMatches != null ? ` · ${esc(y.historyMatches)} partite` : ""}`;
+  const lag = y.historyLastAt ? `ultima partita nei rating: ${esc(when(y.historyLastAt))}` : "";
+  return `<section class="sd-card sd-system"><h3>Stato del sistema</h3>
+    <p class="sd-src">${icon("database")}Letto dal registro LIVE OBSERVATION</p>
+    <ul class="sd-rows">${row("Motore operativo", `Tennis · modello ${models}`)}${row("Caricamento storico", loader)}${lag ? `<li class="sub"><span>${lag}</span></li>` : ""}
+      ${row("Ultimo aggiornamento", esc(when(y.lastOk ?? y.lastRecorded)))}${row("Raccolta prospettica", y.registryEnabled === false ? "spenta" : y.error ? "con errore (vedi Integrità)" : y.registryEnabled ? "attiva" : "n.d.")}
+      ${row("Osservazioni raccolte", esc(o.total))}${row("Partite concluse", esc(o.concluded))}${row("Osservazioni valide", `${esc(o.valid)} / ${esc(o.minSample)}`)}</ul>
+    <h4>Campione sufficiente</h4><p class="sd-p">${y.sufficient.length ? esc(y.sufficient.join(", ")) : "Nessun gruppo: nessuna metrica ha ancora un campione sufficiente."}</p>
+    <h4>Risultati non validati</h4><p class="sd-p">${esc(y.notValidated)} su ${esc(y.groupsTotal)} gruppi con dati: nessuno ha superato la validazione (manca il confronto con il mercato).</p>
+    <p class="sd-src dec">${icon("info")}Elenco dichiarato dal codice, non letto dal database</p>
+    <ul class="sd-rows">${row("Strategy Center 2.0 e relative selezioni", "sperimentale, isolato, non collegato all'app")}${row("Caricamento storico a chiave", y.keysetActive ? "ATTIVO nei dati registrati" : "non attivo (sperimentale)")}${row("Pronostici e verdetti BET/EVITA", "motore operativo, non validato come vantaggio sul mercato")}</ul>
+    <p class="sd-meta">Nessun dato simulato: ogni numero di questa pagina viene dal database.</p></section>`;
+}
+
 export function overviewHtml(d) {
   const o = d.overview;
   return `<section class="sd-hero">
@@ -29,6 +47,7 @@ export function overviewHtml(d) {
       ${progress("Campione", o.valid, o.minSample)}${progress("Blocchi indipendenti", o.blocks, o.minBlocks)}
     </section>
     <div class="sd-kpis">${kpi(o.total, "Osservazioni registrate")}${kpi(o.concluded, "Partite concluse")}${kpi(o.waiting, "In attesa di esito")}${kpi(o.quality == null ? "—" : pct(o.quality, 0), "Dati completi")}</div>
+    ${systemHtml(d)}
     <section class="sd-card"><h3>Stato della validazione</h3><p class="sd-p">${esc(STATUS[o.status].hint)}</p>
       <p class="sd-p">${o.sufficient ? "La soglia statistica è raggiunta, ma manca il confronto con le quote del mercato al momento della previsione: per questo nessun risultato è «Validato»." : `Servono almeno ${esc(o.minSample)} osservazioni valide su ${esc(o.minBlocks)} blocchi indipendenti (torneo e settimana) prima di leggere un risultato.`}</p>
       <p class="sd-meta">Ultimo aggiornamento: ${esc(when(o.lastUpdate))}${d.complete ? "" : ` · caricate ${esc(d.loaded)} di ${esc(d.total)}`}</p></section>
@@ -44,7 +63,7 @@ export function groupCardHtml(g, { unavailableText } = {}) {
     <p class="sd-meta">${esc(g.total)} registrate · ${esc(g.concluded)} concluse · <b>${esc(m.valid)}</b> valide · ${esc(m.blocks)} blocchi</p>
     ${na ? `<p class="sd-p">Nessuna partita conclusa con valutazione pubblicata: nessuna metrica.</p>` : `<dl class="sd-metrics">
       <div><dt>Brier</dt><dd>${ci(m.brier)}</dd><small>${esc(range(m.brier))}</small></div><div><dt>Log loss</dt><dd>${ci(m.logLoss)}</dd><small>${esc(range(m.logLoss))}</small></div>
-      <div><dt>ECE</dt><dd>${m.calibration.ece == null ? "—" : num(m.calibration.ece, 3)}</dd><small>taratura media</small></div><div><dt>Accuratezza</dt><dd>${m.accuracy ? pct(m.accuracy.est, 1) : "—"}</dd><small>favorito che vince</small></div></dl>
+      <div><dt>ECE</dt><dd>${m.calibration.ece == null ? "—" : num(m.calibration.ece, 3)}</dd><small>taratura media · IC non stimato</small></div><div><dt>Accuratezza</dt><dd>${m.accuracy ? pct(m.accuracy.est, 1) : "—"}</dd><small>${m.accuracy?.lo != null ? `IC 95% ${pct(m.accuracy.lo, 1)} – ${pct(m.accuracy.hi, 1)}` : "intervallo n.d."}</small></div></dl>
     <p class="sd-meta">Riferimento «caso»: Brier ${num(COIN_FLIP.brier, 3)} · log loss ${num(COIN_FLIP.logLoss, 3)}.</p>`}
     ${m.sufficient ? "" : `<p class="sd-warn">${icon("warning")}<span>Mancano ${esc(missingText(m))}: numeri solo indicativi, nessuna conclusione.</span></p>`}</article>`;
 }

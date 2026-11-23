@@ -96,6 +96,17 @@
 .sd-more{display:grid;gap:8px;justify-items:start;margin:0 0 var(--sd-gap)}
 .sd-more button{min-height:44px;padding:0 16px;border-radius:999px;border:1px solid var(--sl-line-2);background:var(--sl-s1);color:var(--sl-ink);font:700 13px var(--sl-font)}
 
+/* Stato del sistema */
+.sd-system h4{margin:14px 0 0;font:800 11px var(--sl-font);letter-spacing:.08em;text-transform:uppercase;color:var(--sl-mute)}
+.sd-src{display:flex;align-items:center;gap:6px;margin:8px 0 0;font:700 11.5px var(--sl-font);color:var(--sl-lime)}
+.sd-src.dec{margin-top:14px;color:var(--sl-warn)}
+.sd-src .ic{font-size:15px}
+.sd-system .sd-rows li{align-items:flex-start}
+.sd-system .sd-rows li>span{min-width:0;flex:1 1 40%;color:var(--sl-ink-2)}
+.sd-system .sd-rows li>b{min-width:0;flex:1 1 50%;text-align:right;font-weight:700;overflow-wrap:break-word}
+.sd-system .sd-rows li.sub{padding-top:0;border-top:0}
+.sd-system .sd-rows li.sub span{font:500 12px var(--sl-font);color:var(--sl-mute)}
+
 @media (min-width:768px){
   .sd-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:0 var(--sd-gap)}
   .sd-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
