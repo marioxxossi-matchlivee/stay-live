@@ -2,7 +2,7 @@
 <html lang="it">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#f3f6fc" />
     <meta name="color-scheme" content="light" />
     <meta name="description" content="Stay Live: probabilità, BET o EVITA e preview di giornata per calcio e tennis." />
@@ -24,6 +24,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400..800;1,700..800&display=swap" rel="stylesheet" />
     <style>html{background:#f3f6fc;color-scheme:light}html[data-gate] body>:not(#sport-gate):not(script):not(style):not(.toast){display:none!important}html[data-boot="tennis"] body>:not(#tennis-root):not(#sport-loader):not(script):not(style):not(.toast){display:none!important}</style>
     <script>try{var s=sessionStorage.getItem("sl-sport");if(s==="tennis")document.documentElement.setAttribute("data-boot","tennis");else if(s!=="football")document.documentElement.setAttribute("data-gate","")}catch(e){document.documentElement.setAttribute("data-gate","")}setTimeout(function(){document.documentElement.removeAttribute("data-boot");document.documentElement.removeAttribute("data-gate")},8000)</script>
+    <script>/* Nessuno zoom manuale: iOS Safari ignora user-scalable=no, quindi si bloccano pinch (gesture*, tocchi multipli) e doppio tocco. Lo scorrimento a un dito resta intatto. */(function(){var d=document,o={passive:false};["gesturestart","gesturechange","gestureend"].forEach(function(t){d.addEventListener(t,function(e){e.preventDefault()},o)});d.addEventListener("touchmove",function(e){if(e.touches&&e.touches.length>1)e.preventDefault()},o);var l=0;d.addEventListener("touchend",function(e){var n=Date.now();if(n-l<350&&e.target.closest&&!e.target.closest("input,textarea,select,[contenteditable]"))e.preventDefault();l=n},o)})()</script>
     <title>Stay Live — Analisi partite</title>
   </head>
   <body>
