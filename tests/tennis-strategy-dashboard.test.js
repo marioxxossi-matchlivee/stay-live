@@ -9,12 +9,12 @@ const read = (p) => fs.readFileSync(new URL(`../${p}`, import.meta.url), "utf8")
 let seed = 7; const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
 
 /** Registro sintetico (solo per questi test): n osservazioni su blocchi torneo-settimana distinti, esiti calibrati o casuali. */
-function registry(n, { concluded = 1, edge = 0.8, tours = ["atp", "wta"], surfaces = ["hard", "clay", "grass"], diagnostics = { enabled: true, newObservations: 1, newVersions: 1 } } = {}) {
+function registry(n, { loader = "offset", concluded = 1, edge = 0.8, tours = ["atp", "wta"], surfaces = ["hard", "clay", "grass"], diagnostics = { enabled: true, newObservations: 1, newVersions: 1 } } = {}) {
   const observations = [], versions = [];
   for (let i = 0; i < n; i++) {
     const past = rnd() < concluded, start = past ? NOW - (2 + i) * 24 * H : NOW + (1 + (i % 30)) * H, p = 0.3 + rnd() * 0.6, y = rnd() < 0.5 + (p - 0.5) * edge, key = `k${i}`;
     observations.push({ match_key: key, tour: tours[i % tours.length], tournament_id: `T${i}`, tournament: `Torneo ${i % 9}`, surface: surfaces[i % surfaces.length], p1_id: `${i}a`, p2_id: `${i}b`, p1_name: `Uno ${i}`, p2_name: `Due ${i}`, first_starts_at: ISO(start), first_recorded_at: ISO(start - 12 * H), match_status: past ? "finished" : "scheduled", match_starts_at: ISO(start), winner: past ? (y ? 1 : 2) : null, identity_ok: true, state: past ? "concluded" : "upcoming" });
-    versions.push({ match_key: key, rev: 1, recorded_at: ISO(start - 12 * H), starts_at: ISO(start), reason: "initial", model_ver: "tennis-v2", published: true, pick: 1, p1: p, p2: 1 - p, missing: i % 2 ? ["scontri diretti"] : [], inputs: {}, elo1: 1500, elo2: 1500 });
+    versions.push({ match_key: key, rev: 1, recorded_at: ISO(start - 12 * H), starts_at: ISO(start), reason: "initial", model_ver: "tennis-v2", published: true, pick: 1, p1: p, p2: 1 - p, missing: i % 2 ? ["scontri diretti"] : [], inputs: {}, elo1: 1500, elo2: 1500, history_loader: loader, history_matches: 80000, history_last_at: ISO(NOW - 60 * 24 * H), ratings_ver: "aa90599" });
   }
   return { available: true, observations, versions, nextCursor: null, complete: true, total: n, diagnostics };
 }
@@ -94,4 +94,23 @@ test("responsive globale: viewport senza zoom, guardie iOS, input a 16px, barra 
   const shell = read("src/design/shell.css"); assert.match(shell, /touch-action:pan-x pan-y/); assert.match(shell, /html select,html textarea\{font-size:16px!important\}/); assert.match(shell, /overflow-wrap:break-word/); assert.ok(!/overflow-wrap:anywhere/.test(shell.replace(/\/\*[\s\S]*?\*\//g, "")), "anywhere schiaccia le colonne delle tabelle");
   const app = read("src/tennis/app.js"); assert.match(app, /const TABS = \["matches", "strategy", "plays", "reliability", "settings"\]/); assert.equal((app.match(/<button type="button" data-tab=/g) ?? []).length, 5);
   const css = read("src/tennis/strategy.css"); assert.ok(!/[^-a-z]width:\s*\d{3,}px/.test(css), "nessuna larghezza fissa oltre 99px"); assert.match(css, /@media \(max-width:360px\)/); assert.match(css, /@media \(min-width:768px\)/);
+});
+
+test("trasparenza: stato del sistema letto dai dati (versione, caricamento, aggiornamento, conteggi) e componenti sperimentali dichiarati come tali", () => {
+  const d = buildDashboard(registry(180, { diagnostics: { enabled: true, lastOk: ISO(NOW - H), newObservations: 1, newVersions: 1 } }), NOW), y = d.system;
+  assert.deepEqual(y.models, ["tennis-v2"]); assert.equal(y.loader, "offset"); assert.equal(y.historyMatches, 80000); assert.equal(y.keysetActive, false); assert.equal(y.registryEnabled, true);
+  assert.deepEqual(y.sufficient, [], "nessun gruppo con campione sufficiente"); assert.equal(y.notValidated, y.groupsTotal);
+  const html = strategyHtml(d, { tab: "overview" });
+  for (const k of ["Stato del sistema", "Letto dal registro LIVE OBSERVATION", "Motore operativo", "modello tennis-v2", "a offset · 80000 partite", "ultima partita nei rating", "Ultimo aggiornamento", "Osservazioni raccolte", "Partite concluse", "Campione sufficiente", "Nessun gruppo", "Risultati non validati", "manca il confronto con il mercato", "Elenco dichiarato dal codice, non letto dal database", "Strategy Center 2.0 e relative selezioni", "sperimentale, isolato, non collegato all'app", "non attivo (sperimentale)", "non validato come vantaggio sul mercato", "Nessun dato simulato"]) assert.ok(html.includes(k), k);
+  const k2 = buildDashboard(registry(40, { loader: "keyset", concluded: 0 }), NOW); assert.equal(k2.system.keysetActive, true); assert.match(strategyHtml(k2, { tab: "overview" }), /ATTIVO nei dati registrati/);
+  const big = buildDashboard(registry(900, { surfaces: ["hard"], tours: ["atp"] }), NOW); assert.ok(big.system.sufficient.length >= 1, "un gruppo con campione sufficiente viene elencato"); assert.ok(big.system.sufficient.includes("Complessivo")); assert.match(strategyHtml(big, { tab: "overview" }), /Complessivo/);
+  assert.equal(big.system.notValidated, big.system.groupsTotal, "anche con campione sufficiente nessun gruppo è validato");
+});
+
+test("intervalli di confidenza: Brier, log loss e accuratezza hanno IC 95% per blocchi; l'ECE dichiara di non averlo; stime coerenti con le metriche", () => {
+  const d = buildDashboard(registry(420), NOW), m = d.tours[0].metrics;
+  for (const k of ["brier", "logLoss", "accuracy"]) { assert.ok(m[k].lo != null && m[k].hi != null && m[k].lo <= m[k].est && m[k].est <= m[k].hi, k); }
+  const full = buildDashboard(registry(420), NOW).all.metrics; assert.ok(full.accuracy.est > 0 && full.accuracy.est < 1);
+  const html = strategyHtml(d, { tab: "tours" }); assert.match(html, /IC 95% \d+,\d%\s*–\s*\d+,\d%/); assert.match(html, /taratura media · IC non stimato/);
+  assert.match(strategyHtml(buildDashboard(registry(30, { concluded: 0 }), NOW), { tab: "tours" }), /Nessuna partita conclusa/);
 });
