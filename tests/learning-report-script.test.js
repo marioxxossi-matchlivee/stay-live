@@ -75,5 +75,5 @@ test("sola lettura garantita nel codice: nessun metodo di scrittura, nessuna tab
     const src = read(f).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""); assert.ok(!/method:\s*["'](POST|PATCH|PUT|DELETE)/i.test(src), `${f}: nessun metodo di scrittura`); assert.ok(!/supabase(Upsert|Patch|Delete|Insert)|\.upsert\(|\.insert\(|insertIgnore|\.del\(/.test(src), `${f}: nessuna scrittura`);
     for (const m of src.matchAll(/from\s+"([^"]+)"/g)) assert.ok(/^node:|^\.\/_learning|^\.\.\/functions\/api\/_learning/.test(m[1]), `${f} importa ${m[1]}`);
   }
-  assert.match(read("scripts/learning-run.js"), /writeFileSync\(a\.out/); const stub = JSON.parse(read("public/learning/report.json")); assert.equal(stub.status, "not_generated"); assert.ok(!("sports" in stub));
+  assert.match(read("scripts/learning-run.js"), /writeFileSync\(a\.out/); const savedReport = JSON.parse(read("public/learning/report.json")); assert.equal(savedReport.schema, REPORT_SCHEMA); assert.ok(["ok", "not_generated"].includes(savedReport.status)); if (savedReport.status === "not_generated") assert.ok(!("sports" in savedReport)); else { assert.equal(savedReport.source?.readOnly, true); assert.ok(Number.isFinite(Date.parse(savedReport.generatedAt))); assert.ok(savedReport.sports && typeof savedReport.sports === "object"); }
 });
