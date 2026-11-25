@@ -50,6 +50,9 @@ jobs:
       - name: Test integrità storico Tennis
         run: node --test tests/*history*.test.js
 
+      - name: Test lifecycle stati partite Tennis
+        run: node --test --test-name-pattern="saveMatches lifecycle" tests/tennis-sync.test.js
+
       - name: Test integrità pipeline report
         run: node --test tests/*report-script*.test.js
 
