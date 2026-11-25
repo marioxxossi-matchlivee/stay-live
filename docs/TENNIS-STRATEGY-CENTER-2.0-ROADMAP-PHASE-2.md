@@ -1,6 +1,7 @@
 # Tennis Strategy Center 2.0 — Roadmap addendum (fase 2)
 
 **Data:** 25/11/2026  
+**Ultimo aggiornamento:** fase 3 — CI di integrità aggiunta, validazione automatica in attesa della PR.  
 **Branch:** `main`  
 **Stato:** fase 2 di audit dati completata; modifiche applicative non incluse.
 
@@ -12,7 +13,7 @@ Questo documento è il registro incrementale collegato alla roadmap principale `
 |---|---|---|
 | 1 — Mappa architettura e data lineage | Completata | Fonti, flussi, archivi e consumer documentati |
 | 2 — Riconciliazione registri e viste | Completata | Query SQL, viste, chiavi, stati speciali e collegamenti controllati in sola lettura |
-| 3 — Test di integrità automatizzati | Da fare | Test sulle invarianti senza cambiare il comportamento operativo |
+| 3 — Test di integrità automatizzati | Implementata la pipeline, esecuzione da verificare | Workflow CI dedicato con test LIVE OBSERVATION, storico Tennis e build; nessun accesso o scrittura DB |
 | 4 — Verifica lifecycle e freeze | Da fare | Test del trigger e del ciclo di vita del registro tradizionale |
 | 5 — Contratto archivio Strategy | Da fare | Verifica di `run_id`; eventuale FK solo dopo pre-check e piano rollback |
 | 6 — Chiarezza interfaccia e fonti | Da fare | Distinguere chiaramente cruscotto LIVE OBSERVATION e archivio storico |
@@ -48,3 +49,34 @@ La fase 3 potrà essere chiusa solo quando i test copriranno almeno:
 5. gestione esplicita di dati mancanti, duplicati e pagine incomplete;
 6. riproducibilità dei conteggi a parità di snapshot e criteri.
 
+
+
+## Avanzamento fase 3 — 25/11/2026
+
+### Modifica implementata
+
+Creato `.github/workflows/tennis-data-integrity.yml` nel branch `chore/tennis-data-integrity-ci`.
+
+Il workflow:
+- si attiva sulle pull request che modificano i componenti pertinenti e può essere avviato manualmente;
+- usa Node.js 20;
+- esegue i test esistenti di LIVE OBSERVATION e dello storico Tennis;
+- esegue la build;
+- non richiede segreti, non si collega a Supabase e non scrive dati;
+- non esegue backtest, non cambia modelli o logiche applicative.
+
+### Test inclusi
+
+- `tests/tennis-observation.test.js`
+- `tests/tennis-observation-refresh.test.js`
+- `tests/tennis-history.test.js`
+- `tests/tennis-history-monitor.test.js`
+- `tests/tennis-history-shadow.test.js`
+
+Questi test già presenti coprono paginazione senza troncamento silenzioso, versioni iniziali e revisioni, controlli pre-match, stati speciali, esclusioni, idempotenza e comportamento read-only delle letture.
+
+### Stato effettivo
+
+La pipeline è stata aggiunta al branch, ma non è ancora stata eseguita da GitHub Actions. La fase 3 sarà dichiarata completata solo dopo esito verde dei job. Non affermo quindi che i test siano già passati.
+
+Nessun codice di produzione, modello, workflow di sincronizzazione o database è stato modificato.
