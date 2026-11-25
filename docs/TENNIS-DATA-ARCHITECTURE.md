@@ -121,3 +121,75 @@ I valori sono una fotografia istantanea, non invarianti. Non dimostrano da soli 
 ## 8. Fuori perimetro
 
 Nessuna modifica a modelli, formule, probabilità, quote, selezioni o logiche di pronostico; nessuna modifica al motore Calcio; nessuna modifica a secrets, API provider, workflow operativi o database. Nessuna migrazione o deploy è inclusa in questa prima fase.
+
+
+## 9. Audit di riconciliazione — 25/11/2026, fase 2
+
+**Esecuzione:** sola lettura su Supabase e lettura del codice. Nessuna scrittura, migrazione o modifica ai workflow.
+
+### 9.1 Previsioni tradizionali e vista risultati
+
+La definizione SQL di `tennis_prediction_results` è una vista INNER JOIN tra `tennis_predictions` e `tennis_matches`, filtrata a `status = 'finished'` e `winner IS NOT NULL`. Non è una seconda tabella di risultati indipendente.
+
+Fotografia aggiornata durante l'audit:
+- 2.506 righe in `tennis_predictions`.
+- 2.030 righe nella vista `tennis_prediction_results`.
+- 0 previsioni senza corrispondente partita.
+- Le 2.030 righe della vista sono tutte le previsioni per partite che soddisfano il filtro SQL.
+- 1.120 righe pubblicate e valutabili; 910 non pubblicate, con `hit = NULL`.
+
+**Conclusione:** il divario 2.506 → 2.030 è spiegato dal filtro della vista, non da una perdita di righe. La vista restituisce anche righe astenute; il campo `hit` resta NULL per queste righe. Le metriche devono continuare a distinguere pubblicate, astenute e valutabili.
+
+### 9.2 LIVE OBSERVATION e revisioni
+
+La definizione SQL di `tennis_observation_results` collega `tennis_observations` a `tennis_matches` tramite `match_key`. Espone identità, stato, vincitore e `result_type`, e assegna stati distinti per identità non coerente, conclusa, in attesa, live, rinviata, annullata, interrotta e altri casi.
+
+Fotografia aggiornata:
+- 869 osservazioni.
+- 1.984 versioni complessive; 869 versioni iniziali rev=1.
+- 0 osservazioni senza partita collegata.
+- 0 osservazioni senza versione iniziale.
+- 0 identità discordanti nella vista al momento del controllo.
+- Tra le osservazioni: 540 partite concluse normalmente, 306 programmate, 19 ritiri e 4 walkover (questi ultimi due casi hanno stato `ended_other`).
+
+**Conclusione:** la vista non considera automaticamente ritiri e walkover come conclusioni standard con vincitore verificato. È una distinzione da preservare: non riclassificare questi casi come normali partite concluse senza una regola di dominio esplicita e testata. La vista è derivata, non una copia indipendente del registro.
+
+### 9.3 Archivio Strategy: collegamenti
+
+Fotografia aggiornata:
+- 154 esecuzioni.
+- 122 righe pick.
+- 0 doppie.
+- 81 esecuzioni distinte rappresentate da almeno un pick.
+- 0 pick con `run_id` valorizzato ma senza corrispondente run; 0 pick senza `run_id`.
+
+**Nota strutturale:** lo schema controllato non dichiara una foreign key da `tennis_strategy_picks.run_id` a `tennis_strategy_runs.id`. I dati correnti non mostrano orfani, ma l'integrità del collegamento non è garantita dal vincolo relazionale. Non aggiungere il vincolo prima di controllare la compatibilità dei dati storici e il percorso di scrittura.
+
+### 9.4 Consumo UI e significato della scheda «Strategia»
+
+Il codice `src/tennis/strategy.js` dichiara esplicitamente LIVE OBSERVATION come fonte unica del cruscotto statistico e descrive la schermata come analisi e controllo del modello, non come archivio delle esecuzioni Strategy v1. La schermata non va quindi considerata una vista dell'archivio `tennis_strategy_*`.
+
+Resta una discontinuità di nomenclatura tra il nome storico della sezione e il suo contenuto attuale. È un tema di chiarezza UI/documentazione, non una ragione per fondere i due registri.
+
+### 9.5 Esito della fase 2
+
+| Controllo | Esito | Decisione |
+|---|---|---|
+| Previsioni senza partita | 0 | Nessuna correzione dati necessaria |
+| Vista risultati tradizionale | JOIN e filtro coerenti con il suo ruolo | Conservare come vista derivata |
+| Observation senza match/versione iniziale | 0 / 0 | Conservare registro e revisioni |
+| Identità discordanti observation | 0 al controllo | Continuare a monitorare |
+| Ritiri e walkover | 23 casi osservati | Preservare `ended_other`; non forzare a `concluded` |
+| Pick senza run collegato | 0 | Nessuna correzione dati immediata; annotare assenza FK |
+| Archivio Strategy mostrato dalla scheda Strategia | No: la scheda è LIVE OBSERVATION | Mantenere distinta la semantica |
+
+**Limiti:** fotografia puntuale del database; non prova che non esistano problemi storici già corretti, né sostituisce test automatici su tutti i percorsi. I conteggi possono cambiare a ogni refresh.
+
+## 10. Prossime attività in roadmap
+
+1. Aggiungere test automatici read-only per le invarianti verificate: corrispondenza previsione-partita, una versione iniziale per osservazione, nessuna revisione registrata dopo l'inizio, stati speciali non conteggiati come conclusioni standard.
+2. Verificare il trigger di freeze e il lifecycle di `tennis_predictions` con test sul codice/migrazione, senza cambiare la regola operativa.
+3. Verificare il contratto `run_id` e decidere se aggiungere una FK in una futura migrazione separata; prima produrre query di pre-check e rollback.
+4. Rendere esplicita nell'interfaccia la distinzione tra cruscotto LIVE OBSERVATION e archivio storico delle esecuzioni, senza trasformare la schermata in un pannello di selezione.
+5. Auditare query e paginazione del report Continuous Learning e dichiarare in ogni report fonte, istante di estrazione, criteri di esclusione e versione dello schema.
+6. Nessuna fusione o cancellazione di tabelle finché i test di integrità e il piano di rollback non sono pronti.
