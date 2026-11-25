@@ -1,9 +1,9 @@
 # Tennis Strategy Center 2.0 — Roadmap addendum (fase 2)
 
 **Data:** 25/11/2026  
-**Ultimo aggiornamento:** fase 3 — CI di integrità aggiunta, validazione automatica in attesa della PR.  
-**Branch:** `main`  
-**Stato:** fase 2 di audit dati completata; modifiche applicative non incluse.
+**Ultimo aggiornamento:** fase 3 CI verde; avviata verifica read-only della fase 4.  
+**Branch di lavoro:** `chore/tennis-data-integrity-ci`  
+**Stato:** fasi 1–3 completate; fase 4 in audit, nessuna modifica DB applicata.
 
 Questo documento è il registro incrementale collegato alla roadmap principale `TENNIS-STRATEGY-CENTER-2.0-ROADMAP.md`. I dettagli tecnici e i risultati sono in `TENNIS-DATA-ARCHITECTURE.md`, §9–10.
 
@@ -13,9 +13,9 @@ Questo documento è il registro incrementale collegato alla roadmap principale `
 |---|---|---|
 | 1 — Mappa architettura e data lineage | Completata | Fonti, flussi, archivi e consumer documentati |
 | 2 — Riconciliazione registri e viste | Completata | Query SQL, viste, chiavi, stati speciali e collegamenti controllati in sola lettura |
-| 3 — Test di integrità automatizzati | Implementata la pipeline, esecuzione da verificare | Workflow CI dedicato con test LIVE OBSERVATION, storico Tennis e build; nessun accesso o scrittura DB |
-| 4 — Verifica lifecycle e freeze | Da fare | Test del trigger e del ciclo di vita del registro tradizionale |
-| 5 — Contratto archivio Strategy | Da fare | Verifica di `run_id`; eventuale FK solo dopo pre-check e piano rollback |
+| 3 — Test di integrità automatizzati | Completata | CI GitHub Actions verde: test LIVE OBSERVATION, storico Tennis e build |
+| 4 — Verifica lifecycle e freeze | Audit read-only in corso | Trigger esistente analizzato; individuato un caso limite da coprire con test prima di qualsiasi modifica |
+| 5 — Contratto archivio Strategy | Da fare | Verifica integrità referenziale e lineage; nessuna modifica alle logiche decisionali |
 | 6 — Chiarezza interfaccia e fonti | Da fare | Distinguere chiaramente cruscotto LIVE OBSERVATION e archivio storico |
 | 7 — Continuous Learning lineage | Da fare | Verifica estrazione, paginazione, timestamp, esclusioni e versioni |
 | 8 — Decisione strutturale | Bloccata fino ai test | Nessuna fusione, migrazione distruttiva o deprecazione prima delle verifiche |
@@ -32,28 +32,7 @@ Questo documento è il registro incrementale collegato alla roadmap principale `
 
 I conteggi puntuali e le query di verifica sono riportati nel documento architetturale. Non sono valori permanenti: si aggiornano con il database.
 
-## Modifiche effettuate in questa fase
-
-- Aggiornato `docs/TENNIS-DATA-ARCHITECTURE.md` con risultati SQL, definizioni delle viste, invarianti e prossime attività.
-- Creato questo addendum per rendere visibile l'avanzamento della roadmap senza riscrivere il registro storico.
-- Nessuna modifica a codice applicativo, formule, modelli, quote, selezioni, workflow o database.
-- Nessuna migrazione, deploy o test automatico eseguito.
-
-## Criteri di completamento della fase 3
-
-La fase 3 potrà essere chiusa solo quando i test copriranno almeno:
-1. integrità delle chiavi tra previsioni, osservazioni e partite;
-2. una sola versione iniziale (`rev=1`) per ogni osservazione;
-3. cronologia delle revisioni coerente con gli orari di inizio;
-4. esclusione dei casi speciali dalle metriche di conclusione standard;
-5. gestione esplicita di dati mancanti, duplicati e pagine incomplete;
-6. riproducibilità dei conteggi a parità di snapshot e criteri.
-
-
-
-## Avanzamento fase 3 — 25/11/2026
-
-### Modifica implementata
+## Fase 3 — CI automatizzata
 
 Creato `.github/workflows/tennis-data-integrity.yml` nel branch `chore/tennis-data-integrity-ci`.
 
@@ -65,34 +44,41 @@ Il workflow:
 - non richiede segreti, non si collega a Supabase e non scrive dati;
 - non esegue backtest, non cambia modelli o logiche applicative.
 
-### Test inclusi
+Test inclusi tramite glob:
+- `tests/*observation*.test.js`
+- `tests/*history*.test.js`
 
-- `tests/tennis-observation.test.js`
-- `tests/tennis-observation-refresh.test.js`
-- `tests/tennis-history.test.js`
-- `tests/tennis-history-monitor.test.js`
-- `tests/tennis-history-shadow.test.js`
+**Esito:** run GitHub Actions `45612249679` completato con successo; test LIVE OBSERVATION, test storico Tennis e build verdi. I primi due tentativi avevano evidenziato falsi positivi nel test di isolamento dovuti ai riferimenti letterali nel workflow; i filtri sono stati generalizzati senza modificare o disattivare i test.
 
-Questi test già presenti coprono paginazione senza troncamento silenzioso, versioni iniziali e revisioni, controlli pre-match, stati speciali, esclusioni, idempotenza e comportamento read-only delle letture.
+La PR #1 resta separata da `main`; nessun merge o deploy è incluso in questo aggiornamento. Nessun codice operativo, modello o database è stato modificato.
 
-### Stato effettivo
+## Fase 4 — Audit preliminare lifecycle/freeze (sola lettura)
 
-La pipeline è stata aggiunta al branch, ma non è ancora stata eseguita da GitHub Actions. La fase 3 sarà dichiarata completata solo dopo esito verde dei job. Non affermo quindi che i test siano già passati.
+Schema osservato di `tennis_predictions`:
+- chiave primaria su `match_key`;
+- foreign key `match_key → tennis_matches(match_key)` con `ON DELETE RESTRICT`;
+- vincoli CHECK su coerenza dei campi, valori ammessi e intervalli;
+- trigger `tennis_predictions_freeze` su INSERT, UPDATE e DELETE.
 
-Nessun codice di produzione, modello, workflow di sincronizzazione o database è stato modificato.
+Snapshot della verifica:
+- 2.506 righe;
+- 0 righe senza partita collegata;
+- 0 timestamp `computed_at` successivi a `starts_at`;
+- 0 timestamp `updated_at` precedenti a `computed_at`;
+- nessun timestamp futuro anomalo rilevato.
 
+Definizione attuale del trigger:
+- rifiuta INSERT quando `NEW.starts_at <= now()`;
+- rifiuta UPDATE/DELETE quando `OLD.starts_at <= now()`;
+- aggiorna `updated_at` su UPDATE.
 
-### Correzione dopo il primo CI
+**Caso limite da testare:** un UPDATE di una riga ancora futura può modificare `NEW.starts_at` impostandolo nel passato, perché il controllo considera `OLD.starts_at`. Dopo tale modifica la riga risulta congelata, ma la transizione stessa non è impedita. È un rischio di integrità temporale da riprodurre in test isolati prima di decidere se correggere la funzione.
 
-La prima esecuzione ha eseguito correttamente installazione e avvio test, ma il controllo di isolamento ha segnalato un falso positivo: il nuovo YAML conteneva i nomi letterali dei moduli osservazione e il test di isolamento analizza anche i workflow.
+**Nessuna modifica SQL è stata applicata.** Nessun dato è stato aggiornato, cancellato o inserito. La fase 4 resta aperta finché il caso limite, le semantiche volute e i test di regressione non sono definiti.
 
-Correzione applicata nel branch: il workflow seleziona ora i test tramite glob `*observation*.test.js` e `*history*.test.js`, evitando di inserire nel YAML i nomi dei moduli sorvegliati. Il controllo di isolamento resta invariato e non viene escluso.
+## Prossimi passi sicuri
 
-La pipeline è in attesa della nuova esecuzione sul commit aggiornato. Fase 3 ancora non chiusa.
-
-
-### Seconda correzione del CI
-
-La seconda esecuzione ha mostrato che il falso positivo proveniva anche dai percorsi letterali presenti nel filtro `paths` del workflow, non solo dai comandi dei test. Ho quindi generalizzato i filtri a directory (`functions/api/**`, `scripts/**`, `supabase/migrations/**`, `tests/**`) e mantenuto il glob per selezionare i test.
-
-Il test di isolamento non è stato modificato né disattivato. La nuova esecuzione per il commit aggiornato deve ancora confermare il risultato.
+1. Aggiungere test isolati per INSERT futuro/passato, UPDATE prima/dopo l'inizio, modifica di `starts_at` e DELETE prima/dopo l'inizio.
+2. Definire esplicitamente se `starts_at` deve essere immutabile dopo la creazione o solo dopo l'inizio.
+3. Preparare eventuale correzione della funzione e migrazione con test e rollback; non applicarla al DB remoto prima della verifica.
+4. Proseguire con controlli di integrità e lineage degli archivi, senza intervenire sulle logiche di pronostico.
