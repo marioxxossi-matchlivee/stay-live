@@ -17,9 +17,9 @@ Ogni nuova attività deve essere classificata prima dell'esecuzione. Se non è p
 | Fase | Attività | Stato |
 |---|---|---|
 | 1 | Fotografia iniziale delle metriche PostgreSQL | Completata — sola lettura |
-| 2 | Inventario delle sole componenti infrastrutturali neutrali | Da avviare |
+| 2 | Inventario delle sole componenti infrastrutturali neutrali | Parzialmente completata |
 | 3 | Definizione dei controlli di disponibilità e connessione | Pianificata |
-| 4 | Verifica della configurazione e della copertura dei backup | Pianificata |
+| 4 | Definizione della copertura backup esterna e verifica della procedura | Da pianificare |
 | 5 | Procedura documentata di ripristino e verifica periodica | Pianificata |
 | 6 | Monitoraggio tecnico di errori, connessioni e saturazione | Pianificata |
 | 7 | CI per controlli infrastrutturali indipendenti | Pianificata |
@@ -61,13 +61,6 @@ Una fase può essere dichiarata completata solo quando:
 4. il risultato è verificato dopo l'intervento;
 5. la roadmap riporta commit, workflow o evidenze pertinenti.
 
-## Prossima attività
-
-**Fase 2 — Inventario infrastrutturale neutrale.**
-
-Raccogliere esclusivamente informazioni su configurazione generale del progetto, connessioni, estensioni PostgreSQL, dimensionamento, backup e workflow CI generici. Escludere dall'analisi le tabelle e i processi applicativi collegati a pronostici, quote e strategie di scommessa. Nessuna modifica remota durante l'inventario.
-
-
 ## Aggiornamento fase 2 — inventario infrastrutturale (25/11/2026)
 
 ### Evidenze PostgreSQL / Supabase
@@ -88,17 +81,22 @@ L'elenco delle estensioni disponibili nel catalogo Supabase è molto più ampio 
 
 La directory `.github/workflows` contiene 23 workflow. Dalla sola nomenclatura e dalla prima classificazione non è stato identificato un workflow sicuramente indipendente dalle funzionalità applicative escluse dal perimetro. I workflow non sono stati modificati né eseguiti.
 
-### Backup e ripristino — evidenza non ancora disponibile
+### Backup e ripristino — piano Free
 
-Gli strumenti collegati in questa sessione non espongono una lettura diretta della configurazione di backup, della retention o dello storico dei restore del progetto. Non si può quindi attestare da questa verifica che i backup siano attivi, né indicarne la frequenza o la retention.
+Informazione confermata dall'utente il 25/11/2026: il progetto utilizza il piano Supabase Free e non dispone dei backup gestiti che l'utente si aspettava di trovare nella Dashboard.
 
-Verifica da completare tramite Supabase Dashboard, sezione Database / Backups (e, se previsto dal piano, Point-in-Time Recovery). Prima di dichiarare conclusa la fase 2 occorre registrare:
-- disponibilità dei backup automatici;
-- retention effettiva;
-- eventuale disponibilità e finestra PITR;
-- data dell'ultimo backup/restore point visibile;
-- eventuale prova di ripristino in ambiente isolato, senza sovrascrivere produzione.
+Conseguenze operative:
+- non esiste, allo stato attuale, una copertura di backup automatico gestita da Supabase su cui fare affidamento;
+- retention e Point-in-Time Recovery gestiti da Supabase non sono disponibili/confermati per questo progetto;
+- non è stato eseguito alcun backup né alcun restore durante questa verifica;
+- il database deve essere considerato privo di una copia di sicurezza indipendente verificata finché non sarà predisposta e testata una procedura esterna.
+
+La roadmap prevede di valutare una strategia esterna di esportazione PostgreSQL (ad esempio dump periodico tramite strumenti ufficiali PostgreSQL/Supabase), conservazione cifrata fuori dal progetto e verifica di ripristino in un ambiente separato. Prima di automatizzarla occorre definire destinazione, credenziali/segreti, frequenza, retention, cifratura e modalità di verifica. Non salvare mai password, token o chiavi nel repository Git.
 
 ### Stato fase 2
 
-**Parzialmente completata.** Inventario runtime PostgreSQL e catalogo estensioni completati. Restano da verificare backup/retention e classificazione tecnica dei workflow. Nessuna modifica a Supabase, nessuna modifica a workflow e nessuna scrittura su dati applicativi.
+**Parzialmente completata.** Inventario runtime PostgreSQL, catalogo estensioni e condizione backup del piano Free documentati. Restano da classificare tecnicamente i workflow CI e da progettare/validare la strategia di backup esterna. Nessuna modifica a Supabase, nessuna modifica a workflow e nessuna scrittura su dati applicativi.
+
+## Prossima attività
+
+Progettare una procedura di backup esterna, senza eseguirla ancora: individuare una destinazione indipendente dal database, definire cifratura e gestione sicura dei segreti, frequenza e retention, quindi predisporre una prova di restore isolata. Le attività devono restare infrastrutturali e non intervenire sul motore applicativo di pronostico/scommessa.
