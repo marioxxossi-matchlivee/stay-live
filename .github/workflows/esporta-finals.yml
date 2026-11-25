@@ -1,0 +1,28 @@
+name: Esporta partite finali (finals.json)
+
+# Esporta lo storico delle partite finali (vista backtest_finals) in un file scaricabile, per validare il motore fuori da GitHub.
+# Sola lettura: non modifica database, previsioni, motore né app.
+# Si avvia a mano: Actions → "Esporta partite finali (finals.json)" → Run workflow → a fine esecuzione scarica l'artifact «finals».
+# Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
+on:
+  workflow_dispatch:
+
+jobs:
+  esporta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Esporta le partite finali
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/export-finals.js finals.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: finals
+          path: finals.json
+          retention-days: 7
