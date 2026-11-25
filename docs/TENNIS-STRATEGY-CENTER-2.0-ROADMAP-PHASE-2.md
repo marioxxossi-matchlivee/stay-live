@@ -89,3 +89,10 @@ La prima esecuzione ha eseguito correttamente installazione e avvio test, ma il 
 Correzione applicata nel branch: il workflow seleziona ora i test tramite glob `*observation*.test.js` e `*history*.test.js`, evitando di inserire nel YAML i nomi dei moduli sorvegliati. Il controllo di isolamento resta invariato e non viene escluso.
 
 La pipeline è in attesa della nuova esecuzione sul commit aggiornato. Fase 3 ancora non chiusa.
+
+
+### Seconda correzione del CI
+
+La seconda esecuzione ha mostrato che il falso positivo proveniva anche dai percorsi letterali presenti nel filtro `paths` del workflow, non solo dai comandi dei test. Ho quindi generalizzato i filtri a directory (`functions/api/**`, `scripts/**`, `supabase/migrations/**`, `tests/**`) e mantenuto il glob per selezionare i test.
+
+Il test di isolamento non è stato modificato né disattivato. La nuova esecuzione per il commit aggiornato deve ancora confermare il risultato.
