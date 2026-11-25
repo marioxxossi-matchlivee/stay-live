@@ -2,7 +2,7 @@
 
 **Data:** 25/11/2026  
 **Ultimo aggiornamento:** 25/11/2026 — CI completa verde, inclusi test trigger su PostgreSQL 17 effettivo.  
-**Branch di lavoro:** `chore/tennis-data-integrity-ci`  
+**Branch di lavoro:** `main`  
 **Stato:** fasi 1–6 completate come audit; test PostgreSQL fase 4 superati; nessuna modifica al DB remoto applicata.
 
 Questo documento è il registro incrementale collegato alla roadmap principale `TENNIS-STRATEGY-CENTER-2.0-ROADMAP.md`. I dettagli tecnici e i risultati sono in `TENNIS-DATA-ARCHITECTURE.md`, §9–10.
@@ -203,3 +203,46 @@ Aggiunto al test effettivo PostgreSQL anche il caso `future → future`, che dev
 `saveMatches()` protegge esplicitamente gli stati `finished` e `ended_other`, ma non applica una protezione equivalente per `postponed`, `cancelled` o `interrupted`. L'upcoming feed può normalizzare una partita come `scheduled`/ `unknown`. Va verificato con esempi provider reali se una partita rinviata o annullata possa essere riportata a uno stato precedente da un successivo refresh. Nessuna correzione è stata applicata in questa fase.
 
 **Esito:** contratto del trigger documentato; nessuna modifica a logica di previsione, trigger di produzione, migrazioni o dati Supabase. Prossimo lavoro: test di regressione del lifecycle degli stati partita nel solo registro `tennis_matches`, senza intervenire sui pronostici.
+
+
+## Aggiornamento 25/11/2026 — lifecycle degli stati speciali di tennis_matches
+
+**Ambito:** sola integrità della sincronizzazione; nessuna modifica alle previsioni, al modello o ai dati remoti.
+
+### Evidenza dal codice
+
+- `normalizeResult()` classifica esplicitamente rinvii, annullamenti e interruzioni rispettivamente come `postponed`, `cancelled` e `interrupted`.
+- `normalizeUpcoming()` riconosce soltanto `startTimeStatus === "scheduled"`; gli altri valori diventano `unknown` perché non sono interpretati.
+- Prima della correzione, `saveMatches()` proteggeva soltanto `finished` e `ended_other`. Un successivo elemento del programma con stato `unknown` poteva quindi sovrascrivere uno stato speciale già registrato.
+- I risultati ricevuti nello stesso giro hanno priorità sul programma tramite `resKeys`.
+
+### Correzione conservativa
+
+`saveMatches()` ora:
+- preserva `postponed`, `cancelled` e `interrupted` quando il programma restituisce `unknown`;
+- consente il passaggio a `scheduled` soltanto quando il provider dichiara esplicitamente `startTimeStatus = scheduled`;
+- continua a dare priorità ai risultati del giro corrente;
+- mantiene inalterate le protezioni per `finished` e `ended_other`.
+
+Non vengono inventati stati e non si deduce una riprogrammazione dalla sola presenza della partita nel feed.
+
+### Test e CI
+
+Aggiunto test di regressione su database simulato per:
+- preservare tutti e tre gli stati speciali contro un aggiornamento `unknown`;
+- accettare una riprogrammazione esplicitamente `scheduled`;
+- verificare che gli altri stati speciali restino invariati.
+
+Il workflow `.github/workflows/tennis-data-integrity.yml` esegue il test mirato con Node test runner, senza eseguire gli altri test del motore.
+
+### Riscontro Supabase read-only
+
+Fotografia al 25/11/2026:
+- `finished`: 97.861 righe;
+- `ended_other`: 5.095;
+- `scheduled`: 346;
+- nessuna riga con stato `postponed`, `cancelled` o `interrupted` al momento della query.
+
+La correzione copre quindi un percorso possibile e previsto dal normalizzatore, ma non è stata motivata da una riga speciale attualmente presente nel database. Nessuna scrittura o migrazione remota è stata eseguita.
+
+**Esito:** modifica applicativa e test di regressione pubblicati direttamente su `main`. La verifica conclusiva è subordinata al nuovo run CI avviato dal push.
