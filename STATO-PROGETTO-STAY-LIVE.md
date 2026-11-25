@@ -18,7 +18,9 @@ Fonti: repository, workflow e database Supabase letto in sola lettura. Quanto no
 
 **Interfaccia.** Il blocco del pinch-to-zoom e del doppio tocco in `index.html` è una **scelta intenzionale del proprietario**: non rimuoverlo. La sezione Strategia è un cruscotto statistico (Panoramica, ATP · WTA, Superfici, Calibrazione, Integrità) con la scheda «Stato del sistema».
 
-**Test (esecuzione del 23/11/2026):** `npm test` (`node --test`) → **580 test eseguiti, 580 superati, 0 falliti, 0 saltati**; `npm run build` (`vite build`, Vite 7.3.8) → riuscita, 58 moduli trasformati, nessun avviso. La build è stata eseguita dopo `npm install` (Vite ^7 come da `package.json`, senza lockfile).  Il «403/403» della sezione 11 è un dato del 17/11 e non è stato rieseguito come tale.
+**CONTINUOUS LEARNING (24/11/2026).** Nuova sezione in Affidabilità (tennis) e nel monitor (calcio): diagnostica dei modelli e laboratorio sperimentale, isolati e osservativi. Non attivata in automatico, non eseguita sui dati reali (report segnaposto), nessuna modifica a motori, workflow, database. Vedi `docs/CONTINUOUS-LEARNING.md`.
+
+**Test (esecuzione del 24/11/2026):** `npm test` (`node --test`) → **638 test eseguiti, 638 superati, 0 falliti, 0 saltati** (esecuzione del 24/11/2026, dopo l'aggiunta di CONTINUOUS LEARNING); `npm run build` (`vite build`, Vite 7.3.8) → riuscita, 61 moduli trasformati, nessun avviso. La build è stata eseguita dopo `npm install` (Vite ^7 come da `package.json`, senza lockfile).  Il «403/403» della sezione 11 è un dato del 17/11 e non è stato rieseguito come tale.
 
 ------------------------------------------------------------------------
 
