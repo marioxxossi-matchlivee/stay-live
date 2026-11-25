@@ -15,9 +15,9 @@ Questo documento è il registro incrementale collegato alla roadmap principale `
 | 2 — Riconciliazione registri e viste | Completata | Query SQL, viste, chiavi, stati speciali e collegamenti controllati in sola lettura |
 | 3 — Test di integrità automatizzati | Completata | CI GitHub Actions verde: test LIVE OBSERVATION, storico Tennis e build |
 | 4 — Verifica lifecycle e freeze | In corso — test isolati da predisporre | Semantica dei trigger ricostruita da migrazioni; il caso limite resta da riprodurre in PostgreSQL isolato |
-| 5 — Contratto archivio Strategy | Audit read-only in corso | FK verso le partite verificate; run_id senza FK ma nessun orfano nello snapshot attuale |
-| 6 — Chiarezza interfaccia e fonti | Da fare | Distinguere chiaramente cruscotto LIVE OBSERVATION e archivio storico |
-| 7 — Continuous Learning lineage | Da fare | Verifica estrazione, paginazione, timestamp, esclusioni e versioni |
+| 5 — Contratto archivio Strategy | Audit read-only completato | Writer e lineage verificati; run_id sempre valorizzato e coerente nello snapshot, FK non introdotta per ora |
+| 6 — Chiarezza interfaccia e fonti | Audit completato | UI già dichiara LIVE OBSERVATION come fonte della scheda Strategia e separa l'archivio Strategy 2.0 sperimentale |
+| 7 — Continuous Learning lineage | In corso | Audit codice completato in prima passata; corretto il caso limite del tetto di paginazione e aggiunto test CI |
 | 8 — Decisione strutturale | Bloccata fino ai test | Nessuna fusione, migrazione distruttiva o deprecazione prima delle verifiche |
 
 ## Esito fase 2
@@ -112,3 +112,41 @@ La mancanza della FK su `run_id` è una lacuna strutturale potenziale, non un er
 2. Verificare tutti i writer di `tennis_strategy_runs`, `tennis_strategy_picks` e `tennis_strategy_doubles`, inclusi i casi di rigenerazione e retry.
 3. Valutare il contratto referenziale di `run_id` senza applicare ancora vincoli o migrazioni.
 4. Passare poi alla fase 6 (etichette chiare per LIVE OBSERVATION e archivio Strategy) e fase 7 (lineage del report Continuous Learning).
+## Chiusura audit fase 5 — writer e lineage
+
+Il writer è `recordStrategy()` in `scripts/tennis-sync.js`, con trasformazioni pure in `functions/api/_tennis-strategy-track.js`:
+
+- `runId(now)` genera un identificativo deterministico dal timestamp ISO.
+- `planRecords()` assegna lo stesso `run_id` al run, alle singole e alle doppie della stessa esecuzione.
+- Il writer persiste prima `tennis_strategy_runs`, poi picks e doubles.
+- Il database ha trigger che rendono i registri immutabili; gli upsert di righe già presenti non autorizzano una modifica retroattiva.
+- Il writer usa tre richieste separate, non una transazione unica: un errore intermedio può lasciare un run senza tutte le righe figlie previste. Non è stata rilevata una violazione referenziale nello snapshot, ma il flusso non garantisce atomicità tra i tre registri.
+
+Conclusione: la coerenza corrente è confermata, mentre l'atomicità del salvataggio resta un limite operativo da documentare/valutare separatamente. Non introduco FK su `run_id` né modifiche al writer in questa fase.
+
+## Fase 6 — audit etichette UI e provenienza
+
+Controllati `src/tennis/app.js`, `src/tennis/strategy.js` e `src/tennis/strategyview.js`:
+
+- la scheda «Strategia» carica i dati LIVE OBSERVATION dall'endpoint dedicato;
+- il cruscotto dichiara esplicitamente «Letto dal registro LIVE OBSERVATION»;
+- la sezione di integrità distingue LIVE OBSERVATION, Strategy Center 2.0 sperimentale e motore operativo;
+- la descrizione della pagina specifica che si tratta di analisi del modello e controllo dati, non di indicazioni di gioco.
+
+Le etichette attuali sono sufficienti a distinguere le fonti principali. La fase 6 è chiusa come audit di provenienza; non ho modificato il layout né i componenti visuali.
+
+## Fase 7 — audit iniziale Continuous Learning
+
+Prima passata su `scripts/learning-run.js`, `_learning-report.js`, `_learning-adapters.js`, `_learning-diagnostics.js` e test dedicati:
+
+- l'estrazione usa sole richieste GET e paginazione offset da 1.000 righe; il limite dichiarato è 200.000 righe per registro;
+- il caricamento Tennis usa previsioni pubblicate con `starts_at` precedente all'istante di esecuzione e risultati dalla vista `tennis_prediction_results`;
+- gli adattatori associano risultati e previsioni tramite `match_key`; escludono righe con probabilità/data non valide o senza esito e rendono espliciti i conteggi esclusi;
+- nel calcio le righe ricostruite sono escluse per default e contate separatamente;
+- il report è versionato (`learning-report-v1`), registra timestamp di generazione e parametri, ed è dichiarato read-only rispetto al database; scrive soltanto il file locale di report;
+- `public/learning/report.json` nel repository è uno stub `not_generated`, non un report corrente.
+
+**Difetto corretto:** quando un registro conteneva esattamente il numero massimo di righe (un multiplo pieno di 1.000 fino al limite), il loader lanciava un errore pur non essendoci troncamento. Ora effettua una pagina aggiuntiva di controllo: se è vuota accetta il dataset esattamente al limite; se contiene righe segnala il superamento. Aggiunto test per entrambi i casi.
+
+Il workflow CI è stato esteso con un test dedicato alla pipeline report tramite glob generico, mantenendo intatto il test di isolamento che vieta di collegare Continuous Learning ai workflow e ai motori operativi. L'esito della nuova esecuzione CI è in attesa.
+
