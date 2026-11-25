@@ -90,8 +90,17 @@ BEGIN
      3.24, .36, 'm1', 'e1');
   UPDATE public.tennis_strategy_doubles SET leg1_name = 'changed' WHERE pair_key = 'ci-double-ok';
   DELETE FROM public.tennis_strategy_doubles WHERE pair_key = 'ci-double-ok';
-  IF NOT EXISTS (SELECT 1 FROM public.tennis_strategy_doubles WHERE pair_key = 'ci-double-ok') THEN
-    RAISE EXCEPTION 'FAIL: strategy double was mutable/deletable';
+  INSERT INTO public.tennis_strategy_doubles
+    (pair_key, starts_at, leg1_match_key, leg1_side, leg1_p, leg1_odds, leg1_odds_at, leg1_starts_at,
+     leg2_match_key, leg2_side, leg2_p, leg2_odds, leg2_odds_at, leg2_starts_at,
+     total_odds, joint_p, model_ver, engine_ver)
+  VALUES
+    ('ci-double-past-leg', now() + interval '3 day', 'ci-double-a', 1, .6, 1.8, now(), now() + interval '3 day',
+     'ci-double-b', 2, .6, 1.8, now() - interval '2 hour', now() - interval '1 hour',
+     3.24, .36, 'm1', 'e1');
+  IF NOT EXISTS (SELECT 1 FROM public.tennis_strategy_doubles WHERE pair_key = 'ci-double-ok')
+     OR EXISTS (SELECT 1 FROM public.tennis_strategy_doubles WHERE pair_key = 'ci-double-past-leg') THEN
+    RAISE EXCEPTION 'FAIL: strategy double lifecycle mismatch';
   END IF;
 
   -- LIVE OBSERVATION anagrafica: inserimento valido; UPDATE e DELETE devono sollevare eccezione.
@@ -102,6 +111,13 @@ BEGIN
   BEGIN
     UPDATE public.tennis_observations SET p1_name = 'mutated' WHERE match_key = 'ci-observation';
     RAISE EXCEPTION 'FAIL_SENTINEL: observation UPDATE unexpectedly succeeded';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM LIKE 'FAIL_SENTINEL:%' THEN RAISE; END IF;
+    IF SQLERRM NOT LIKE 'tennis_observations è immutabile:%' THEN RAISE; END IF;
+  END;
+  BEGIN
+    DELETE FROM public.tennis_observations WHERE match_key = 'ci-observation';
+    RAISE EXCEPTION 'FAIL_SENTINEL: observation DELETE unexpectedly succeeded';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM LIKE 'FAIL_SENTINEL:%' THEN RAISE; END IF;
     IF SQLERRM NOT LIKE 'tennis_observations è immutabile:%' THEN RAISE; END IF;
@@ -130,6 +146,15 @@ BEGIN
   INSERT INTO public.tennis_observation_versions
     (match_key, rev, starts_at, reason, model_ver, history_last_at, published, pick, p1, p2)
   VALUES ('ci-observation', 2, now() + interval '5 day', 'probability', 'ci-v1', now(), false, null, null, null);
+
+  BEGIN
+    UPDATE public.tennis_observation_versions SET model_ver = 'mutated'
+     WHERE match_key = 'ci-observation' AND rev = 2;
+    RAISE EXCEPTION 'FAIL_SENTINEL: observation version UPDATE unexpectedly succeeded';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM LIKE 'FAIL_SENTINEL:%' THEN RAISE; END IF;
+    IF SQLERRM NOT LIKE 'tennis_observation_versions è append-only:%' THEN RAISE; END IF;
+  END;
 
   BEGIN
     DELETE FROM public.tennis_observation_versions WHERE match_key = 'ci-observation' AND rev = 2;
