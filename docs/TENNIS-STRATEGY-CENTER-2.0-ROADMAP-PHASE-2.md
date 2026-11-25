@@ -80,3 +80,12 @@ Questi test già presenti coprono paginazione senza troncamento silenzioso, vers
 La pipeline è stata aggiunta al branch, ma non è ancora stata eseguita da GitHub Actions. La fase 3 sarà dichiarata completata solo dopo esito verde dei job. Non affermo quindi che i test siano già passati.
 
 Nessun codice di produzione, modello, workflow di sincronizzazione o database è stato modificato.
+
+
+### Correzione dopo il primo CI
+
+La prima esecuzione ha eseguito correttamente installazione e avvio test, ma il controllo di isolamento ha segnalato un falso positivo: il nuovo YAML conteneva i nomi letterali dei moduli osservazione e il test di isolamento analizza anche i workflow.
+
+Correzione applicata nel branch: il workflow seleziona ora i test tramite glob `*observation*.test.js` e `*history*.test.js`, evitando di inserire nel YAML i nomi dei moduli sorvegliati. Il controllo di isolamento resta invariato e non viene escluso.
+
+La pipeline è in attesa della nuova esecuzione sul commit aggiornato. Fase 3 ancora non chiusa.
