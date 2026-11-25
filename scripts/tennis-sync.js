@@ -112,7 +112,16 @@ export async function saveMatches(db, upcoming, results, now) {
   const existing = new Map((await db.getAll("tennis_matches", { select: "match_key,status", starts_at: `gte.${since}` })).map((r) => [r.match_key, r.status]));
   const resKeys = new Set(results.map((r) => r.match_key));
   // Il programma non riscrive un incontro già concluso né uno presente nei risultati di questo giro.
-  const up = dedupe(upcoming.filter((u) => !resKeys.has(u.match_key) && existing.get(u.match_key) !== "finished" && existing.get(u.match_key) !== "ended_other")).map((n) => upcomingRow(n, nowIso));
+  // Gli stati speciali arrivati dal feed risultati non devono degradare a "unknown" per effetto del programma.
+  // Una transizione a "scheduled" è ammessa solo quando il feed programma la dichiara esplicitamente.
+  const specialStatuses = new Set(["postponed", "cancelled", "interrupted"]);
+  const up = dedupe(upcoming.filter((u) => {
+    if (resKeys.has(u.match_key)) return false; // i risultati di questo giro prevalgono sempre
+    const status = existing.get(u.match_key);
+    if (status === "finished" || status === "ended_other") return false;
+    if (specialStatuses.has(status) && u.status !== "scheduled") return false;
+    return true;
+  })).map((n) => upcomingRow(n, nowIso));
   const rs = dedupe(results).map((n) => resultRow(n, nowIso));
   await db.upsert("tennis_matches", up, "match_key");
   await db.upsert("tennis_matches", rs, "match_key");
