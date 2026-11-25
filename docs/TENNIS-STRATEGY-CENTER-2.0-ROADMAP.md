@@ -34,7 +34,9 @@ I conteggi differiscono perché i registri partono in giorni diversi, conservano
 - `202611210001_tennis_live_observation.sql` risulta **già applicata**: registrata come `20261121112442 tennis_live_observation`; il contenuto SQL del file (commenti e spazi esclusi) coincide con quello registrato (verifica per impronta, 23/11/2026). Il nome del file non coincide con la versione registrata (convenzione diversa); non è stato rinominato. Non rieseguire.
 - La migrazione `202611220001_multigol_legs_and_monitor.sql` (calcio) risulta già eseguita. Il registro delle migrazioni contiene inoltre `20261120084129 monitor_new_games_view` senza file nella repository e senza la vista nel database: da chiarire, non toccato.
 
-**Test (verificati nell'esecuzione del 23/11/2026):** `npm test` (`node --test`) → **580 test eseguiti, 580 superati, 0 falliti, 0 saltati**; `npm run build` (`vite build`, Vite 7.3.8) → riuscita, 58 moduli trasformati, nessun avviso. La build è stata eseguita dopo `npm install` (Vite ^7 come da `package.json`, senza lockfile).
+**CONTINUOUS LEARNING (24/11/2026):** sistema di diagnostica e laboratorio sperimentale per tennis e calcio, isolato e osservativo, **non attivato in automatico** e **non ancora eseguito sui dati reali** (il report incluso è un segnaposto). Non modifica motori, probabilità, workflow o database. Dettagli e istruzioni di attivazione: `docs/CONTINUOUS-LEARNING.md`.
+
+**Test (verificati nell'esecuzione del 24/11/2026):** `npm test` (`node --test`) → **638 test eseguiti, 638 superati, 0 falliti, 0 saltati** (esecuzione del 24/11/2026, dopo l'aggiunta di CONTINUOUS LEARNING); `npm run build` (`vite build`, Vite 7.3.8) → riuscita, 61 moduli trasformati, nessun avviso. La build è stata eseguita dopo `npm install` (Vite ^7 come da `package.json`, senza lockfile).
 
 ## 0. Stato del caricamento storico (19/11/2026) — leggere per primo
 | Livello | Stato |
