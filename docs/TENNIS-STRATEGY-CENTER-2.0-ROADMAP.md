@@ -1,8 +1,40 @@
 # Tennis Strategy Center 2.0 — Roadmap e registro di lavoro
 
-Ultimo aggiornamento: 21/11/2026 (chiusura e consolidamento: monitoraggio e Shadow Mode del 20/11, audit v5 storico completo del 21/11, convenzione dei segni dei Δ verificata; i risultati precedenti sono conservati sotto). Si lavora direttamente su `main`, per scelta dell'utente.
+Ultimo aggiornamento: 23/11/2026 (consolidamento tecnico e trasparenza: vedi la sezione «Stato operativo al 23/11/2026», subito sotto; il resto del documento è il registro storico di lavoro). Precedente aggiornamento 21/11/2026 (chiusura e consolidamento: monitoraggio e Shadow Mode del 20/11, audit v5 storico completo del 21/11, convenzione dei segni dei Δ verificata; i risultati precedenti sono conservati sotto). Si lavora direttamente su `main`, per scelta dell'utente.
 **Stato generale: SPERIMENTALE E ISOLATO.** Nessuna classe A/B/C/D è attiva in produzione; `_tennis-strategy2.js` e `_tennis-history.js` non sono importati dal motore (lo verificano test dedicati; `_tennis-history.js` è usato solo dall'audit e dalla Shadow Mode, entrambi in sola lettura). Nessuna scrittura o migrazione remota da questo lavoro. Se non emerge un'evidenza statisticamente robusta, il comportamento corretto è l'astensione.
 
+
+## Stato operativo al 23/11/2026 — leggere per primo
+Fonti: codice della repository, workflow, database Supabase letto in sola lettura. Dove un dato non è verificabile da qui è scritto.
+
+**Tennis operativo**
+- Il modello operativo è **`tennis-v2`** (`functions/api/_tennis-model.js`): è l'unica versione nel codice e nei dati registrati. Non esiste un secondo modello.
+- Il caricamento storico attivo è **OFFSET** (tetto di 80.000 partite; i rating si fermano all'ultima partita letta, 25/09/2026). `TENNIS_HISTORY_LOADER` non è impostata in nessun workflow.
+- **KEYSET è predisposto ma non attivo** (`functions/api/_tennis-history.js`, selezionabile solo con quella variabile).
+- **Strategy Center 2.0** (`_tennis-strategy2.js`) è **sperimentale e isolato**: è importato solo dallo script di audit (workflow manuale), da nessun endpoint e dal refresh.
+- La **Shadow Mode** confronta **modalità di caricamento dello storico** (OFFSET contro chiave) con lo STESSO modello: **non è un nuovo modello predittivo**. È solo manuale (`tennis-history-shadow.yml`, nessun cron). Anche l'audit v5 è solo manuale.
+- La **strategia v1** (`_tennis-strategy.js`) continua a girare nel refresh e a registrare nel database, anche se nessuna schermata la mostra più (valutazione: rapporto di consolidamento del 23/11/2026).
+
+**LIVE OBSERVATION**
+- È **attiva**: `tennis-sync.yml` imposta `TENNIS_LIVE_OBSERVATION=on` solo nel modo `refresh` (dal 21/11/2026).
+- Registra la **valutazione iniziale immutabile** (rev 1) e le **revisioni successive** in righe separate; la raccolta è **prospettica**: parte dall'attivazione e **non va ricostruita retroattivamente**.
+- Al 23/11/2026: 385 osservazioni, di cui 85 concluse con valutazione iniziale pubblicata (campione valido); soglia richiesta 300 osservazioni e 50 blocchi indipendenti. **I risultati sono ancora da validare statisticamente**: oggi sono tutti «campione insufficiente» e nessun gruppo è validato (manca il confronto con le quote al momento della previsione).
+
+**Due registri prospettici distinti (non sono la stessa cosa)**
+| | Affidabilità → «Dal vivo» | LIVE OBSERVATION |
+|---|---|---|
+| Tabelle | `tennis_predictions` (+ vista `tennis_prediction_results`) | `tennis_observations`, `tennis_observation_versions` (+ vista `tennis_observation_results`) |
+| Cosa conserva | UNA riga per partita, riscritta a ogni refresh fino all'inizio e poi congelata (trigger `tennis_predictions_freeze`): l'**ULTIMA** valutazione prima della partita, con verdetto BET/EVITA | La **PRIMA** valutazione (immutabile) e ogni revisione in righe separate |
+| Da quando | 13/11/2026 (prima partita registrata) | 21/11/2026 |
+| Righe (23/11/2026) | 1.856 partite con inizio già passato, 1.631 concluse, 873 concluse con previsione pubblicata | 385 osservazioni (anche future), 85 concluse con valutazione iniziale pubblicata |
+| Uso | Lettura dell'affidabilità dei pronostici mostrati | Validazione prospettica senza look-ahead |
+I conteggi differiscono perché i registri partono in giorni diversi, conservano versioni diverse della stessa valutazione e contano insiemi diversi di partite (future, astenute, concluse). Tutte le 385 partite di LIVE OBSERVATION sono presenti anche in «Dal vivo». Le altre 1.490 concluse di «Dal vivo» sono 1.440 con inizio prima del 21/11/2026 (precedono l'attivazione) e 50 con inizio dal 21/11/2026 non osservate da LIVE OBSERVATION: il motivo non è stato verificato (ipotesi non provata: partite già iniziate o programmate prima della prima esecuzione dopo l'attivazione). I due registri non sono stati unificati e le loro query non sono state modificate.
+
+**Migrazioni**
+- `202611210001_tennis_live_observation.sql` risulta **già applicata**: registrata come `20261121112442 tennis_live_observation`; il contenuto SQL del file (commenti e spazi esclusi) coincide con quello registrato (verifica per impronta, 23/11/2026). Il nome del file non coincide con la versione registrata (convenzione diversa); non è stato rinominato. Non rieseguire.
+- La migrazione `202611220001_multigol_legs_and_monitor.sql` (calcio) risulta già eseguita. Il registro delle migrazioni contiene inoltre `20261120084129 monitor_new_games_view` senza file nella repository e senza la vista nel database: da chiarire, non toccato.
+
+**Test (verificati nell'esecuzione del 23/11/2026):** `npm test` (`node --test`) → **580 test eseguiti, 580 superati, 0 falliti, 0 saltati**; `npm run build` (`vite build`, Vite 7.3.8) → riuscita, 58 moduli trasformati, nessun avviso. La build è stata eseguita dopo `npm install` (Vite ^7 come da `package.json`, senza lockfile).
 
 ## 0. Stato del caricamento storico (19/11/2026) — leggere per primo
 | Livello | Stato |
@@ -91,7 +123,8 @@ Controllo indipendente sui numeri reali (medie della tabella): log loss mercato 
 **Evidenze ancora necessarie prima di qualunque promozione:** (1) Δ log loss contro il mercato con intervallo > 0 e Holm < 0,05 su almeno 300 partite e 50 blocchi, fuori campione; (2) quote disponibili al momento della previsione (oggi solo chiusura, bookmaker non identificato) e non solo la chiusura; (3) per le classi, almeno 300 selezioni e 50 blocchi fuori campione; (4) per le doppie, una stima validata delle probabilità congiunte; (5) validazione prospettica (solo progettata: `docs/VALIDAZIONE-PROSPETTICA-TENNIS.md`). Finché mancano, l'astensione è il comportamento corretto.
 
 ## 0f. LIVE OBSERVATION (osservazione prospettica in Shadow Mode): stato al 21/11/2026 (revisione 2)
-**Stato: codice e test locali pronti; migrazione NON applicata (verificato: 0 tabelle `tennis_observation*` sul database remoto); aggancio SPENTO (`TENNIS_LIVE_OBSERVATION` non impostata, `tennis-sync.yml` invariato); nessun dato prospettico raccolto; nessun risultato di validazione.**
+**Stato al 23/11/2026: ATTIVA** (vedi «Stato operativo al 23/11/2026»). Le frasi seguenti sullo stato «migrazione non applicata», «aggancio spento», «nessun dato raccolto» descrivevano la consegna del 21/11/2026 e sono SUPERATE; restano come registro storico:
+> Stato: codice e test locali pronti; migrazione NON applicata (verificato: 0 tabelle `tennis_observation*` sul database remoto); aggancio SPENTO (`TENNIS_LIVE_OBSERVATION` non impostata, `tennis-sync.yml` invariato); nessun dato prospettico raccolto; nessun risultato di validazione.
 - Architettura: tabelle `tennis_observations` (anagrafica immutabile) e `tennis_observation_versions` (append-only: rev 1 = valutazione iniziale permanente, rev 2… = revisioni separate), vista `tennis_observation_results` (risultato per `match_key` + controllo degli id, mai per nome). SQL in `supabase/migrations/202611210001_tennis_live_observation.sql`, in attesa di autorizzazione esplicita.
 - Rating: `ratings_ver` è l'impronta del CONTENUTO dello storico usato (data, vincitore, perdente, superficie, circuito di ogni partita + conteggio + loader), calcolata sull'array già in memoria. Una sua variazione genera la revisione `ratings_version` anche a probabilità invariata; storico invariato = nessuna riga.
 - Anti look-ahead indipendente: prima di ogni registrazione si controlla lo storico effettivamente usato; con una partita conclusa a data successiva all'istante di elaborazione (o storico vuoto) NON si registra nulla, la diagnostica riporta motivo, numero, data più recente e campione, e nulla viene corretto. Ogni versione conserva `history_last_at`, con vincolo SQL `history_last_at <= recorded_at`.

@@ -1,5 +1,12 @@
 # Validazione prospettica — Tennis Strategy Center (PROGETTO, nessuna modifica remota)
 
+> **Aggiornamento 23/11/2026.** Il registro prospettico proposto qui è stato realizzato in forma diversa: **LIVE OBSERVATION** (tabelle `tennis_observations` e `tennis_observation_versions`, vista `tennis_observation_results`), **attiva dal 21/11/2026**. La tabella `tennis_forecast_log` descritta più sotto **non è mai stata creata** e non va creata: la sezione «Schema proposto» resta solo come storia della decisione.
+> Differenze rispetto al progetto: ogni partita ha una valutazione **iniziale immutabile** (rev 1) e **revisioni separate** (rev 2…), invece di un solo record per (partita, versione del modello); si registrano anche Elo, forma, statistiche, ranking, H2H, dati mancanti e l'impronta dello storico usato; un controllo indipendente impedisce la registrazione se lo storico contiene partite con data successiva all'elaborazione.
+> **Non ancora realizzato:** il confronto con le quote **al momento della previsione** (il registro non le conserva: oggi si salva solo se erano disponibili). Senza quel confronto nessun risultato può essere dichiarato «Validato».
+> La raccolta è prospettica e **non deve essere ricostruita retroattivamente**. I risultati sono ancora da validare: servono almeno 300 osservazioni valide su 50 blocchi indipendenti prima di trarre conclusioni.
+> Non confondere LIVE OBSERVATION con Affidabilità → «Dal vivo» (`tennis_predictions`, ultima valutazione prima della partita): sono registri distinti, vedi la roadmap.
+
+
 Stato: **solo progettazione e test locali** (`scripts/tennis-prospective-record.js`, `tests/tennis-prospective.test.js`). Nessuna tabella è stata creata, nessuna migrazione scritta in `supabase/`, nessuna scrittura eseguita. La creazione della struttura remota richiede una **decisione separata**.
 
 ## Perché serve
