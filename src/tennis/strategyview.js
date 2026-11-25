@@ -35,7 +35,11 @@ export function systemHtml(d) {
     <h4>Risultati non validati</h4><p class="sd-p">${esc(y.notValidated)} su ${esc(y.groupsTotal)} gruppi con dati: nessuno ha superato la validazione (manca il confronto con il mercato).</p>
     <p class="sd-src dec">${icon("info")}Elenco dichiarato dal codice, non letto dal database</p>
     <ul class="sd-rows">${row("Strategy Center 2.0 e relative selezioni", "sperimentale, isolato, non collegato all'app")}${row("Caricamento storico a chiave", y.keysetActive ? "ATTIVO nei dati registrati" : "non attivo (sperimentale)")}${row("Pronostici e verdetti BET/EVITA", "motore operativo, non validato come vantaggio sul mercato")}</ul>
-    <p class="sd-meta">Nessun dato simulato: ogni numero di questa pagina viene dal database.</p></section>`;
+    <h4>Due registri, due scopi</h4>
+    <ul class="sd-notes"><li><b>Affidabilità → Dal vivo</b>: registro più vecchio. Una riga per partita, aggiornata a ogni refresh fino all'inizio e poi congelata: conserva l'ULTIMA valutazione prima della partita, con il verdetto BET/EVITA.</li>
+      <li><b>LIVE OBSERVATION</b> (questa pagina): conserva la PRIMA valutazione, immutabile, e le revisioni successive in righe separate; parte dal giorno dell'attivazione.</li></ul>
+    <p class="sd-p">I conteggi possono essere diversi perché i registri iniziano in giorni diversi, conservano versioni diverse della stessa valutazione e contano insiemi diversi di partite (future, astenute, concluse). Le metriche di questa pagina usano solo la valutazione iniziale.</p>
+    <p class="sd-meta">Conteggi e metriche derivano dai registri effettivi. Soglie e riferimenti statistici sono parametri di valutazione definiti dal sistema.</p></section>`;
 }
 
 export function overviewHtml(d) {

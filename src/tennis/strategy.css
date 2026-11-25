@@ -104,6 +104,9 @@
 .sd-system .sd-rows li{align-items:flex-start}
 .sd-system .sd-rows li>span{min-width:0;flex:1 1 40%;color:var(--sl-ink-2)}
 .sd-system .sd-rows li>b{min-width:0;flex:1 1 50%;text-align:right;font-weight:700;overflow-wrap:break-word}
+.sd-notes{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:8px}
+.sd-notes li{padding:10px 12px;border-radius:12px;background:var(--sl-s2);border:1px solid var(--sl-line);font:500 13px/1.45 var(--sl-font);color:var(--sl-ink-2)}
+.sd-notes b{color:var(--sl-ink)}
 .sd-system .sd-rows li.sub{padding-top:0;border-top:0}
 .sd-system .sd-rows li.sub span{font:500 12px var(--sl-font);color:var(--sl-mute)}
 
