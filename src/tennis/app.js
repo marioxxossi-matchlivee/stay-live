@@ -18,6 +18,7 @@ import { buildDashboard, sanitizeTab, DEFAULT_STRATEGY } from "./strategy.js";
 import { strategyHtml } from "./strategyview.js";
 import "./observation.css";
 import { liveObservationHtml, DEFAULT_LO } from "./observation.js";
+import { mountLearning } from "../learning/mount.js";
 import { absorbTResults, addTPlay, evaluateT, loadTPlays, playFromMatch, removeTPlay, saveTPlays, tSignature } from "./plays.js";
 
 const CACHE_KEY = "sl-tennis-board-v2";
@@ -192,7 +193,7 @@ export function mountTennis(root) {
     } catch (e) { state.lo.error = String(e?.message ?? e); }
     finally { state.lo.loading = false; renderObservationViews(); }
   }
-  function renderReliability() { $("#tn-pane-reliability").innerHTML = `<section class="mn-intro"><h1>Affidabilità</h1><p>Quanto sono credibili i pronostici. Ogni numero ha la sua incertezza: con pochi casi non si conclude nulla.</p></section>${state.history ? tennisMonitorHtml(state.history, state.mnTab) : `<div class="mn-emptybox"><h3>Storico non ancora disponibile</h3><p>Comparirà dopo le prime partite concluse con un pronostico registrato prima dell'inizio.</p></div>`}${liveObservationHtml(state.lo, state.matches)}`; }
+  function renderReliability() { $("#tn-pane-reliability").innerHTML = `<section class="mn-intro"><h1>Affidabilità</h1><p>Quanto sono credibili i pronostici. Ogni numero ha la sua incertezza: con pochi casi non si conclude nulla.</p></section>${state.history ? tennisMonitorHtml(state.history, state.mnTab) : `<div class="mn-emptybox"><h3>Storico non ancora disponibile</h3><p>Comparirà dopo le prime partite concluse con un pronostico registrato prima dell'inizio.</p></div>`}${liveObservationHtml(state.lo, state.matches)}<div id="tn-learning"></div>`; mountLearning($("#tn-learning"), { sport: "tennis" }); }
   function renderSettings() { $("#tn-pane-settings").innerHTML = settingsHtml(state.diagnostics, state.builtAt, state.plays.length); }
 
   function render() {
