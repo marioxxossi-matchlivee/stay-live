@@ -1,5 +1,5 @@
 -- Stay Live Tennis — LIVE OBSERVATION: registro prospettico delle valutazioni PRE-PARTITA.
--- *** BOZZA PER REVISIONE — NON APPLICATA. Non eseguire senza autorizzazione esplicita. ***
+-- *** APPLICATA su Supabase il 21/11/2026 (versione registrata 20261121112442, nome tennis_live_observation). Contenuto SQL verificato identico al registro il 23/11/2026. NON rieseguire. ***
 -- Solo additiva: crea 2 tabelle, 1 vista, 3 funzioni trigger, 4 trigger, soli GRANT a service_role. Non modifica né cancella nulla di esistente (nessuna tabella del calcio,
 -- nessuna tabella tennis_* esistente, nessun trigger esistente). Rieseguibile (if not exists / create or replace / drop trigger if exists).
 -- Accesso solo dal server con la service_role key: RLS attiva e NESSUNA policy (come le altre tabelle tennis_*); nessun accesso per anon/authenticated.
