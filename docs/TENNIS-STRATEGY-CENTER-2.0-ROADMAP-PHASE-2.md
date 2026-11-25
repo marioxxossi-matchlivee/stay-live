@@ -176,3 +176,30 @@ Il primo tentativo PostgreSQL aveva incontrato un vincolo FK nativo durante il t
 Link: https://github.com/marioxxossi-matchlivee/stay-live/actions/runs/45618450635
 
 **Interpretazione:** la transizione OLD futura → NEW passata è confermata dal motore PostgreSQL reale. Non è stata corretta: resta una decisione di contratto applicativo da valutare separatamente. Nessuna migrazione è stata applicata al Supabase remoto; nessun dato reale è stato scritto o modificato.
+
+
+## Aggiornamento 25/11/2026 — contratto temporale di tennis_predictions
+
+Verifica in sola lettura di `scripts/tennis-sync.js`, `functions/api/_tennis-provider.js`, migrazione `202611120001_tennis.sql` e test PostgreSQL.
+
+### Comportamento del writer attuale
+
+- `saveMatches()` aggiorna il registro `tennis_matches` usando `match_key`; il programma non sovrascrive righe già `finished` o `ended_other`.
+- Il programma normalizzato dal provider porta `status` a `scheduled` solo quando `startTimeStatus === "scheduled"`; gli altri valori osservati diventano `unknown`.
+- `runRefresh()` calcola le righe da inviare a `tennis_predictions` soltanto per le partite `scheduled` con `starts_at > now`. Quindi un aggiornamento del programma che colloca la partita nel passato non produce una nuova riga di previsione da upsertare.
+- Se invece una partita viene riprogrammata a una nuova data futura **dopo** che il vecchio `starts_at` è già passato, il writer può ricalcolare una riga per la nuova data, ma il trigger la ignora perché controlla `OLD.starts_at <= now()`. La registrazione preesistente resta congelata.
+- Se la riprogrammazione avviene mentre il vecchio e il nuovo orario sono ancora futuri, l'UPDATE è consentito.
+
+### Decisione sul trigger
+
+Non modificare ora `tennis_predictions_freeze`. Il criterio basato su `OLD.starts_at` è coerente con il principio di non riscrivere una registrazione dopo l'orario originariamente associato alla partita: una riprogrammazione successiva non deve retroattivamente spostare la previsione congelata.
+
+Il caso SQL diretto `OLD.starts_at > now()` → `NEW.starts_at <= now()` resta consentito dal trigger, ma il flusso `runRefresh()` corrente non genera quell'upsert: il filtro delle partite impedisce di produrre la riga quando il nuovo orario è già passato. Il test PostgreSQL conserva questa verifica come caratterizzazione del trigger, non come prova di un difetto raggiungibile dal writer corrente.
+
+Aggiunto al test effettivo PostgreSQL anche il caso `future → future`, che deve restare aggiornabile. Il test copre quindi: riprogrammazione futura consentita; transizione diretta futura→passata caratterizzata; dopo che `OLD.starts_at` è passato, UPDATE/DELETE ignorati.
+
+### Punto adiacente da verificare in seguito
+
+`saveMatches()` protegge esplicitamente gli stati `finished` e `ended_other`, ma non applica una protezione equivalente per `postponed`, `cancelled` o `interrupted`. L'upcoming feed può normalizzare una partita come `scheduled`/ `unknown`. Va verificato con esempi provider reali se una partita rinviata o annullata possa essere riportata a uno stato precedente da un successivo refresh. Nessuna correzione è stata applicata in questa fase.
+
+**Esito:** contratto del trigger documentato; nessuna modifica a logica di previsione, trigger di produzione, migrazioni o dati Supabase. Prossimo lavoro: test di regressione del lifecycle degli stati partita nel solo registro `tennis_matches`, senza intervenire sui pronostici.
