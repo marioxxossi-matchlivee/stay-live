@@ -41,5 +41,8 @@ jobs:
       - name: Test integrità storico Tennis
         run: node --test tests/*history*.test.js
 
+      - name: Test integrità pipeline report
+        run: node --test tests/*report-script*.test.js
+
       - name: Build applicazione
         run: npm run build
