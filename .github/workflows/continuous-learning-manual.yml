@@ -1,0 +1,100 @@
+name: CONTINUOUS LEARNING — Generazione report reale
+
+# Esecuzione esclusivamente manuale.
+# Lo script legge Supabase tramite GET e genera un file locale.
+# Nessuna scrittura su Supabase, nessun commit, push o deploy.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: continuous-learning-manual
+  cancel-in-progress: false
+
+jobs:
+  generate-report:
+    name: Diagnostica tennis e calcio
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configura Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Installa dipendenze
+        run: npm install --no-audit --no-fund
+
+      - name: Verifica sintassi dello script
+        run: node --check scripts/learning-run.js
+
+      # Prima esegue la stessa elaborazione senza scrivere il report.
+      # Se la lettura o l'elaborazione fallisce, il workflow si ferma qui.
+      - name: Prova preliminare in sola lettura (dry-run)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/learning-run.js --dry-run
+
+      # Solo se il dry-run è riuscito, genera il report locale.
+      - name: Genera report reale
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/learning-run.js
+
+      - name: Verifica report generato
+        shell: bash
+        run: |
+          test -s public/learning/report.json
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const p = "public/learning/report.json";
+            const r = JSON.parse(fs.readFileSync(p, "utf8"));
+            if (r.schema !== "learning-report-v1") throw new Error("Schema report inatteso");
+            if (r.status !== "ok") throw new Error("Il report non ha status ok");
+            if (!r.source || r.source.kind !== "supabase" || r.source.readOnly !== true) {
+              throw new Error("Origine del report non valida o non dichiarata in sola lettura");
+            }
+            if (!r.sports?.tennis || !r.sports?.football) {
+              throw new Error("Il report non contiene entrambe le sezioni: tennis e calcio");
+            }
+            console.log("Report valido: tennis e calcio presenti; origine Supabase; sola lettura.");
+            console.log("Generato:", r.generatedAt);
+            console.log("Previsioni analizzate:", JSON.stringify(r.overview?.predictionsAnalyzed ?? {}));
+          '
+
+      - name: Riepilogo
+        if: success()
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE' >> "$GITHUB_STEP_SUMMARY"
+          import fs from "node:fs";
+          const r = JSON.parse(fs.readFileSync("public/learning/report.json", "utf8"));
+          const p = r.overview?.predictionsAnalyzed ?? {};
+          const a = r.overview?.anomalies ?? {};
+          const e = r.overview?.experiments ?? {};
+          console.log("# CONTINUOUS LEARNING — report generato");
+          console.log("");
+          console.log(`- Data: ${r.generatedAt}`);
+          console.log(`- Tennis: ${p.tennis ?? "non disponibile"} previsioni analizzate`);
+          console.log(`- Calcio: ${p.football ?? "non disponibile"} previsioni analizzate`);
+          console.log(`- Anomalie: ${a.total ?? 0} totali (${a.detected ?? 0} rilevate, ${a.weak ?? 0} segnali deboli)`);
+          console.log(`- Esperimenti: ${e.total ?? 0} nel registro; ${e.thisRun ?? 0} in questa esecuzione`);
+          console.log("");
+          console.log("> Il report è un'analisi storica e sperimentale. Non modifica i modelli operativi e non costituisce una validazione prospettica.");
+          NODE
+
+      - name: Carica report come artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stay-live-continuous-learning-report
+          path: public/learning/report.json
+          if-no-files-found: error
+          retention-days: 14
