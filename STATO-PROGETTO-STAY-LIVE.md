@@ -1,10 +1,24 @@
 # STATO-PROGETTO-STAY-LIVE.md
 
 **Documento di continuità tecnica --- Stay Live**\
-**Aggiornato al:** 17 novembre 2026\
+**Aggiornato al:** 23 novembre 2026 (sezione 0); le sezioni 1–11 descrivono lo stato del 17 novembre 2026\
 **Scopo:** permettere a una nuova sessione di Claude o a un altro
 assistente tecnico di riprendere il lavoro senza ripetere inutilmente le
 analisi e senza modificare aree non coinvolte.
+
+------------------------------------------------------------------------
+
+## 0. Aggiornamento del 23 novembre 2026
+
+Fonti: repository, workflow e database Supabase letto in sola lettura. Quanto non è verificabile da qui è indicato.
+
+**Calcio: snapshot a blocchi (sezioni 4–6).** I file della patch sono presenti nella repository (`functions/api/_snapshot.js`, `scripts/full-refresh.js`). I workflow `aggiornamento-completo.yml` e `recupero-aggiornamento.yml` leggono la variabile di repository `SNAPSHOT_CHUNKS_ENABLED` con valore predefinito `false`. Nel database `app_snapshot` risultano **23 righe `fixtures:chunk:…` aggiornate il 23/11/2026**: la modalità a blocchi risulta quindi in uso (inferenza dai dati; il valore della variabile non è leggibile da qui). **Non verificabile da qui:** se i timeout `57014` si siano ripetuti dopo il 17/11 (i log PostgreSQL non sono interrogabili); finché non è verificato, non dichiarare il problema risolto.
+
+**Tennis.** Il modello operativo è `tennis-v2`; il caricamento storico attivo è OFFSET (80.000 partite, ultima del 25/09/2026); KEYSET è predisposto ma non attivo; Strategy Center 2.0 è sperimentale e isolato; la Shadow Mode confronta modalità di caricamento dello storico e non è un nuovo modello. **LIVE OBSERVATION è attiva** (registro prospettico: valutazione iniziale immutabile e revisioni separate); i risultati sono ancora da validare (campione insufficiente). Dettagli, tabella dei due registri prospettici («Dal vivo» e LIVE OBSERVATION) e stato delle migrazioni: `docs/TENNIS-STRATEGY-CENTER-2.0-ROADMAP.md`, sezione «Stato operativo al 23/11/2026».
+
+**Interfaccia.** Il blocco del pinch-to-zoom e del doppio tocco in `index.html` è una **scelta intenzionale del proprietario**: non rimuoverlo. La sezione Strategia è un cruscotto statistico (Panoramica, ATP · WTA, Superfici, Calibrazione, Integrità) con la scheda «Stato del sistema».
+
+**Test (esecuzione del 23/11/2026):** `npm test` (`node --test`) → **580 test eseguiti, 580 superati, 0 falliti, 0 saltati**; `npm run build` (`vite build`, Vite 7.3.8) → riuscita, 58 moduli trasformati, nessun avviso. La build è stata eseguita dopo `npm install` (Vite ^7 come da `package.json`, senza lockfile).  Il «403/403» della sezione 11 è un dato del 17/11 e non è stato rieseguito come tale.
 
 ------------------------------------------------------------------------
 
