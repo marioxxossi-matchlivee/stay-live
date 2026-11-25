@@ -1,0 +1,48 @@
+name: Tennis — integrità dei dati
+
+on:
+  pull_request:
+    paths:
+      - "functions/api/_tennis-observation.js"
+      - "functions/api/_tennis-observation-read.js"
+      - "functions/api/_tennis-history.js"
+      - "scripts/tennis-sync.js"
+      - "supabase/migrations/*tennis*.sql"
+      - "tests/tennis-observation*.test.js"
+      - "tests/tennis-history*.test.js"
+      - "docs/TENNIS-DATA-ARCHITECTURE.md"
+      - ".github/workflows/tennis-data-integrity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tennis-data-integrity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integrity:
+    name: Verifiche Tennis read-only
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Installazione dipendenze
+        run: npm install --no-audit --no-fund --no-package-lock
+
+      - name: Test integrità LIVE OBSERVATION
+        run: node --test tests/tennis-observation.test.js tests/tennis-observation-refresh.test.js
+
+      - name: Test integrità storico Tennis
+        run: node --test tests/tennis-history.test.js tests/tennis-history-monitor.test.js tests/tennis-history-shadow.test.js
+
+      - name: Build applicazione
+        run: npm run build
