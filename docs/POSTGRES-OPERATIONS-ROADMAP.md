@@ -18,10 +18,10 @@ Ogni nuova attività deve essere classificata prima dell'esecuzione. Se non è p
 |---|---|---|
 | 1 | Fotografia iniziale delle metriche PostgreSQL | Completata — sola lettura |
 | 2 | Inventario delle sole componenti infrastrutturali neutrali | Parzialmente completata |
-| 3 | Definizione dei controlli di disponibilità e connessione | Pianificata |
-| 4 | Definizione della copertura backup esterna e verifica della procedura | Da pianificare |
-| 5 | Procedura documentata di ripristino e verifica periodica | Pianificata |
-| 6 | Monitoraggio tecnico di errori, connessioni e saturazione | Pianificata |
+| 3 | Definizione dei controlli di disponibilità e connessione | Completata — verifica read-only del 25/11/2026 |
+| 4 | Backup esterni | Accantonata su richiesta dell'utente — non proseguire |
+| 5 | Procedura di ripristino | Accantonata su richiesta dell'utente — non proseguire |
+| 6 | Monitoraggio tecnico di errori, connessioni e saturazione | Parzialmente completata — baseline read-only |
 | 7 | CI per controlli infrastrutturali indipendenti | Pianificata |
 | 8 | Manuale operativo e procedura di gestione incidenti | Pianificata |
 
@@ -97,6 +97,43 @@ La roadmap prevede di valutare una strategia esterna di esportazione PostgreSQL 
 
 **Parzialmente completata.** Inventario runtime PostgreSQL, catalogo estensioni e condizione backup del piano Free documentati. Restano da classificare tecnicamente i workflow CI e da progettare/validare la strategia di backup esterna. Nessuna modifica a Supabase, nessuna modifica a workflow e nessuna scrittura su dati applicativi.
 
+## Fase 3 — disponibilità e connessioni (25/11/2026)
+
+Verifica read-only eseguita sul progetto Supabase:
+
+- Stato progetto: `ACTIVE_HEALTHY`.
+- PostgreSQL: 17.11.
+- Connessioni osservate: 18 su un massimo configurato di 60 (30%).
+- Distribuzione: 1 connessione `active`, 10 `idle`, 7 con stato `NULL` (sessioni di sistema/background o non classificabili come client idle/active).
+- Connessioni `idle in transaction`: 0.
+- Query attive da oltre un minuto: 0.
+- Deadlock registrati: 0.
+
+La differenza rispetto alla precedente fotografia (12 connessioni) è una variazione tra due istanti di rilevazione, non un errore: il conteggio attuale è stato scomposto per stato e torna a 18. Il valore resta al 30% del limite configurato. Nessuna evidenza puntuale di saturazione o query bloccata è emersa da questi controlli.
+
+**Esito fase 3: completata**, limitatamente ai controlli read-only sopra elencati. Non sono state modificate impostazioni, connessioni o dati.
+
+## Fase 6 — prima baseline di osservabilità (25/11/2026)
+
+La rilevazione precedente costituisce la baseline iniziale per:
+- stato del servizio;
+- utilizzo del limite connessioni;
+- sessioni idle-in-transaction;
+- query attive di lunga durata;
+- contatore cumulativo dei deadlock.
+
+Contatori cumulativi PostgreSQL letti nella stessa sessione:
+- transazioni committed: 2.166.060;
+- transazioni rolled back: 341.
+
+I contatori sono cumulativi dall'ultimo reset delle statistiche e non rappresentano un tasso di errore o una percentuale di fallimento. Per ricavare trend affidabili serviranno almeno due rilevazioni temporali comparabili. Non sono state lette tabelle applicative né statistiche di query riconducibili al motore di pronostico.
+
+**Esito fase 6: parziale.** Baseline iniziale acquisita; non è stata configurata alcuna raccolta automatica né una soglia di allarme.
+
+## Attività accantonate
+
+Su esplicita indicazione dell'utente del 25/11/2026, non proseguire le attività relative a backup esterni e procedure di ripristino (fasi 4 e 5). Non riproporle come prossimo passo.
+
 ## Prossima attività
 
-Progettare una procedura di backup esterna, senza eseguirla ancora: individuare una destinazione indipendente dal database, definire cifratura e gestione sicura dei segreti, frequenza e retention, quindi predisporre una prova di restore isolata. Le attività devono restare infrastrutturali e non intervenire sul motore applicativo di pronostico/scommessa.
+Valutare se esistono controlli CI/CD infrastrutturali chiaramente separabili dalle funzionalità applicative escluse. La classificazione deve basarsi su evidenze sufficienti; se un workflow è misto o ambiguo, lasciarlo invariato. In alternativa, completare la documentazione operativa dei controlli read-only già definiti.
