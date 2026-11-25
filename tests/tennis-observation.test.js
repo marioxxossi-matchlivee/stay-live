@@ -166,7 +166,7 @@ test("schema SQL: due tabelle, append-only, trigger di immutabilità, RLS senza 
   for (const re of [/create table if not exists public\.tennis_observations/, /create table if not exists public\.tennis_observation_versions/, /primary key \(match_key, rev\)/, /enable row level security/g, /before truncate/, /create or replace view public\.tennis_observation_results/, /on m\.match_key|using \(match_key\)/, /identity_ok/])
     assert.match(sql, re);
   assert.ok(!/create policy/i.test(sql)); assert.ok(!/\b(drop table|drop column|alter table public\.tennis_(matches|predictions|players|snapshot)|delete from|truncate table|update public)/i.test(sql.replace(/--.*$/gm, "")));
-  assert.ok(!/tennis_forecast_log/.test(sql)); assert.match(sql, /NON APPLICATA/);
+  assert.ok(!/tennis_forecast_log/.test(sql)); assert.match(sql, /APPLICATA su Supabase il 21\/11\/2026/); assert.ok(!/BOZZA|Non eseguire senza autorizzazione/.test(sql)); assert.match(sql, /NON rieseguire/);
   assert.equal((sql.match(/enable row level security/g) ?? []).length, 2);
 });
 
