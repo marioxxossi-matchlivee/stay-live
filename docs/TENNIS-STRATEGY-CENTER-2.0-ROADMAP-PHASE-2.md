@@ -1,9 +1,9 @@
 # Tennis Strategy Center 2.0 — Roadmap addendum (fase 2)
 
 **Data:** 25/11/2026  
-**Ultimo aggiornamento:** fase 3 CI verde; avviata verifica read-only della fase 4.  
+**Ultimo aggiornamento:** 25/11/2026 — CI completa verde, inclusi test trigger su PostgreSQL 17 effettivo.  
 **Branch di lavoro:** `chore/tennis-data-integrity-ci`  
-**Stato:** fasi 1–3 completate; fase 4 in audit, nessuna modifica DB applicata.
+**Stato:** fasi 1–6 completate come audit; test PostgreSQL fase 4 superati; nessuna modifica al DB remoto applicata.
 
 Questo documento è il registro incrementale collegato alla roadmap principale `TENNIS-STRATEGY-CENTER-2.0-ROADMAP.md`. I dettagli tecnici e i risultati sono in `TENNIS-DATA-ARCHITECTURE.md`, §9–10.
 
@@ -14,7 +14,7 @@ Questo documento è il registro incrementale collegato alla roadmap principale `
 | 1 — Mappa architettura e data lineage | Completata | Fonti, flussi, archivi e consumer documentati |
 | 2 — Riconciliazione registri e viste | Completata | Query SQL, viste, chiavi, stati speciali e collegamenti controllati in sola lettura |
 | 3 — Test di integrità automatizzati | Completata | CI GitHub Actions verde: test LIVE OBSERVATION, storico Tennis e build |
-| 4 — Verifica lifecycle e freeze | In corso — test isolati da predisporre | Semantica dei trigger ricostruita da migrazioni; il caso limite resta da riprodurre in PostgreSQL isolato |
+| 4 — Verifica lifecycle e freeze | Test PostgreSQL completati; valutazione semantica aperta | Migrazioni reali applicate a PostgreSQL 17 effimero; trigger testati con dati sintetici; caso futuro→passato riprodotto |
 | 5 — Contratto archivio Strategy | Audit read-only completato | Writer e lineage verificati; run_id sempre valorizzato e coerente nello snapshot, FK non introdotta per ora |
 | 6 — Chiarezza interfaccia e fonti | Audit completato | UI già dichiara LIVE OBSERVATION come fonte della scheda Strategia e separa l'archivio Strategy 2.0 sperimentale |
 | 7 — Continuous Learning lineage | In corso | Audit codice completato in prima passata; corretto il caso limite del tetto di paginazione e aggiunto test CI |
@@ -144,9 +144,35 @@ Prima passata su `scripts/learning-run.js`, `_learning-report.js`, `_learning-ad
 - gli adattatori associano risultati e previsioni tramite `match_key`; escludono righe con probabilità/data non valide o senza esito e rendono espliciti i conteggi esclusi;
 - nel calcio le righe ricostruite sono escluse per default e contate separatamente;
 - il report è versionato (`learning-report-v1`), registra timestamp di generazione e parametri, ed è dichiarato read-only rispetto al database; scrive soltanto il file locale di report;
-- `public/learning/report.json` nel repository è uno stub `not_generated`, non un report corrente.
+- `public/learning/report.json` nel repository contiene un report generato valido (`status: ok`); il test è stato aggiornato per accettare sia report valido sia stato non generato.
 
 **Difetto corretto:** quando un registro conteneva esattamente il numero massimo di righe (un multiplo pieno di 1.000 fino al limite), il loader lanciava un errore pur non essendoci troncamento. Ora effettua una pagina aggiuntiva di controllo: se è vuota accetta il dataset esattamente al limite; se contiene righe segnala il superamento. Aggiunto test per entrambi i casi.
 
 Il workflow CI è stato esteso con un test dedicato alla pipeline report tramite glob generico, mantenendo intatto il test di isolamento che vieta di collegare Continuous Learning ai workflow e ai motori operativi. L'esito della nuova esecuzione CI è in attesa.
 
+
+
+## Aggiornamento 25/11/2026 — test PostgreSQL effettivi
+
+Aggiunto il job CI `postgres-triggers` al workflow `.github/workflows/tennis-data-integrity.yml`:
+- avvia PostgreSQL 17 come servizio effimero su GitHub Actions;
+- crea soltanto i ruoli minimi compatibili con le migrazioni Supabase;
+- applica le migrazioni Tennis originali `202611120001`, `202611150001`, `202611170001` e `202611210001` al database effimero;
+- usa dati sintetici e non imposta credenziali Supabase;
+- esegue `tests/postgres/tennis-trigger-lifecycle.sql` contro i trigger PL/pgSQL realmente installati.
+
+Copertura verificata:
+- `tennis_predictions_freeze`: INSERT retrodatato ignorato; transizione OLD futura → NEW passata riprodotta; dopo la transizione UPDATE/DELETE sono bloccati;
+- `tennis_strategy_runs_freeze`: UPDATE/DELETE ignorati;
+- `tennis_strategy_picks_freeze`: inserimento futuro accettato, inserimento passato ignorato, UPDATE/DELETE ignorati;
+- `tennis_strategy_doubles_freeze`: inserimento valido accettato, UPDATE/DELETE ignorati e inserimento con una gamba già iniziata ignorato;
+- `tennis_observations_guard`: UPDATE/DELETE rifiutati;
+- `tennis_observation_versions_guard`: duplicato revisione no-op, salto di revisione rifiutato, UPDATE/DELETE rifiutati;
+- trigger anti-TRUNCATE su entrambi i registri LIVE OBSERVATION verificati.
+
+Il primo tentativo PostgreSQL aveva incontrato un vincolo FK nativo durante il test TRUNCATE della tabella padre (non un difetto del trigger). Il test è stato corretto per troncare le due tabelle collegate nella stessa istruzione e verificare la specifica eccezione della guardia; il rerun è passato.
+
+**Esito definitivo CI:** run `45618450635`, commit `95f900512c7ab476e134b921a151e826def3c8b4`, entrambi i job verdi (Node/build e PostgreSQL 17).  
+Link: https://github.com/marioxxossi-matchlivee/stay-live/actions/runs/45618450635
+
+**Interpretazione:** la transizione OLD futura → NEW passata è confermata dal motore PostgreSQL reale. Non è stata corretta: resta una decisione di contratto applicativo da valutare separatamente. Nessuna migrazione è stata applicata al Supabase remoto; nessun dato reale è stato scritto o modificato.
