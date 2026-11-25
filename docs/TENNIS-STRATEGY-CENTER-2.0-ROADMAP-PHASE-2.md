@@ -14,8 +14,8 @@ Questo documento è il registro incrementale collegato alla roadmap principale `
 | 1 — Mappa architettura e data lineage | Completata | Fonti, flussi, archivi e consumer documentati |
 | 2 — Riconciliazione registri e viste | Completata | Query SQL, viste, chiavi, stati speciali e collegamenti controllati in sola lettura |
 | 3 — Test di integrità automatizzati | Completata | CI GitHub Actions verde: test LIVE OBSERVATION, storico Tennis e build |
-| 4 — Verifica lifecycle e freeze | Audit read-only in corso | Trigger esistente analizzato; individuato un caso limite da coprire con test prima di qualsiasi modifica |
-| 5 — Contratto archivio Strategy | Da fare | Verifica integrità referenziale e lineage; nessuna modifica alle logiche decisionali |
+| 4 — Verifica lifecycle e freeze | In corso — test isolati da predisporre | Semantica dei trigger ricostruita da migrazioni; il caso limite resta da riprodurre in PostgreSQL isolato |
+| 5 — Contratto archivio Strategy | Audit read-only in corso | FK verso le partite verificate; run_id senza FK ma nessun orfano nello snapshot attuale |
 | 6 — Chiarezza interfaccia e fonti | Da fare | Distinguere chiaramente cruscotto LIVE OBSERVATION e archivio storico |
 | 7 — Continuous Learning lineage | Da fare | Verifica estrazione, paginazione, timestamp, esclusioni e versioni |
 | 8 — Decisione strutturale | Bloccata fino ai test | Nessuna fusione, migrazione distruttiva o deprecazione prima delle verifiche |
@@ -82,3 +82,33 @@ Definizione attuale del trigger:
 2. Definire esplicitamente se `starts_at` deve essere immutabile dopo la creazione o solo dopo l'inizio.
 3. Preparare eventuale correzione della funzione e migrazione con test e rollback; non applicarla al DB remoto prima della verifica.
 4. Proseguire con controlli di integrità e lineage degli archivi, senza intervenire sulle logiche di pronostico.
+## Aggiornamento fase 4 — ricostruzione delle regole da migrazione
+
+La lettura delle migrazioni conferma che il comportamento dei trigger è intenzionale e differenziato per registro:
+
+- `tennis_predictions_freeze`: congela INSERT/UPDATE/DELETE in base a `starts_at`; resta da testare la transizione di `starts_at` da futuro a passato durante un UPDATE.
+- `tennis_strategy_picks_freeze`: INSERT solo prima dell'inizio; UPDATE e DELETE sempre ignorati.
+- `tennis_strategy_doubles_freeze`: INSERT solo se entrambe le partite sono future; UPDATE e DELETE sempre ignorati.
+- `tennis_strategy_runs_freeze`: consente solo INSERT.
+- LIVE OBSERVATION: guardie append-only per anagrafica e versioni; vietano UPDATE/DELETE e anche TRUNCATE. Le versioni controllano progressione consecutiva, data di registrazione e partita non iniziata.
+
+**Limite dei test attuali:** il progetto usa Node.js test runner e la CI non avvia PostgreSQL. I test esistenti verificano soprattutto la logica applicativa in memoria; non riproducono davvero i trigger PL/pgSQL. Non aggiungo test simulati spacciandoli per test DB. Il prossimo passo è predisporre un harness PostgreSQL isolato, senza credenziali Supabase e senza dati reali.
+
+## Aggiornamento fase 5 — lineage dell'archivio Strategy (sola lettura)
+
+Schema verificato nella migrazione `202611170001_tennis_strategy.sql` e riscontro read-only sul database:
+
+- `tennis_strategy_picks.match_key` ha FK verso `tennis_matches(match_key)` con `ON DELETE RESTRICT`.
+- Le due gambe di `tennis_strategy_doubles` hanno entrambe FK verso `tennis_matches(match_key)` con `ON DELETE RESTRICT`.
+- `run_id` su picks e doubles è nullable nello schema e **non** ha FK verso `tennis_strategy_runs(id)`.
+- Snapshot DB: 122 picks, 0 `run_id` nulli, 0 riferimenti a run inesistenti; doubles: 0 righe, 0 nulli, 0 orfani.
+- I trigger dell'archivio sono coerenti con la documentazione: le registrazioni di picks/doubles non vengono aggiornate o cancellate; i run sono insert-only.
+
+La mancanza della FK su `run_id` è una lacuna strutturale potenziale, non un errore dimostrato nei dati correnti. Non aggiungo la FK ora: prima servono verifica dei writer, gestione di eventuali run eliminati/ri-generati, decisione sulla nullabilità e piano di rollback. Nessuna scrittura DB o modifica alle tabelle è stata eseguita.
+
+## Prossimi passi aggiornati
+
+1. Predisporre un test PostgreSQL realmente isolato per i trigger della fase 4; coprire INSERT futuro/passato, UPDATE prima/dopo l'inizio, modifica di `starts_at`, DELETE e i trigger append-only.
+2. Verificare tutti i writer di `tennis_strategy_runs`, `tennis_strategy_picks` e `tennis_strategy_doubles`, inclusi i casi di rigenerazione e retry.
+3. Valutare il contratto referenziale di `run_id` senza applicare ancora vincoli o migrazioni.
+4. Passare poi alla fase 6 (etichette chiare per LIVE OBSERVATION e archivio Strategy) e fase 7 (lineage del report Continuous Learning).
