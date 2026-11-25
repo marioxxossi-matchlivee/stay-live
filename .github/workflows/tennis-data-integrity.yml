@@ -39,10 +39,10 @@ jobs:
         run: npm install --no-audit --no-fund --no-package-lock
 
       - name: Test integrità LIVE OBSERVATION
-        run: node --test tests/tennis-observation.test.js tests/tennis-observation-refresh.test.js
+        run: node --test tests/*observation*.test.js
 
       - name: Test integrità storico Tennis
-        run: node --test tests/tennis-history.test.js tests/tennis-history-monitor.test.js tests/tennis-history-shadow.test.js
+        run: node --test tests/*history*.test.js
 
       - name: Build applicazione
         run: npm run build
