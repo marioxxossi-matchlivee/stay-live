@@ -1,13 +1,22 @@
 name: Tennis — integrità dei dati
 
 on:
+  push:
+    branches: ["main"]
+    paths:
+      - "functions/api/**"
+      - "scripts/**"
+      - "supabase/migrations/**"
+      - "tests/**"
+      - "docs/**"
+      - ".github/workflows/tennis-data-integrity.yml"
   pull_request:
     paths:
       - "functions/api/**"
       - "scripts/**"
       - "supabase/migrations/**"
       - "tests/**"
-      - "docs/TENNIS-DATA-ARCHITECTURE.md"
+      - "docs/**"
       - ".github/workflows/tennis-data-integrity.yml"
   workflow_dispatch:
 
