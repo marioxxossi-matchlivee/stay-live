@@ -3,13 +3,10 @@ name: Tennis — integrità dei dati
 on:
   pull_request:
     paths:
-      - "functions/api/_tennis-observation.js"
-      - "functions/api/_tennis-observation-read.js"
-      - "functions/api/_tennis-history.js"
-      - "scripts/tennis-sync.js"
-      - "supabase/migrations/*tennis*.sql"
-      - "tests/tennis-observation*.test.js"
-      - "tests/tennis-history*.test.js"
+      - "functions/api/**"
+      - "scripts/**"
+      - "supabase/migrations/**"
+      - "tests/**"
       - "docs/TENNIS-DATA-ARCHITECTURE.md"
       - ".github/workflows/tennis-data-integrity.yml"
   workflow_dispatch:
