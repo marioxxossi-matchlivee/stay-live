@@ -140,7 +140,7 @@ BEGIN
   END;
 
   BEGIN
-    TRUNCATE public.tennis_observations;
+    TRUNCATE public.tennis_observation_versions, public.tennis_observations;
     RAISE EXCEPTION 'FAIL_SENTINEL: observations TRUNCATE unexpectedly succeeded';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM LIKE 'FAIL_SENTINEL:%' THEN RAISE; END IF;
