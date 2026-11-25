@@ -12,6 +12,8 @@ async function open() {
   try {
     const mod = await import("./monitor.js");
     ctl = mod.mountMonitor(view.querySelector("#rel-root"));
+    // CONTINUOUS LEARNING (sola osservazione): sezione autonoma sotto il monitor del calcio; se non carica, il monitor resta com'è.
+    try { const learn = await import("./learning/mount.js"); let host = view.querySelector("#cl-root"); if (!host) { host = document.createElement("div"); host.id = "cl-root"; view.append(host); } learn.mountLearning(host, { sport: "football" }); } catch (e) { console.warn("CONTINUOUS LEARNING non caricato:", e); }
   } catch (e) {
     console.error("Affidabilità non caricata:", e);
     view.querySelector("#rel-root").innerHTML = `<p style="padding:24px;text-align:center;color:var(--mute)">Impossibile caricare la sezione. Riprova più tardi: il resto dell'app funziona.</p>`;
