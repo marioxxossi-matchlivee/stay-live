@@ -209,3 +209,27 @@ Monitoraggio e audit v5 sono già stati eseguiti (§0d), la Shadow Mode è compl
 3. **Classi A/B/C/D e doppie:** restano non validate; nessuna promozione senza evidenza fuori campione (§0d).
 4. **Validazione prospettica:** solo progettata (`docs/VALIDAZIONE-PROSPETTICA-TENNIS.md`); la creazione di qualunque struttura remota richiede una decisione separata.
 5. **Nomi delle migrazioni Supabase** da allineare prima di un eventuale `supabase db push` (§3, punto 2).
+
+
+## Prima fase architetturale — 25/11/2026
+
+**Stato: COMPLETATA — ricognizione e documentazione.** La mappa completa dei flussi principali e delle decisioni iniziali è in `docs/TENNIS-DATA-ARCHITECTURE.md`.
+
+### Attività concluse
+- Ricontrollati i flussi principali in `scripts/tennis-sync.js`, endpoint board/observation, schermate Tennis, Strategy Engine e Continuous Learning.
+- Registrata la fotografia Supabase del 25/11/2026: 103.295 partite, 2.505 previsioni tradizionali, 2.029 risultati tradizionali, 868 osservazioni, 1.980 versioni, 153 run Strategy, 121 picks, 0 doppie, 2 snapshot; dettagli e limiti nella mappa architetturale.
+- Chiarito il disallineamento UI: la scheda denominata «Strategia» usa `state.lo.data` da `/api/tennis-observation`; lo Strategy Engine v1 viene comunque eseguito nel refresh e registra il proprio storico. Non va quindi considerato codice inutilizzato.
+- Definita la distinzione tra archivi canonici, registri prospettici append-only, archivi strategici e snapshot/report derivati.
+- Nessuna modifica a codice operativo, modello, probabilità, selezioni, quote, workflow, API o database. Nessuna migrazione e nessun deploy.
+
+### Roadmap aggiornata
+| Fase | Attività | Stato |
+|---|---|---|
+| 1 | Ricognizione flussi, fotografia DB, mappa architetturale e decisioni | **Completata — documentale** |
+| 2 | Audit completo delle query di lettura/scrittura, viste, vincoli, chiavi e riconciliazione tra previsioni e risultati | Da fare |
+| 3 | Definizione del contratto canonico di provenienza, identità, timestamp e campionamento | Da fare |
+| 4 | Proposta di semplificazione con compatibilità, test e rollback; nessuna cancellazione prima della verifica | Da fare |
+| 5 | Implementazione graduale e test in ambiente controllato | Non iniziata |
+| 6 | Eventuale deploy e monitoraggio | Non iniziata |
+
+**Punti aperti obbligatori prima di modifiche strutturali:** riconciliazione `tennis_predictions` / `tennis_prediction_results`; definizione SQL di `tennis_observation_results`; gestione di ritiri, walkover, rinvii e correzioni; uso effettivo dello storico Strategy; inventario completo dei consumer UI. LIVE OBSERVATION e le sue revisioni restano da preservare come audit trail prospettico. Nessuna tabella è stata eliminata o accorpata.
