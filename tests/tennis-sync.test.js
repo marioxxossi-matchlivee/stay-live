@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createClient } from "../functions/api/_tennis-client.js";
-import { runJob, datesBack, ymd, dedupe, computePredictions, buildBook, upcomingRow, resultRow, LIMITS } from "../scripts/tennis-sync.js";
+import { runJob, datesBack, ymd, dedupe, computePredictions, buildBook, upcomingRow, resultRow, saveMatches, LIMITS } from "../scripts/tennis-sync.js";
 import { normalizeUpcoming, normalizeResult, readPage } from "../functions/api/_tennis-provider.js";
 import { RatingBook } from "../functions/api/_tennis-model.js";
 
@@ -188,6 +188,33 @@ test("pronostici: con storico sintetico il modello pubblica, quote reali → ver
   assert.equal(computePredictions({ matches: [m({ starts_at: "2026-11-13T13:00:00Z" })], book, stats: new Map(), ranks: new Map(), calibrator: null, now }).length, 0); // già iniziata: nessun nuovo pronostico
   const [r] = computePredictions({ matches: [m({})], book, stats: new Map(), ranks: new Map(), calibrator: null, now: now + 1 });
   assert.equal(r.p1, p.p1); // deterministico
+});
+
+test("saveMatches lifecycle: preserva rinvii/annullamenti/interruzioni e accetta solo riprogrammazione esplicita", async () => {
+  const starts = "2026-11-13T15:00:00Z";
+  const seed = ["postponed", "cancelled", "interrupted"].map((status) => ({
+    match_key: status, status, starts_at: starts, tour: "atp", p1_id: "1", p2_id: "2",
+  }));
+  const upcoming = (match_key, status) => ({
+    match_key, provider_id: match_key, tour: "atp", tournament_id: "t1", tournament: "Test",
+    round_id: 1, level_id: 2, category: "tour", surface: "Hard", starts_at: starts, status,
+    p1_id: "1", p2_id: "2", p1_name: "Player 1", p2_name: "Player 2",
+    p1_country: null, p2_country: null, p1_seed: null, p2_seed: null,
+    live_match_id: null, odds_sources: [], h2h: null,
+  });
+
+  const db = fakeDb({ tennis_matches: seed });
+  await saveMatches(db, seed.map((m) => upcoming(m.match_key, "unknown")), [], NOW);
+  for (const status of ["postponed", "cancelled", "interrupted"]) {
+    assert.equal(db.t.tennis_matches.find((m) => m.match_key === status).status, status,
+      `lo stato ${status} non deve degradare a unknown`);
+  }
+
+  // Il provider dichiara esplicitamente startTimeStatus=scheduled: la riprogrammazione è recepita.
+  await saveMatches(db, [upcoming("postponed", "scheduled")], [], NOW);
+  assert.equal(db.t.tennis_matches.find((m) => m.match_key === "postponed").status, "scheduled");
+  assert.equal(db.t.tennis_matches.find((m) => m.match_key === "cancelled").status, "cancelled");
+  assert.equal(db.t.tennis_matches.find((m) => m.match_key === "interrupted").status, "interrupted");
 });
 
 test("storico del modello: solo conclusi regolarmente con vincitore", async () => {
