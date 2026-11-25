@@ -42,6 +42,19 @@ test("script: lettura paginata completa con SOLE richieste GET, nessuna scrittur
   await assert.rejects(() => getAll(ENV, "tennis_predictions", { select: "*" }, { maxPages: 2, f }), /incompleto/); await assert.rejects(() => getAll(ENV, "nome_inesistente", {}, { f }), /HTTP 404/);
 });
 
+
+test("script: il tetto massimo accetta un dataset esattamente al limite e rifiuta il primo record oltre", async () => {
+  const rows = Array.from({ length: 2000 }, (_, i) => ({ id: i }));
+  const exact = fakeSupabase({ sample: rows });
+  const loaded = await getAll(ENV, "sample", { select: "*" }, { maxPages: 2, f: exact.f });
+  assert.equal(loaded.length, 2000);
+  assert.equal(exact.calls.length, 3, "due pagine dati più una pagina vuota di controllo");
+
+  const overflow = fakeSupabase({ sample: [...rows, { id: 2000 }] });
+  await assert.rejects(() => getAll(ENV, "sample", { select: "*" }, { maxPages: 2, f: overflow.f }), /oltre il tetto di 2000 righe/);
+  assert.equal(overflow.calls.length, 3, "il record oltre il tetto viene rilevato dalla pagina di controllo");
+});
+
 test("script: dry-run non scrive; l'esecuzione scrive UN file locale e il registro cresce in modo append-only tra due esecuzioni", async () => {
   const t = tennisRows(2400), { f } = fakeSupabase({ tennis_predictions: t.predictions, tennis_prediction_results: t.results }), dir = fs.mkdtempSync(path.join(os.tmpdir(), "learn-")), out = path.join(dir, "learning", "report.json"), logs = [];
   const dry = await run(["--sports", "tennis", "--out", out, "--reps", "200", "--dry-run"], ENV, { f, now: NOW, log: (m) => logs.push(m) }); assert.ok(!fs.existsSync(out)); assert.equal(dry.status, "ok"); assert.ok(logs.some((l) => /Dry-run/.test(l)));
@@ -62,5 +75,5 @@ test("sola lettura garantita nel codice: nessun metodo di scrittura, nessuna tab
     const src = read(f).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""); assert.ok(!/method:\s*["'](POST|PATCH|PUT|DELETE)/i.test(src), `${f}: nessun metodo di scrittura`); assert.ok(!/supabase(Upsert|Patch|Delete|Insert)|\.upsert\(|\.insert\(|insertIgnore|\.del\(/.test(src), `${f}: nessuna scrittura`);
     for (const m of src.matchAll(/from\s+"([^"]+)"/g)) assert.ok(/^node:|^\.\/_learning|^\.\.\/functions\/api\/_learning/.test(m[1]), `${f} importa ${m[1]}`);
   }
-  assert.match(read("scripts/learning-run.js"), /writeFileSync\(a\.out/); const stub = JSON.parse(read("public/learning/report.json")); assert.equal(stub.status, "not_generated"); assert.ok(!("sports" in stub));
+  assert.match(read("scripts/learning-run.js"), /writeFileSync\(a\.out/); const savedReport = JSON.parse(read("public/learning/report.json")); assert.equal(savedReport.schema, REPORT_SCHEMA); assert.ok(["ok", "not_generated"].includes(savedReport.status)); if (savedReport.status === "not_generated") assert.ok(!("sports" in savedReport)); else { assert.equal(savedReport.source?.readOnly, true); assert.ok(Number.isFinite(Date.parse(savedReport.generatedAt))); assert.ok(savedReport.sports && typeof savedReport.sports === "object"); }
 });

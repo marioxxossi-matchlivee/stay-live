@@ -17,13 +17,21 @@ const PAGE = 1000;
 /** Legge TUTTE le righe con richieste GET paginate. Se il tetto di pagine è esaurito con una pagina piena, lancia (mai troncamento silenzioso). */
 export async function getAll(env, table, query, { maxPages = 200, f = fetch } = {}) {
   const out = [];
-  for (let p = 0; p < maxPages; p++) {
+  // maxPages limita le pagine di dati; una pagina di controllo aggiuntiva distingue il tetto esatto
+  // (dataset completo con ultima pagina piena) da un dataset realmente troncato.
+  for (let p = 0; p <= maxPages; p++) {
     const url = new URL(`/rest/v1/${table}`, env.SUPABASE_URL); for (const [k, v] of Object.entries({ ...query, limit: PAGE, offset: p * PAGE })) url.searchParams.set(k, String(v));
     const res = await f(url, { method: "GET", headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } });
     if (!res.ok) throw new Error(`Lettura di ${table}: HTTP ${res.status} ${(await res.text()).slice(0, 160)}`);
-    const rows = await res.json(); out.push(...rows); if (rows.length < PAGE) return out;
+    const rows = await res.json();
+    if (p === maxPages) {
+      if (rows.length) throw new Error(`Lettura di ${table} oltre il tetto di ${maxPages * PAGE} righe: risultato incompleto, non usato`);
+      return out;
+    }
+    out.push(...rows);
+    if (rows.length < PAGE) return out;
   }
-  throw new Error(`Lettura di ${table} oltre il tetto di ${maxPages * PAGE} righe: risultato incompleto, non usato`);
+  return out;
 }
 
 export async function loadFromSupabase(env, sports, now, f = fetch) {

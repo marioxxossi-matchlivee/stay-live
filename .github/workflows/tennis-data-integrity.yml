@@ -1,0 +1,91 @@
+name: Tennis — integrità dei dati
+
+on:
+  pull_request:
+    paths:
+      - "functions/api/**"
+      - "scripts/**"
+      - "supabase/migrations/**"
+      - "tests/**"
+      - "docs/TENNIS-DATA-ARCHITECTURE.md"
+      - ".github/workflows/tennis-data-integrity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tennis-data-integrity-\${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integrity:
+    name: Verifiche Tennis read-only
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Installazione dipendenze
+        run: npm install --no-audit --no-fund --no-package-lock
+
+      - name: Test integrità LIVE OBSERVATION
+        run: node --test tests/*observation*.test.js
+
+      - name: Test integrità storico Tennis
+        run: node --test tests/*history*.test.js
+
+      - name: Test integrità pipeline report
+        run: node --test tests/*report-script*.test.js
+
+      - name: Build applicazione
+        run: npm run build
+
+  postgres-triggers:
+    name: Trigger PostgreSQL reali (database effimero)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: stay_live_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d stay_live_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Preparazione ruoli Supabase compatibili
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d stay_live_ci -v ON_ERROR_STOP=1 -c "CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN;"
+
+      - name: Applica migrazioni Tennis reali
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d stay_live_ci -v ON_ERROR_STOP=1 -f supabase/migrations/202611120001_tennis.sql
+          psql -h localhost -U postgres -d stay_live_ci -v ON_ERROR_STOP=1 -f supabase/migrations/202611150001_tennis_sync.sql
+          psql -h localhost -U postgres -d stay_live_ci -v ON_ERROR_STOP=1 -c "ALTER TABLE public.tennis_matches ADD COLUMN IF NOT EXISTS result_type text;"
+          psql -h localhost -U postgres -d stay_live_ci -v ON_ERROR_STOP=1 -f supabase/migrations/202611170001_tennis_strategy.sql
+          psql -h localhost -U postgres -d stay_live_ci -v ON_ERROR_STOP=1 -f supabase/migrations/202611210001_tennis_live_observation.sql
+
+      - name: Test trigger su PostgreSQL effettivo
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d stay_live_ci -v ON_ERROR_STOP=1 -f tests/postgres/tennis-trigger-lifecycle.sql
