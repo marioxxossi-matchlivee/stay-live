@@ -42,6 +42,19 @@ test("script: lettura paginata completa con SOLE richieste GET, nessuna scrittur
   await assert.rejects(() => getAll(ENV, "tennis_predictions", { select: "*" }, { maxPages: 2, f }), /incompleto/); await assert.rejects(() => getAll(ENV, "nome_inesistente", {}, { f }), /HTTP 404/);
 });
 
+
+test("script: il tetto massimo accetta un dataset esattamente al limite e rifiuta il primo record oltre", async () => {
+  const rows = Array.from({ length: 2000 }, (_, i) => ({ id: i }));
+  const exact = fakeSupabase({ sample: rows });
+  const loaded = await getAll(ENV, "sample", { select: "*" }, { maxPages: 2, f: exact.f });
+  assert.equal(loaded.length, 2000);
+  assert.equal(exact.calls.length, 3, "due pagine dati più una pagina vuota di controllo");
+
+  const overflow = fakeSupabase({ sample: [...rows, { id: 2000 }] });
+  await assert.rejects(() => getAll(ENV, "sample", { select: "*" }, { maxPages: 2, f: overflow.f }), /oltre il tetto di 2000 righe/);
+  assert.equal(overflow.calls.length, 3, "il record oltre il tetto viene rilevato dalla pagina di controllo");
+});
+
 test("script: dry-run non scrive; l'esecuzione scrive UN file locale e il registro cresce in modo append-only tra due esecuzioni", async () => {
   const t = tennisRows(2400), { f } = fakeSupabase({ tennis_predictions: t.predictions, tennis_prediction_results: t.results }), dir = fs.mkdtempSync(path.join(os.tmpdir(), "learn-")), out = path.join(dir, "learning", "report.json"), logs = [];
   const dry = await run(["--sports", "tennis", "--out", out, "--reps", "200", "--dry-run"], ENV, { f, now: NOW, log: (m) => logs.push(m) }); assert.ok(!fs.existsSync(out)); assert.equal(dry.status, "ok"); assert.ok(logs.some((l) => /Dry-run/.test(l)));
