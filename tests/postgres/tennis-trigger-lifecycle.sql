@@ -42,6 +42,18 @@ BEGIN
     ('ci-pred-future', now() + interval '1 day', 'atp', false, null, null, null, 'ci');
   SELECT updated_at INTO original_updated FROM public.tennis_predictions WHERE match_key = 'ci-pred-future';
 
+  -- Riprogrammazione ancora futura: ammessa mentre OLD e NEW sono nel futuro.
+  UPDATE public.tennis_predictions
+     SET starts_at = now() + interval '2 day'
+   WHERE match_key = 'ci-pred-future';
+  IF NOT EXISTS (
+    SELECT 1 FROM public.tennis_predictions
+     WHERE match_key = 'ci-pred-future'
+       AND starts_at > now() + interval '1 day'
+  ) THEN
+    RAISE EXCEPTION 'FAIL: future-to-future reschedule was unexpectedly blocked';
+  END IF;
+
   -- Caso limite documentato: OLD futura -> NEW passata è oggi consentito dal trigger.
   UPDATE public.tennis_predictions
      SET starts_at = now() - interval '1 minute'
