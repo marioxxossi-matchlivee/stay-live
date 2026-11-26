@@ -1,7 +1,7 @@
 # STATO-PROGETTO-STAY-LIVE.md
 
 **Documento di continuità tecnica --- Stay Live**\
-**Aggiornato al:** 23 novembre 2026 (sezione 0); le sezioni 1–11 descrivono lo stato del 17 novembre 2026\
+**Aggiornato al:** 25 novembre 2026 (sezione 0b), 23 novembre 2026 (sezione 0); le sezioni 1–11 descrivono lo stato del 17 novembre 2026\
 **Scopo:** permettere a una nuova sessione di Claude o a un altro
 assistente tecnico di riprendere il lavoro senza ripetere inutilmente le
 analisi e senza modificare aree non coinvolte.
@@ -23,6 +23,26 @@ Fonti: repository, workflow e database Supabase letto in sola lettura. Quanto no
 **Test (esecuzione del 24/11/2026):** `npm test` (`node --test`) → **638 test eseguiti, 638 superati, 0 falliti, 0 saltati** (esecuzione del 24/11/2026, dopo l'aggiunta di CONTINUOUS LEARNING); `npm run build` (`vite build`, Vite 7.3.8) → riuscita, 61 moduli trasformati, nessun avviso. La build è stata eseguita dopo `npm install` (Vite ^7 come da `package.json`, senza lockfile).  Il «403/403» della sezione 11 è un dato del 17/11 e non è stato rieseguito come tale.
 
 ------------------------------------------------------------------------
+
+## 0b. Motore calcio — aggiornamento del 25 novembre 2026
+
+**Obiettivo unico del lavoro: migliorare la qualità dei pronostici generati** (non il rendimento delle scommesse). Ogni partita ha un pronostico giocabile; il verdetto BET/EVITA resta come informazione ma non decide più il pronostico mostrato.
+
+**Perimetro mercati:** 1X2, doppia chance e Multigol (`MARKET_SCOPE = "1x2+dc"`).
+
+**Modifiche in `functions/api/model.js`**
+- Pesi di fusione: storico 0,10 · API-Football 0,25 · mercato 0,65 (prima 0,25 · 0,40 · 0,35). Motivo: su 2.634 partite con quote reali di football-data (22 campionati, 31/07–23/11/2026) il Brier 1X2 migliora al crescere del peso del mercato (0,597 con 58%, 0,5895 con 87%; solo mercato 0,588; solo storico 0,629). **Il peso di API-Football non è stato validato** (nessun suo pronostico storico disponibile) ed è stato fissato per prudenza.
+- `pick` = pronostico: esito più probabile tra 1X2 e doppia chance con quota di riferimento > 1,3 (reale; se manca, quota equa / (1 + `bookMargin`)). Se l'esito migliore con quota sufficiente ha probabilità < 0,40 si tiene il più probabile in assoluto e si segnala `lowOdds`. Parametri `forecastMinOdds`, `forecastMinP` (inclusi nella versione del modello).
+- `betPick` = scelta storica per valore (BET/EVITA), mantenuta per i backtest di affidabilità.
+- Test aggiornati: `tests/brain.test.js` (ordine dei pesi, nuovo test `forecastPick`), `tests/backtest-evita.test.js` (confronto con `betPick`).
+
+**Esito del confronto (stesse 2.634 partite):** pronostico azzeccato nel 65,4% dei casi, quota media 1,50, dichiarato 62,6% (prudente). Solo statistico su 9.927 partite: reale 64,4%, dichiarato 63,9%. Nessuna regola di scelta batte il margine del bookmaker (ROI ≈ −5%): le quote di doppia chance del test sono ricavate dall'1X2, non reali.
+
+**Limiti e punti aperti**
+- Il test con quote riguarda solo i campionati principali presenti su football-data.co.uk; gli altri 50 campionati non hanno quote storiche.
+- Multigol: nessuna quota storica; calibrazione ancora da sistemare (MG 1-3 e MG 1-4 non calibrati) e pareggio sovrastimato dal modello NEW (26,0% previsto, 23,2% reale).
+- Tre test falliscono già prima di questo lavoro (isolamento CONTINUOUS LEARNING, importatori ammessi, stati del report) e non riguardano il motore.
+- Il workflow `esporta-finals.yml` esporta `finals.json` (sola lettura).
 
 ## 1. Contesto del progetto
 
