@@ -38,6 +38,7 @@ export function completenessOf({ now = Date.now(), kickoff, odds, predictions, s
   return {
     status, parts,
     betOk: ["ok", "na"].includes(parts.odds) && ["ok", "na"].includes(parts.predictions) && parts.stats === "ok",   // requisiti minimi per mostrare un BET
+    publishOk: parts.odds === "ok" && ["ok", "na"].includes(parts.predictions) && parts.stats === "ok",   // pronostico pubblicato solo con quote reali, statistiche e (se previsto dal provider) pronostico API-Football
     nextTryAt: nextTry ? new Date(nextTry).toISOString() : null,
   };
 }

@@ -75,8 +75,10 @@ export async function buildFixtures(env) {
     const cr = env.API_FOOTBALL_KEY && week.length ? await loadCornerOdds(env, week, now, { live: false, maps: br?.maps }).catch(() => null) : null;
     // Modello statistico dei corner (corner reali storici in match_corners): se la tabella manca o è vuota, nessun modello (mai dati inventati).
     const cctx = await loadCornerRows(env).then(buildCornerContext).catch(() => null);
+    // Se le quote non si sono potute leggere (errore, non assenza), l'istantanea non viene pubblicata: resta l'ultima completa, mai un elenco svuotato.
+    if (env.API_FOOTBALL_KEY && ((soon.length && !br) || (far.length && !brFar))) return { ok: false, status: 503, error: "Quote non lette in questo giro: l'ultimo aggiornamento completo resta valido." };
     const byLeague = Object.fromEntries(states.map((s) => [s.league, s]));
-    const matches = window.map((m) => {
+    const all = window.map((m) => {
       const open = m.status === "scheduled" || m.status === "in_progress";
       let pick = null, ou = null, mk = null;
       if (open) {
@@ -97,6 +99,8 @@ export async function buildFixtures(env) {
         cornerModel: open && cctx && Date.parse(m.kickoff_at) < now + 7 * 86400e3 ? cornerModel(cctx, { league: m.league, kickoff_at: m.kickoff_at, home_id: m.home_id, away_id: m.away_id }) : null,   // modello Stay Live sui corner storici reali (distinto dalle quote)
       };
     });
+    // Si mostrano solo partite pronosticate con tutti i dati: una partita non ancora iniziata senza quote reali (o statistiche) non compare, e rientra da sola al recupero successivo.
+    const matches = all.filter((m) => m.status !== "scheduled" || m.dq?.publishOk);
     return { ok: true, payload: {
       updatedAt: new Date(now).toISOString(),
       historyMatches: ctx.matchCount,
