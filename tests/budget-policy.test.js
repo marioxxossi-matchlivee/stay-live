@@ -225,3 +225,15 @@ test("simulazione: giornata molto popolata (700 partite su 7 giorni) resta sotto
   assert.ok(credits < ceilingOf(), `stima ${credits} crediti`);
   assert.ok(credits < 4222 + 1500, "molto meno del consumo reale precedente");
 });
+
+test("publishOk: una partita si pubblica solo con quote reali, statistiche e pronostico del provider (se previsto)", () => {
+  const near = new Date(NOW + 2 * 3600e3).toISOString(), far = new Date(NOW + 5 * 24 * 3600e3).toISOString();
+  const c = (o) => completenessOf({ now: NOW, kickoff: far, odds: "used", predictions: "used", stats: true, corners: "used", ...o });
+  assert.equal(c({}).publishOk, true);
+  assert.equal(c({ predictions: "none", kickoff: near }).publishOk, true, "pronostico non offerto dal provider vicino al fischio: non è un guasto");
+  assert.equal(c({ odds: "missing" }).publishOk, false, "senza quote non si pronostica");
+  assert.equal(c({ odds: "waiting" }).publishOk, false);
+  assert.equal(c({ odds: "none", kickoff: near }).publishOk, false, "quote non pubblicate vicino al fischio: nessun pronostico");
+  assert.equal(c({ stats: false }).publishOk, false);
+  assert.equal(c({ predictions: "error" }).publishOk, false);
+});

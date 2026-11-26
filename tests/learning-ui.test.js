@@ -14,7 +14,8 @@ const ui = (o = {}) => ({ open: true, tab: "overview", filter: "all", report, lo
 test("stati: chiusa, in caricamento, errore, nessun report generato (nessun numero mostrato)", () => {
   assert.match(learningHtml({ ...ui(), open: false }), /CONTINUOUS LEARNING/); assert.ok(!/data-cl-tab/.test(learningHtml({ ...ui(), open: false })));
   assert.match(learningHtml(ui({ report: null, loading: true })), /Carico il report/); assert.match(learningHtml(ui({ report: null, error: "risposta 500" })), /Report non disponibile: risposta 500/);
-  const stub = learningHtml(ui({ report: JSON.parse(read("public/learning/report.json")) })); assert.match(stub, /Nessun report generato/); assert.match(stub, /scripts\/learning-run\.js/); assert.ok(!/data-cl-tab/.test(stub)); assert.ok(!/\d+,\d{3}/.test(stub.replace(/<[^>]+>/g, "")), "nessun numero statistico");
+  const stub = learningHtml(ui({ report: { schema: "learning-report-v1", status: "empty", note: "Nessun report disponibile." } }));   // stub esplicito: il file public/learning/report.json è prodotto dallo script e può contenere un report reale
+  assert.equal(JSON.parse(read("public/learning/report.json")).schema, "learning-report-v1"); assert.match(stub, /Nessun report generato/); assert.match(stub, /scripts\/learning-run\.js/); assert.ok(!/data-cl-tab/.test(stub)); assert.ok(!/\d+,\d{3}/.test(stub.replace(/<[^>]+>/g, "")), "nessun numero statistico");
 });
 
 test("sei schede come richiesto e tutte renderizzabili", () => {
