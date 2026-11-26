@@ -15,7 +15,7 @@ for (let d = 0; d < 70; d += 1) for (let g = 0; g < 8; g += 1) {
 const data = normalize(rows), preds = withModel({ formShrinkK: 4 }, () => predict(data, { trainFrac: 0.3, valFrac: 0.35 }));
 
 test("pickFor con i parametri attuali coincide con la scelta del modello", () => {
-  const same = preds.filter((x) => x.a.confidence !== "insufficiente").every((x) => { const p = pickFor(x.a); return p && p.sel.key === x.a.pick.key && p.verdict === x.a.pick.verdict; });
+  const same = preds.filter((x) => x.a.confidence !== "insufficiente").every((x) => { const p = pickFor(x.a); return p && p.sel.key === x.a.betPick.key && p.verdict === x.a.betPick.verdict; });
   assert.ok(same);
 });
 test("ogni scelta finisce in un solo gruppo: BET o EVITA per motivo", () => {
