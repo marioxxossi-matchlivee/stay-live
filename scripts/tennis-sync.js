@@ -18,7 +18,7 @@ import { createClient, DIRECT_BASE, TennisApiError } from "../functions/api/_ten
 import { TOURS, normalizeUpcoming, normalizeResult, normalizeLive, normalizeRankingPage, normalizeMatchStats, normalizeTournamentFilters, readPage, readLiveFeed } from "../functions/api/_tennis-provider.js";
 import { RatingBook, predictMatch, normalizeSurface, inferBestOf, TENNIS_MODEL } from "../functions/api/_tennis-model.js";
 import { chronologicalBacktest, fitPlatt, groupSummary, MIN_RELIABLE_SAMPLE } from "../functions/api/_tennis-metrics.js";
-import { evaluateBet } from "../functions/api/_tennis-bet.js";
+import { anchorToMarket, evaluateBet } from "../functions/api/_tennis-bet.js";
 import { buildBoard } from "../functions/api/_tennis-snapshot.js";
 import { computeItfShadow } from "../functions/api/_tennis-itf-shadow.js";
 import { recordLiveObservation, insertIgnore } from "../functions/api/_tennis-observation-run.js";
@@ -169,9 +169,11 @@ export function computePredictions({ matches, book, stats, ranks, calibrator, no
     const st = (id) => { const s = stats.get(id); return s && s.serve_pts_won != null && s.return_pts_won != null ? { serve: s.serve_pts_won, ret: s.return_pts_won, matches: s.matches ?? null, servePoints: s.stats?.servePoints ?? null } : undefined; };
     const rk = (id) => ranks.get(`${m.tour}|${id}`)?.position;
     const extras = { h2h: m.h2h && m.h2h.p1Wins != null && m.h2h.p2Wins != null ? { p1Wins: m.h2h.p1Wins, p2Wins: m.h2h.p2Wins } : undefined, stats1: st(m.p1_id), stats2: st(m.p2_id), rank: rk(m.p1_id) && rk(m.p2_id) ? { p1: rk(m.p1_id), p2: rk(m.p2_id) } : undefined };
-    const pred = predictMatch(book, { t: Date.parse(m.starts_at), surface: m.surface, tour: m.tour, bestOf: m.best_of ?? inferBestOf({ tour: m.tour, tournament: m.tournament }), p1: { id: m.p1_id, name: m.p1_name }, p2: { id: m.p2_id, name: m.p2_name } }, extras, calibrator);
-    if (m.best_of == null) pred.missing = [...pred.missing, `formato dell'incontro (dedotto dal torneo: al meglio dei ${pred.bestOf} set)`];
-    const bet = evaluateBet({ status: m.status, startsAt: m.starts_at, oddsSources: m.odds_sources, oddsFetchedAt: m.odds_fetched_at }, pred, { now, category: m.category });
+    const pred0 = predictMatch(book, { t: Date.parse(m.starts_at), surface: m.surface, tour: m.tour, bestOf: m.best_of ?? inferBestOf({ tour: m.tour, tournament: m.tournament }), p1: { id: m.p1_id, name: m.p1_name }, p2: { id: m.p2_id, name: m.p2_name } }, extras, calibrator);
+    if (m.best_of == null) pred0.missing = [...pred0.missing, `formato dell'incontro (dedotto dal torneo: al meglio dei ${pred.bestOf} set)`];
+    const quoteInfo = { status: m.status, startsAt: m.starts_at, oddsSources: m.odds_sources, oddsFetchedAt: m.odds_fetched_at };
+    const pred = anchorToMarket(pred0, quoteInfo, { now });                       // pronostico ancorato al mercato; senza quote fresche nessun pronostico
+    const bet = evaluateBet(quoteInfo, pred, { now, category: m.category });
     rows.push({
       match_key: m.match_key, starts_at: m.starts_at, tour: m.tour, surface: normalizeSurface(m.surface), published: pred.published, pick: pred.published ? pred.pick : null,
       p1: pred.published ? pred.p1 : null, p2: pred.published ? pred.p2 : null, reliability: pred.published ? pred.reliability : null, reasons: pred.reasons ?? [], missing: pred.missing ?? [],
