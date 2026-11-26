@@ -61,3 +61,38 @@ export function evaluateBet(match, prediction, { now = Date.now(), cfg = TENNIS_
   out.reasons.push(`EV ${(out.ev * 100).toFixed(1).replace(".", ",")}% su quota ${po.odds.toFixed(2).replace(".", ",")} (${po.book}); affidabilità ${prediction.reliability}.`);
   return out;
 }
+
+/**
+ * Pronostico ancorato al mercato (validato sulle partite pubblicate 13–26/11/2026 con quote registrate, 1.226 partite):
+ * il consenso delle quote senza margine è molto meglio calibrato del modello (Brier 0,160 contro 0,201) e il suo favorito vince il 76,5% contro il 71,2% del pronostico del modello;
+ * tra le partite con quota del favorito > 1,30 il favorito di mercato azzecca il 62,1% (quota media 1,55) contro il 57,6% del modello sulle stesse partite.
+ * Regole: servono quote reali e fresche su entrambi i lati; la probabilità è quella di mercato; il pronostico è il favorito di mercato; si pronostica solo con quota migliore del favorito > minPickOdds.
+ * Senza quote (o con quote vecchie) la partita non viene pronosticata e rientra al giro successivo. Le astensioni del modello (storico insufficiente) restano.
+ */
+export const TENNIS_ANCHOR = { version: "mkt1", minPickOdds: 1.3, minEdge: 0.05, maxOddsAgeMs: TENNIS_BET.maxOddsAgeMs };
+
+/** Consenso di mercato senza margine: media delle probabilità senza margine di ogni fonte con entrambe le quote. */
+export function marketConsensus(sources) {
+  const list = (Array.isArray(sources) ? sources : []).map((s) => noVig(Number(s?.p1), Number(s?.p2))).filter(Boolean);
+  if (!list.length) return null;
+  const p1 = list.reduce((a, x) => a + x.p1, 0) / list.length;
+  return { p1, p2: 1 - p1, books: list.length };
+}
+
+export function anchorToMarket(prediction, match, { now = Date.now(), cfg = TENNIS_ANCHOR } = {}) {
+  if (!prediction?.published) return prediction;                      // astensione del modello: resta
+  const stop = (why) => ({ ...prediction, published: false, pick: null, p1: null, p2: null, reliability: null, abstainReason: why, anchored: false });
+  const start = Date.parse(match?.startsAt), fetched = Date.parse(match?.oddsFetchedAt);
+  if (match?.status !== "scheduled" || !(start > now)) return stop("La partita è già iniziata o conclusa.");
+  const mc = marketConsensus(match.oddsSources);
+  if (!mc) return stop("Quote non ancora disponibili: nessun pronostico (rientra al prossimo aggiornamento).");
+  if (!(now - fetched <= cfg.maxOddsAgeMs)) return stop("Quote non aggiornate: nessun pronostico (rientra al prossimo aggiornamento).");
+  const clip = (x) => Math.min(0.98, Math.max(0.02, x));
+  const p1 = Math.round(clip(mc.p1) * 1e4) / 1e4, p2 = Math.round((1 - p1) * 1e4) / 1e4, pick = p1 >= p2 ? 1 : 2, pFav = Math.max(p1, p2);
+  if (pFav - 0.5 < cfg.minEdge) return stop("Partita equilibrata sul mercato: nessun favorito netto, nessun pronostico.");
+  const po = pickOdds(match.oddsSources, pick);
+  if (!po || !(po.odds > cfg.minPickOdds)) return stop(`Quota del favorito ${po ? po.odds.toFixed(2).replace(".", ",") : "n.d."}: non superiore a ${cfg.minPickOdds.toFixed(2).replace(".", ",")}, nessun pronostico.`);
+  return { ...prediction, p1, p2, pick, anchored: true, abstainReason: null, modelVersion: `${prediction.modelVersion}+${cfg.version}`,
+    reasons: [`Probabilità dal consenso delle quote senza margine (${mc.books} ${mc.books === 1 ? "fonte" : "fonti"}); il modello dava ${Math.round((prediction.p1 ?? 0) * 100)}% a ${Math.round((prediction.p2 ?? 0) * 100)}%.`, ...(prediction.reasons ?? [])],
+    components: { ...prediction.components, anchor: { v: cfg.version, pModel1: prediction.p1, pModelPick: prediction.pick, pMarket1: p1, books: mc.books, bestOdds: po.odds } } };
+}
