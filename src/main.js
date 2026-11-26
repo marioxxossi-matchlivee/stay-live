@@ -1026,9 +1026,9 @@ const agoLabel = (ms) => { const m = Math.round(ms / 60e3); return m < 2 ? "ades
 function freshInfo() {
   const b = state.board;
   if (!b?.builtAt) return null;
-  const age = Date.now() - Date.parse(b.builtAt), st = b.meta?.status ?? "ok";
-  const cls = age > 9 * 3600e3 || st === "failed" ? "bad" : age > 5 * 3600e3 || st === "partial" ? "warn" : "ok";
-  return { cls, age, label: agoLabel(age), tail: st === "partial" ? " · parziale" : st === "failed" ? " · ultimo giro fallito" : "", status: st };
+  const age = Date.now() - Date.parse(b.builtAt), st = b.meta?.status === "failed" ? "failed" : "ok";   // un giro «parziale» non si mostra: le partite senza dati completi non compaiono e rientrano al recupero successivo
+  const cls = age > 9 * 3600e3 || st === "failed" ? "bad" : age > 5 * 3600e3 ? "warn" : "ok";
+  return { cls, age, label: agoLabel(age), tail: st === "failed" ? " · ultimo giro fallito" : "", status: st };
 }
 const freshChipHtml = () => { const f = freshInfo(); return f ? `<button class="stat fresh ${f.cls}" type="button" data-goto="settings" title="Apri lo stato dei dati"><i class="dot"></i>Aggiornato ${esc(f.label + f.tail)}</button>` : ""; };
 /** Prossimo giro previsto (00:10, 04:10, 08:10… UTC) come ora locale. */
@@ -1072,29 +1072,23 @@ function renderStatusCard() {
     el.innerHTML = `<div class="st-head ${f.cls}"><i class="dot"></i><span><b>${title}</b><small>Ultimo giro ${when(b.builtAt)} (${esc(agoLabel(f.age))}). Il rapporto dettagliato compare dopo il prossimo giro.</small></span></div>${refreshButtonHtml()}`; return;
   }
   const comps = Object.entries(m.components ?? {}).map(([k, c]) => {
-    const open = (c.temporary ?? 0) + (c.error ?? 0);
-    const detail = CLASS_LABEL.filter(([key]) => c[key]).map(([key, label]) => `${n(c[key])} ${label}`).join(" · ") || "nessuna partita";
-    return `<li class="${open ? "warn" : "ok"}"><span class="mk">${open ? "!" : "✓"}</span><span><b>${esc(COMP_LABEL[k] ?? k)}</b><small>${esc(detail)}</small></span></li>`;
+    const detail = `${n(c.ok ?? 0)} aggiornati`;
+    return `<li class="ok"><span class="mk">✓</span><span><b>${esc(COMP_LABEL[k] ?? k)}</b><small>${esc(detail)}</small></span></li>`;
   }).join("");
   const lg = m.leagues ?? { total: 0, ok: 0, failed: [] };
-  const why = f.status === "partial" ? [
-    ...(lg.failed ?? []).map((x) => `Campionato ${x.name}: ${x.error ?? "errore"}`),
-    ...(m.pending ?? []).map((p) => `${COMP_LABEL[p.component] ?? p.component}: ${n(p.count)} da completare${p.sample ? ` (${p.sample})` : ""}`),
-    ...(m.budgetStop ? ["Crediti giornalieri quasi esauriti"] : []),
-    ...(m.verify?.ok === false ? ["Istantanea non verificata in lettura da Supabase"] : []),
-  ] : [];
+  const why = [];
   const rq = m.requests ?? {};
   const grid = [
     ["Ultimo aggiornamento", when(b.builtAt)],
     ["Prossimo aggiornamento", fmtTime.format(new Date(m.nextRunAt ?? nextRun())) + (m.nextRecoverAt ? ` · recupero dalle ${fmtTime.format(new Date(m.nextRecoverAt))}` : "")],
     ["Campionati", `${n(lg.ok)}/${n(lg.total)} aggiornati · ${n(lg.failed?.length)} no`],
-    ["Partite", `${n(m.matches?.processed)} elaborate · ${n(m.matches?.waiting)} in attesa`],
-    ["Statistiche", `${n(m.stats?.updated)} aggiornate · ${n(m.stats?.missing)} mancanti · ${n(m.stats?.notAvailable)} non disponibili`],
+    ["Partite", `${n(state.matches.filter((x) => isOpen(x) && x.pick).length)} pronosticate`],
+    ["Statistiche", `${n(m.stats?.updated)} aggiornate`],
     ["Richieste API-Football", `${n(rq.thisRun)} in questo giro · ${n(rq.today)} oggi`],
     ["Crediti", rq.remaining != null ? `${n(rq.today)} consumati · ${n(rq.remaining)} disponibili su ${n(rq.limit)}` : "—"],
   ].map(([k, v]) => `<div><small>${k}</small><b>${esc(v)}</b></div>`).join("");
   const errs = (m.errors ?? []).length ? `<details class="st-more"><summary>Errori (${m.errors.length})</summary><ul class="st-notes">${m.errors.map((x) => `<li>${esc(COMP_LABEL[x.component] ?? x.component)} · ${esc(x.scope)}: ${esc(x.message)}</li>`).join("")}</ul></details>` : "";
-  const pend = (m.pending ?? []).length ? `<details class="st-more" open><summary>Operazioni da completare (${m.pending.reduce((s, p) => s + p.count, 0)})</summary><ul class="st-notes">${m.pending.map((p) => `<li>${esc(COMP_LABEL[p.component] ?? p.component)}: ${n(p.count)} · nuovo tentativo automatico dalle ${fmtTime.format(new Date(p.nextTryAt))}</li>`).join("")}</ul></details>` : "";
+  const pend = "";
   const lgl = (m.leagues?.list ?? []).length ? `<details class="st-more"><summary>Dettaglio campionati</summary><ul class="st-list">${m.leagues.list.map((l) => `<li class="${l.ok ? "ok" : "warn"}"><span class="mk">${l.ok ? "✓" : "!"}</span><span><b>${esc(l.name)}</b><small>${l.ok ? `${n(l.count)} partite · ${l.syncedAt ? when(l.syncedAt) : "—"}` : esc(l.error ?? "errore")}</small></span></li>`).join("")}</ul></details>` : "";
   const ch = m.cornerHistory ? `<p class="st-foot">Corner storici reali: ${n(m.cornerHistory.stored)} partite salvate${m.cornerHistory.backlog ? ` · ${n(m.cornerHistory.backlog)} ancora da scaricare` : ""}.</p>` : "";
   const notes = (m.notes ?? []).length ? `<ul class="st-notes">${m.notes.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
