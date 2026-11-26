@@ -41,7 +41,10 @@ export const MODEL = {
   stakeStep: 0.5,         // le puntate sono arrotondate a 0,50 €
   // CERVELLO UNICO: ogni probabilità è la fusione pesata di tre fonti, per ogni singola selezione (se una manca, i pesi si ridistribuiscono):
   //   storico = Poisson sulle ultime partite · api = pronostico di API-Football (1X2 e gol attesi stagionali) · mercato = quote di API-Football senza margine.
-  weights: { storico: 0.25, api: 0.40, mercato: 0.35 },
+  weights: { storico: 0.10, api: 0.25, mercato: 0.65 },   // backtest su 2634 partite con quote reali (1X2): il Brier migliora al crescere del peso del mercato (0,597 con 58% -> 0,589 con 87%); lo storico da solo è molto peggiore (0,629)
+  // PRONOSTICO PER OGNI PARTITA: l'esito più probabile tra 1X2 e doppia chance con quota sopra forecastMinOdds (reale, o stimata dalla quota equa se manca).
+  // Se l'esito migliore con quota sufficiente ha probabilità sotto forecastMinP, si tiene l'esito più probabile in assoluto (segnalato con lowOdds).
+  forecastMinOdds: 1.3, forecastMinP: 0.40,
   marketMargin: 0.03,     // sulla probabilità del mercato si tolgono 3 punti per la probabilità prudente
   spreadPenalty: 0.30,    // se le fonti sono in disaccordo, la probabilità prudente cala del 30% della distanza tra la più alta e la più bassa
   injPenalty: 0.008,      // ogni assente confermato (max 8) toglie 0,8 punti alla probabilità prudente: più incertezza, non una previsione sul singolo giocatore
@@ -406,6 +409,19 @@ export function verdictFor(sel, sample, odds = null) {
   return { verdict: "BET", code: "B", reason: `Probabilità prudente ${(sel.pLow * 100).toFixed(0)}%${edgeText}. Senza quota reale il valore NON è verificato: gioca solo se la quota è almeno ${sel.minOdds.toFixed(2).replace(".", ",")}.` };
 }
 
+/** Quota di riferimento di una selezione: quella reale di mercato; se manca, la quota equa ridotta del margine medio del bookmaker (mai presentata come reale). */
+export const refOdds = (s) => (s.odds?.median > 1 ? s.odds.median : s.p > 0 ? 1 / s.p / (1 + MODEL.bookMargin) : 0);
+
+/** Pronostico di una partita: esito più probabile con quota di riferimento > forecastMinOdds. Esiste sempre (se ci sono selezioni): non è un verdetto BET/EVITA. */
+export function forecastPick(selections) {
+  const list = selections.filter((s) => Number.isFinite(s.p));
+  if (!list.length) return null;
+  const byP = [...list].sort((a, b) => b.p - a.p || b.pLow - a.pLow);
+  const ok = byP.find((s) => refOdds(s) > MODEL.forecastMinOdds);
+  if (ok && ok.p >= MODEL.forecastMinP) return { ...ok, forecast: true, lowOdds: false };
+  return { ...byP[0], forecast: true, lowOdds: refOdds(byP[0]) <= MODEL.forecastMinOdds };
+}
+
 /** Ordine di interesse di due selezioni (BET prima, poi vantaggio dimostrato su quota reale, conferma del provider, vantaggio sulla media, probabilità prudente). Lo usa il consiglio principale e la sintesi per mercato. */
 export const interestOrder = (x, y) => (y.verdict === "BET") - (x.verdict === "BET")
   || (y.verified) - (x.verified)                                   // prima il vantaggio dimostrato su quota reale...
@@ -486,7 +502,9 @@ export function analyzeMatch(match, ctx, { n = 8, af = null, market = null, inj 
   // Con quota reale decide il valore atteso (nessun filtro sulla probabilità); senza quota resta il filtro "quota equa >= 1,25".
   const ranked = selections.filter((s) => s.odds || s.p <= MODEL.maxUsefulProb)
     .sort(interestOrder);
-  const pick = ranked[0] ?? null;
+  const forecast = forecastPick(selections);
+  const betPick = ranked[0] ?? null;                                // scelta storica per valore (BET/EVITA): resta per i backtest di affidabilità
+  const pick = forecast ?? betPick;
   const scores = [];
   m.forEach((row, i) => row.forEach((v, j) => scores.push({ score: `${i}-${j}`, p: round(v) })));
   scores.sort((a, b) => b.p - a.p);
@@ -501,7 +519,7 @@ export function analyzeMatch(match, ctx, { n = 8, af = null, market = null, inj 
       neutral, home, away, delta: round(delta, 3), sd: { home: round(sdH, 3), away: round(sdA, 3) }, pLowMethod: MODEL.pLowMethod, rho: MODEL.rho,
     },
     lambda: { home: round(lh, 3), away: round(la, 3), total: round(lh + la, 3) },
-    selections, legs, pick, alternatives: ranked.slice(1, 4), topScores: scores.slice(0, 3),
+    selections, legs, pick, betPick, alternatives: ranked.filter((x) => x.key !== pick?.key).slice(0, 3), topScores: scores.slice(0, 3),
     recommended: ranked.filter((s) => s.verdict === "BET").slice(0, 3).map((s) => s.key),      // solo ciò che si consiglia di giocare (max 3), in ordine
   };
 }
@@ -510,7 +528,7 @@ export function analyzeMatch(match, ctx, { n = 8, af = null, market = null, inj 
 export function compactPick(analysis) {
   const s = analysis.pick;
   if (!s) return null;
-  return { key: s.key, label: s.label, market: s.market, preferred: isPreferred(s), p: s.p, pLow: s.pLow, minOdds: s.minOdds, estOdds: estimateOdds(s.p), verdict: s.verdict,
+  return { key: s.key, label: s.label, market: s.market, preferred: isPreferred(s), p: s.p, pLow: s.pLow, minOdds: s.minOdds, estOdds: estimateOdds(s.p), verdict: s.verdict, forecast: s.forecast ?? false, lowOdds: s.lowOdds ?? false,
     edge: s.edge, agreeBy: s.agreeBy ?? null, pWorst: s.pWorst ?? null,
     reason: s.reason, confidence: analysis.confidence, sample: analysis.sample, expectedGoals: analysis.lambda.total,
     basis: analysis.basis, pApi: s.pApi, pModel: s.pModel, pMarket: s.pMarket, agree: s.agree,
