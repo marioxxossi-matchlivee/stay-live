@@ -27,7 +27,7 @@ test("pesi: sommano sempre a 1 e si ridistribuiscono sulle fonti disponibili", (
     assert.equal(w.api > 0, a); assert.equal(w.mercato > 0, m);
   }
   const all = fusionWeights(true, true);
-  assert.ok(all.mercato > all.api && all.api > all.storico, "il mercato pesa di più (validato su quote reali), poi API-Football, poi le ultime partite");
+  assert.ok(all.mercato > all.storico && all.storico > all.api && all.api > 0, "il mercato pesa di più (validato su quote reali), poi le ultime partite; le percentuali 1X2 di API-Football solo in misura minima");
 });
 
 test("fuse: media pesata, distanza tra le fonti e penalità sulla probabilità prudente", () => {
@@ -154,4 +154,13 @@ test("forecastPick: esito più probabile con quota > 1,3; esiste sempre; segnala
   const c = forecastPick([mk("home", 0.50), mk("draw", 0.25), mk("away", 0.25), mk("dc1x", 0.75), mk("dcx2", 0.50), mk("dc12", 0.75)]);
   assert.ok(c.p <= 1 / MODEL.forecastMinOdds / (1 + MODEL.bookMargin) + 1e-9);
   assert.equal(forecastPick([]), null);
+});
+
+test("calibrateStorico: neutra senza parametri adattati; con parametri normalizza 1X2 e restituisce probabilità valide", async () => {
+  const { calibrateStorico, scoreMatrix, marketsFromMatrix } = await import("../functions/api/model.js");
+  const p = marketsFromMatrix(scoreMatrix(1.6, 1.1));
+  assert.deepEqual(calibrateStorico(p, 1.6, 1.1, { fittedOn: null, platt: {} }), p);
+  const cal = calibrateStorico(p, 1.6, 1.1, { fittedOn: { n: 1 }, rho: -0.03, platt: { home: { a: 1.2, b: 0.1 }, draw: { a: 1, b: 0 }, away: { a: 1.2, b: -0.1 }, dc1x: { a: 1.2, b: 0 }, dcx2: { a: 1, b: 0 }, dc12: { a: 1, b: 0 } } });
+  assert.ok(Math.abs(cal.home + cal.draw + cal.away - 1) < 1e-9);
+  for (const k of ["home", "draw", "away", "dc1x", "dcx2", "dc12"]) assert.ok(cal[k] > 0 && cal[k] < 1);
 });
