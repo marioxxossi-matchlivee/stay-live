@@ -217,7 +217,7 @@ test("look-ahead: una cronologia con una partita conclusa a data futura NON è a
 test("fotografia numerica: statistiche di servizio/risposta, partite, ranking, H2H, Elo, forma; null se assenti; ricostruzione identica a predictMatch", () => {
   const hist = [], players = ["1a", "1b"];
   for (let i = 0; i < 40; i++) hist.push({ t: NOW - (60 - i) * 864e5, winnerId: players[i % 3 === 0 ? 1 : 0], loserId: players[i % 3 === 0 ? 0 : 1], surface: "Clay", tour: "atp" });
-  const b = buildBook(hist), m = mkMatch(1, { h2h: { p1Wins: 3, p2Wins: 1 }, best_of: 3, surface: "clay" });
+  const b = buildBook(hist), m = mkMatch(1, { h2h: { p1Wins: 3, p2Wins: 1 }, best_of: 3, surface: "clay", odds_sources: [{ book: "pinnacle", p1: 1.5, p2: 2.6 }], odds_fetched_at: ISO(NOW - H) });
   const stats = new Map([["1a", { serve_pts_won: 0.64, return_pts_won: 0.4, matches: 22, stats: { servePoints: 1450 }, surface: "clay", tour: "atp", fetched_at: "2026-11-20T00:00:00Z" }]]), ranks = new Map([["atp|1a", { position: 25 }], ["atp|1b", { position: 140 }]]);
   const [row] = computePredictions({ matches: [m], book: b, stats, ranks, calibrator: null, now: NOW });
   const inp = modelInputs({ match: m, row, book: b, stats, ranks });
@@ -229,7 +229,9 @@ test("fotografia numerica: statistiche di servizio/risposta, partite, ranking, H
   // ricostruzione: dai SOLI dati salvati si riottiene la stessa previsione del motore
   const extras = { h2h: inp.h2h ?? undefined, stats1: inp.stats.p1 ?? undefined, stats2: inp.stats.p2 ?? undefined, rank: inp.rank.used ? { p1: inp.rank.p1, p2: inp.rank.p2 } : undefined };
   const again = predictMatch(b, { t: Date.parse(m.starts_at), surface: m.surface, tour: m.tour, bestOf: m.best_of, p1: { id: m.p1_id, name: m.p1_name }, p2: { id: m.p2_id, name: m.p2_name } }, extras, null);
-  assert.equal(again.p1, row.p1); assert.deepEqual(again.components, row.components);
+  assert.equal(row.components.anchor?.v, "mkt1", "con quote fresche il pronostico è ancorato al mercato");
+  assert.equal(again.p1, row.components.anchor.pModel1, "il modello ricostruito dai dati salvati coincide con quello prima dell'ancoraggio");
+  const { anchor, ...rowComponents } = row.components; assert.deepEqual(again.components, rowComponents);
   // nessun dato: tutto null
   const bare = modelInputs({ match: mkMatch(9), row: mkRow(mkMatch(9)), book: new RatingBook(), stats: new Map(), ranks: new Map() });
   assert.equal(bare.h2h, null); assert.deepEqual(bare.rank, { p1: null, p2: null, used: false }); assert.deepEqual(bare.stats, { p1: null, p2: null }); assert.equal(bare.p1.form, null);
