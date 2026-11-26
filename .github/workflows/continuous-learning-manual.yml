@@ -1,9 +1,11 @@
 name: CONTINUOUS LEARNING — Generazione report reale
 
-# Esecuzione esclusivamente manuale.
+# Esecuzione manuale oppure ogni lunedì alle 06:00 UTC (controllo periodico, solo lettura).
 # Lo script legge Supabase tramite GET e genera un file locale.
 # Nessuna scrittura su Supabase, nessun commit, push o deploy.
 on:
+  schedule:
+    - cron: "0 6 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -69,6 +71,14 @@ jobs:
             console.log("Generato:", r.generatedAt);
             console.log("Previsioni analizzate:", JSON.stringify(r.overview?.predictionsAnalyzed ?? {}));
           '
+
+      - name: Conserva il report come artifact (30 giorni)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: learning-report
+          path: public/learning/report.json
+          retention-days: 30
 
       - name: Riepilogo
         if: success()
