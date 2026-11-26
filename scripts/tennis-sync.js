@@ -170,7 +170,7 @@ export function computePredictions({ matches, book, stats, ranks, calibrator, no
     const rk = (id) => ranks.get(`${m.tour}|${id}`)?.position;
     const extras = { h2h: m.h2h && m.h2h.p1Wins != null && m.h2h.p2Wins != null ? { p1Wins: m.h2h.p1Wins, p2Wins: m.h2h.p2Wins } : undefined, stats1: st(m.p1_id), stats2: st(m.p2_id), rank: rk(m.p1_id) && rk(m.p2_id) ? { p1: rk(m.p1_id), p2: rk(m.p2_id) } : undefined };
     const pred0 = predictMatch(book, { t: Date.parse(m.starts_at), surface: m.surface, tour: m.tour, bestOf: m.best_of ?? inferBestOf({ tour: m.tour, tournament: m.tournament }), p1: { id: m.p1_id, name: m.p1_name }, p2: { id: m.p2_id, name: m.p2_name } }, extras, calibrator);
-    if (m.best_of == null) pred0.missing = [...pred0.missing, `formato dell'incontro (dedotto dal torneo: al meglio dei ${pred.bestOf} set)`];
+    if (m.best_of == null) pred0.missing = [...pred0.missing, `formato dell'incontro (dedotto dal torneo: al meglio dei ${pred0.bestOf} set)`];
     const quoteInfo = { status: m.status, startsAt: m.starts_at, oddsSources: m.odds_sources, oddsFetchedAt: m.odds_fetched_at };
     const pred = anchorToMarket(pred0, quoteInfo, { now });                       // pronostico ancorato al mercato; senza quote fresche nessun pronostico
     const bet = evaluateBet(quoteInfo, pred, { now, category: m.category });
