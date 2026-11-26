@@ -10,7 +10,7 @@ import { sportMenuHtml } from "../sportmenu.js";
 import { enableSheet, closeSheet } from "../sheet.js";
 import { showToast } from "../toast.js";
 import { accordionHtml } from "../playlist.js";
-import { DEFAULT_FILTERS, SURFACE_LABEL, CATEGORY_LABEL, GENDER_LABEL, facets, filterMatches, groupByTournament, sanitizeFilters, sanitizeMatches } from "./board.js";
+import { DEFAULT_FILTERS, SURFACE_LABEL, CATEGORY_LABEL, GENDER_LABEL, facets, filterMatches, groupByTournament, sanitizeFilters, sanitizeMatches, hasCompleteData } from "./board.js";
 import { detailHtml, emptyHtml, rowHtml, canSave } from "./view.js";
 import { tennisMonitorHtml } from "./monitor.js";
 import { PL_FILTERS, listHtml as playsListHtml, playsViewHtml, settingsHtml } from "./playsview.js";
@@ -217,7 +217,7 @@ export function mountTennis(root) {
   /* ---------- Dati ---------- */
   function apply(data, { cached = false } = {}) {
     const payload = data?.payload ?? {};
-    state.matches = sanitizeMatches(payload.matches);
+    state.matches = sanitizeMatches(payload.matches).filter(hasCompleteData);
     state.history = payload.history ?? null;
     state.diagnostics = payload.diagnostics ?? null;
     state.builtAt = data?.built_at ?? payload.updatedAt ?? null;

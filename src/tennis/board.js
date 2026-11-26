@@ -33,6 +33,9 @@ export function facets(matches) {
   return { tournaments, surfaces, days, tours, categories };
 }
 
+/** Una partita non ancora iniziata si mostra solo se ha un pronostico con tutti i dati (quote reali incluse); live e concluse restano sempre visibili. */
+export const hasCompleteData = (m) => m.status !== "scheduled" || m.prediction?.published === true;
+
 export function filterMatches(matches, f = DEFAULT_FILTERS) {
   const q = fold(f.q).trim();
   return matches.filter((m) =>
