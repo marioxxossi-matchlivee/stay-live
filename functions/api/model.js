@@ -1,3 +1,4 @@
+import { NM_PARAMS } from "./_newmodel-params.js";
 /**
  * Modello statistico Stay Live (gol; i corner hanno il loro modello in _cornerstats.js). Dati storici: solo API-Football.
  * Poisson indipendente con forza attacco/difesa pesata sulle ultime partite.
@@ -41,7 +42,7 @@ export const MODEL = {
   stakeStep: 0.5,         // le puntate sono arrotondate a 0,50 €
   // CERVELLO UNICO: ogni probabilità è la fusione pesata di tre fonti, per ogni singola selezione (se una manca, i pesi si ridistribuiscono):
   //   storico = Poisson sulle ultime partite · api = pronostico di API-Football (1X2 e gol attesi stagionali) · mercato = quote di API-Football senza margine.
-  weights: { storico: 0.10, api: 0.25, mercato: 0.65 },   // backtest su 2634 partite con quote reali (1X2): il Brier migliora al crescere del peso del mercato (0,597 con 58% -> 0,589 con 87%); lo storico da solo è molto peggiore (0,629)
+  weights: { storico: 0.10, api: 0.05, mercato: 0.85 },   // validato su quote reali: il Brier 1X2 migliora al crescere del peso del mercato (football-data, 2634 partite: 0,597 con 58% -> 0,5895 con 87%) e sulle 958 partite con tutte e tre le fonti registrate (prediction_leg_results, 7-26/11/2026) la combinazione migliore è il solo mercato (0,5716); le percentuali 1X2 di API-Football peggiorano la stima (pareggio dato in media al 44,5% contro 21% reale): peso minimo
   // PRONOSTICO PER OGNI PARTITA: l'esito più probabile tra 1X2 e doppia chance con quota sopra forecastMinOdds (reale, o stimata dalla quota equa se manca).
   // Se l'esito migliore con quota sufficiente ha probabilità sotto forecastMinP, si tiene l'esito più probabile in assoluto (segnalato con lowOdds).
   forecastMinOdds: 1.3, forecastMinP: 0.40,
@@ -120,6 +121,21 @@ export function poissonPmf(lambda, max = MODEL.maxGoals) {
 }
 
 /** Matrice P(casa=i, trasferta=j), normalizzata a 1 (la coda oltre 10 gol è trascurabile). */
+/**
+ * Calibrazione NEW (Dixon-Coles + Platt per mercato, parametri adattati dal backtest walk-forward `scripts/backtest-new-model.js`) sul pronostico storico di 1X2 e doppia chance.
+ * Fuori campione migliora un po' Brier (0,0028) e log loss (0,0038) del solo storico; col mercato disponibile il suo peso nella fusione resta piccolo. Senza parametri adattati (fittedOn nullo) non fa nulla.
+ */
+const NM_CAL_KEYS = ["home", "draw", "away", "dc1x", "dcx2", "dc12"];
+const nmClip = (x) => Math.min(1 - 1e-9, Math.max(1e-9, x));
+export function calibrateStorico(p, lh, la, params = NM_PARAMS) {
+  if (!params?.fittedOn || !params.platt) return p;
+  const raw = marketsFromMatrix(scoreMatrix(lh, la, params.rho ?? 0)), out = { ...p };
+  for (const k of NM_CAL_KEYS) { const c = params.platt[k]; out[k] = c?.a != null ? 1 / (1 + Math.exp(-(c.a * Math.log(nmClip(raw[k]) / (1 - nmClip(raw[k]))) + c.b))) : raw[k]; }
+  const t = out.home + out.draw + out.away;
+  for (const k of ["home", "draw", "away"]) out[k] /= t;
+  return out;
+}
+
 export function scoreMatrix(lh, la, rho = MODEL.rho) {
   const ph = poissonPmf(lh);
   const pa = poissonPmf(la);
@@ -443,7 +459,7 @@ export function analyzeMatch(match, ctx, { n = 8, af = null, market = null, inj 
   const lh = clamp(muH * home.attack * away.defense, MODEL.lambdaMin, MODEL.lambdaMax);
   const la = clamp(muA * away.attack * home.defense, MODEL.lambdaMin, MODEL.lambdaMax);
   const m = scoreMatrix(lh, la);
-  const p = marketsFromMatrix(m);
+  const p = calibrateStorico(marketsFromMatrix(m), lh, la);
   const recent = Math.min(home.n, away.n);
   const afP = afProbabilities(af, base);
   const mkP = marketProbabilities(market);
@@ -455,6 +471,7 @@ export function analyzeMatch(match, ctx, { n = 8, af = null, market = null, inj 
   const legacy = MODEL.pLowMethod === "legacy";
   const delta = legacy ? MODEL.uncertainty / Math.sqrt(Math.max(recent, 1)) : (sdH + sdA) / 2;
   const low = legacy ? stressedProbabilities(lh, la, delta) : posteriorLowProbabilities(lh, la, sdH, sdA);
+  for (const k of NM_CAL_KEYS) if (low[k] > p[k]) low[k] = p[k];                // la probabilità prudente non supera mai quella calibrata
   const base_ = ctx.baseRates(match.league);
   const weights = fusionWeights(Boolean(afP), Boolean(mkP));
   const absent = inj ? (inj.home ?? 0) + (inj.away ?? 0) : 0;
