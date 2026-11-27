@@ -69,7 +69,14 @@ export function evaluateBet(match, prediction, { now = Date.now(), cfg = TENNIS_
  * Regole: servono quote reali e fresche su entrambi i lati; la probabilità è quella di mercato; il pronostico è il favorito di mercato; si pronostica solo con quota migliore del favorito > minPickOdds.
  * Senza quote (o con quote vecchie) la partita non viene pronosticata e rientra al giro successivo. Le astensioni del modello (storico insufficiente) restano.
  */
-export const TENNIS_ANCHOR = { version: "mkt1", minPickOdds: 1.3, minEdge: 0.05, maxOddsAgeMs: TENNIS_BET.maxOddsAgeMs };
+export const TENNIS_ANCHOR = {
+  version: "mkt1", minPickOdds: 1.3, maxOddsAgeMs: TENNIS_BET.maxOddsAgeMs,
+  // Soglia del favorito (probabilità di mercato senza margine): 0,60. Sulle partite 13–26/11 con quota del favorito > 1,30: da 0,55 → 65,1% azzeccati (496 partite); da 0,60 → 69,2% (347); da 0,65 → 75,0% (204).
+  // Tra 50% e 60% il favorito vince il 54%: è il punto in cui escono più pronostici sbagliati.
+  minFavorite: 0.60,
+  // Il mercato sottostima i favoriti netti (70–80%: dato 75,1%, reale 81,9% su 321 partite; 80–90%: 84,7% contro 90,9%): si applica metà dell'effetto osservato, con rampa da 62% a 70%.
+  favoriteLift: { max: 0.03, from: 0.62, to: 0.70 },
+};
 
 /** Consenso di mercato senza margine: media delle probabilità senza margine di ogni fonte con entrambe le quote. */
 export function marketConsensus(sources) {
@@ -88,11 +95,13 @@ export function anchorToMarket(prediction, match, { now = Date.now(), cfg = TENN
   if (!mc) return stop("Quote non ancora disponibili: nessun pronostico (rientra al prossimo aggiornamento).");
   if (!(now - fetched <= cfg.maxOddsAgeMs)) return stop("Quote non aggiornate: nessun pronostico (rientra al prossimo aggiornamento).");
   const clip = (x) => Math.min(0.98, Math.max(0.02, x));
-  const p1 = Math.round(clip(mc.p1) * 1e4) / 1e4, p2 = Math.round((1 - p1) * 1e4) / 1e4, pick = p1 >= p2 ? 1 : 2, pFav = Math.max(p1, p2);
-  if (pFav - 0.5 < cfg.minEdge) return stop("Partita equilibrata sul mercato: nessun favorito netto, nessun pronostico.");
+  const pick = mc.p1 >= 0.5 ? 1 : 2, pFairFav = clip(Math.max(mc.p1, 1 - mc.p1));
+  if (pFairFav < cfg.minFavorite) return stop("Nessun favorito netto sul mercato (sotto il 60%): nessun pronostico.");
+  const lf = cfg.favoriteLift, lift = lf.max * Math.min(1, Math.max(0, (pFairFav - lf.from) / (lf.to - lf.from)));
+  const pFav = Math.min(0.985, pFairFav + lift), p1 = Math.round((pick === 1 ? pFav : 1 - pFav) * 1e4) / 1e4, p2 = Math.round((1 - p1) * 1e4) / 1e4;
   const po = pickOdds(match.oddsSources, pick);
   if (!po || !(po.odds > cfg.minPickOdds)) return stop(`Quota del favorito ${po ? po.odds.toFixed(2).replace(".", ",") : "n.d."}: non superiore a ${cfg.minPickOdds.toFixed(2).replace(".", ",")}, nessun pronostico.`);
   return { ...prediction, p1, p2, pick, anchored: true, abstainReason: null, modelVersion: `${prediction.modelVersion}+${cfg.version}`,
     reasons: [`Probabilità dal consenso delle quote senza margine (${mc.books} ${mc.books === 1 ? "fonte" : "fonti"}); il modello dava ${Math.round((prediction.p1 ?? 0) * 100)}% a ${Math.round((prediction.p2 ?? 0) * 100)}%.`, ...(prediction.reasons ?? [])],
-    components: { ...prediction.components, anchor: { v: cfg.version, pModel1: prediction.p1, pModelPick: prediction.pick, pMarket1: p1, books: mc.books, bestOdds: po.odds } } };
+    components: { ...prediction.components, anchor: { v: cfg.version, pModel1: prediction.p1, pModelPick: prediction.pick, pMarket1: Math.round(mc.p1 * 1e4) / 1e4, books: mc.books, bestOdds: po.odds } } };
 }
