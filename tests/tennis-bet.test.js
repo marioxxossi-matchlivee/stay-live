@@ -46,3 +46,21 @@ test("il pronostico sul giocatore 2 usa la quota del giocatore 2", () => {
   assert.equal(v.odds, 3.2); assert.ok(Math.abs(v.ev - (0.6 * 3.2 - 1)) < 1e-4);
 });
 test("configurazione dichiarata", () => { assert.ok(TENNIS_BET.minOdds >= 1.5 && TENNIS_BET.minEv > 0); });
+
+test("anchorToMarket: probabilità dal consenso di mercato, favorito di mercato, quota del favorito > 1,30, nessun pronostico senza quote fresche", async () => {
+  const { anchorToMarket } = await import("../functions/api/_tennis-bet.js");
+  const now = Date.parse("2026-11-26T10:00:00Z"), fresh = new Date(now - 3600e3).toISOString();
+  const pred = { published: true, pick: 2, p1: 0.45, p2: 0.55, reliability: "media", reasons: [], components: {}, modelVersion: "tennis-v2" };
+  const m = (oddsSources, oddsFetchedAt = fresh) => ({ status: "scheduled", startsAt: "2026-11-26T14:00:00Z", oddsSources, oddsFetchedAt });
+  const a = anchorToMarket(pred, m([{ book: "A", p1: 1.55, p2: 2.55 }]), { now });
+  assert.equal(a.published, true); assert.equal(a.pick, 1, "il pronostico diventa il favorito di mercato");
+  assert.ok(Math.abs(a.p1 + a.p2 - 1) < 1e-3 && a.p1 > 0.6); assert.match(a.modelVersion, /\+mkt1$/);
+  assert.equal(anchorToMarket(pred, m([{ book: "A", p1: 1.2, p2: 4.5 }]), { now }).published, false, "favorito con quota fino a 1,30: nessun pronostico");
+  assert.equal(anchorToMarket(pred, m([]), { now }).published, false, "senza quote nessun pronostico");
+  assert.equal(anchorToMarket(pred, m([{ book: "A", p1: 1.55, p2: 2.55 }], new Date(now - 5 * 3600e3).toISOString()), { now }).published, false, "quote vecchie");
+  assert.equal(anchorToMarket(pred, m([{ book: "A", p1: 1.92, p2: 1.95 }]), { now }).published, false, "partita equilibrata");
+  assert.equal(anchorToMarket(pred, m([{ book: "A", p1: 1.72, p2: 2.2 }]), { now }).published, false, "favorito sotto il 60%: nessun pronostico");
+  const hi = anchorToMarket(pred, m([{ book: "A", p1: 1.38, p2: 3.2 }]), { now }); // favorito di mercato ~69%: correzione prudente verso l'alto
+  assert.equal(hi.published, true); assert.ok(hi.p1 > 0.70 && hi.p1 < 0.75, `p1=${hi.p1}`);
+  assert.equal(anchorToMarket({ ...pred, published: false, pick: null }, m([{ book: "A", p1: 1.55, p2: 2.55 }]), { now }).published, false, "l'astensione del modello resta");
+});
