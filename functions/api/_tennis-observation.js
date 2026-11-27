@@ -74,6 +74,10 @@ export function modelInputs({ match, row, book, stats, ranks }) {
     rank: { p1: r1, p2: r2, used: !!(r1 && r2) },
     stats: { p1: st(match.p1_id), p2: st(match.p2_id) }, statsSource: { p1: stRow(match.p1_id), p2: stRow(match.p2_id) },
     oddsAvailable: Array.isArray(match.odds_sources) && match.odds_sources.length > 0,
+    // Quote di entrambi i lati al momento della valutazione: permettono il confronto prospettico modello/mercato (non si leggono mai dal modello).
+    odds: Array.isArray(match.odds_sources) && match.odds_sources.length
+      ? { fetchedAt: match.odds_fetched_at ?? null, sources: match.odds_sources.slice(0, 12).map((o) => ({ book: o?.book ?? null, p1: Number(o?.p1) || null, p2: Number(o?.p2) || null })) }
+      : null,
   };
 }
 
