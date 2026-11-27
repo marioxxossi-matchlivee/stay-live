@@ -62,5 +62,6 @@ test("anchorToMarket: probabilità dal consenso di mercato, favorito di mercato,
   assert.equal(anchorToMarket(pred, m([{ book: "A", p1: 1.72, p2: 2.2 }]), { now }).published, false, "favorito sotto il 60%: nessun pronostico");
   const hi = anchorToMarket(pred, m([{ book: "A", p1: 1.38, p2: 3.2 }]), { now }); // favorito di mercato ~69%: correzione prudente verso l'alto
   assert.equal(hi.published, true); assert.ok(hi.p1 > 0.70 && hi.p1 < 0.75, `p1=${hi.p1}`);
-  assert.equal(anchorToMarket({ ...pred, published: false, pick: null }, m([{ book: "A", p1: 1.55, p2: 2.55 }]), { now }).published, false, "l'astensione del modello resta");
+  const ab = anchorToMarket({ modelVersion: "tennis-v2", published: false, pick: null, p1: null, p2: null, reliability: null, abstainReason: "Storico insufficiente per X (servono almeno 8 partite)." }, m([{ book: "A", p1: 1.55, p2: 2.55 }]), { now });
+  assert.equal(ab.published, true, "l'astensione del modello non blocca il pronostico di mercato"); assert.equal(ab.pick, 1); assert.equal(ab.components.anchor.modelAbstained, true); assert.ok(ab.reliability);
 });
