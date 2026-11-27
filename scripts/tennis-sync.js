@@ -247,9 +247,10 @@ export async function buildAndStoreSnapshot(db, now, meta = {}) {
     ctx.sync.set(meta.job, { ...row, last_ok: iso(now), last_started: row.last_started ?? iso(now), meta: { ...(row.meta ?? {}), ...(meta.jobMeta ?? {}), quota: meta.api.stats.quota, requests: meta.api.stats.requests } });
   }
   const payload = buildBoard(ctx);
-  // Strategy Center: registrazione (solo nel giro «refresh», che rilegge le quote) e storico. Se le tabelle non esistono ancora
+  // Strategy Center: storico (e, se attiva, registrazione nel giro «refresh», che rilegge le quote). Se le tabelle non esistono ancora
   // (migrazione non eseguita) o Supabase risponde con un errore, il giro continua: pronostici e snapshot non ne risentono.
-  if (meta.job === "refresh") {
+  // Registrazione delle vecchie selezioni di valore (v1) FERMATA: il modello non ha vantaggio sul mercato (107 selezioni concluse, ROI −32%). Si riattiva solo con TENNIS_STRATEGY_RECORDING=on.
+  if (meta.job === "refresh" && process.env.TENNIS_STRATEGY_RECORDING === "on") {
     try { await recordStrategy(db, payload, now, meta.jobMeta ?? (meta.jobMeta = {})); }
     catch (e) { (meta.jobMeta ??= {}).strategyError = String(e?.message ?? e).slice(0, 200); }
   }
