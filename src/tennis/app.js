@@ -13,6 +13,7 @@ import { accordionHtml } from "../playlist.js";
 import { DEFAULT_FILTERS, SURFACE_LABEL, CATEGORY_LABEL, GENDER_LABEL, facets, filterMatches, groupByTournament, sanitizeFilters, sanitizeMatches, hasCompleteData } from "./board.js";
 import { detailHtml, emptyHtml, rowHtml, canSave } from "./view.js";
 import { tennisMonitorHtml } from "./monitor.js";
+import { valueCardHtml } from "./value.js";
 import { PL_FILTERS, listHtml as playsListHtml, playsViewHtml, settingsHtml } from "./playsview.js";
 import { buildDashboard, sanitizeTab, DEFAULT_STRATEGY } from "./strategy.js";
 import { strategyHtml } from "./strategyview.js";
@@ -167,7 +168,7 @@ export function mountTennis(root) {
   function renderStrategy() {
     const pane = $("#tn-pane-strategy"), y = window.scrollY;
     const dash = state.lo.data ? buildDashboard(state.lo.data, Date.now()) : null;
-    pane.innerHTML = strategyHtml(dash, { tab: sanitizeTab(state.sTab) }, { loading: state.lo.loading, error: state.lo.error });
+    pane.innerHTML = strategyHtml(dash, { tab: sanitizeTab(state.sTab) }, { loading: state.lo.loading, error: state.lo.error }, valueCardHtml(state.matches));
     window.scrollTo({ top: y });
   }
   function renderPlays() { $("#tn-pane-plays").innerHTML = playsViewHtml(evaluated(), { filter: state.playFilter, open: state.open, history: state.history }); }

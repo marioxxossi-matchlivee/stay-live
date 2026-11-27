@@ -117,12 +117,12 @@ export function integrityHtml(d) {
       <p class="sd-meta">${esc(i.rescheduled)} cambi di orario registrati dopo la prima valutazione.</p></section>`;
 }
 
-export function strategyHtml(dash, ui, { loading = false, error = null } = {}) {
+export function strategyHtml(dash, ui, { loading = false, error = null } = {}, extra = "") {
   const intro = `<section class="intro"><p class="eyebrow">${icon("target")}Tennis · Analisi del modello</p><h1>Strategia</h1><p class="summary">Come si comporta il modello sulle partite osservate prima dell'inizio. Analisi statistica e controllo dei dati: nessuna indicazione di gioco.</p></section>`;
-  if (error && !dash) return `${intro}<section class="sd-card"><h3>Impossibile leggere i dati</h3><p class="sd-p">${esc(error)}</p></section>`;
-  if (!dash) return `${intro}<section class="sd-card"><p class="sd-p">${loading ? "Carico i dati…" : "Dati non ancora caricati."}</p></section>`;
-  if (!dash.available) return `${intro}<section class="sd-card"><header><h3>Registro non attivo</h3>${chip("unavailable")}</header><p class="sd-p">${esc(dash.reason)}</p></section>`;
+  if (error && !dash) return `${intro}${extra}<section class="sd-card"><h3>Impossibile leggere i dati</h3><p class="sd-p">${esc(error)}</p></section>`;
+  if (!dash) return `${intro}${extra}<section class="sd-card"><p class="sd-p">${loading ? "Carico i dati…" : "Dati non ancora caricati."}</p></section>`;
+  if (!dash.available) return `${intro}${extra}<section class="sd-card"><header><h3>Registro non attivo</h3>${chip("unavailable")}</header><p class="sd-p">${esc(dash.reason)}</p></section>`;
   const body = { overview: overviewHtml, tours: toursHtml, surfaces: surfacesHtml, calibration: calibrationHtml, integrity: integrityHtml }[ui.tab] ?? overviewHtml;
   const more = dash.complete ? "" : `<div class="sd-more"><p class="sd-meta">${loading ? "Carico lo storico…" : `Caricate ${esc(dash.loaded)} di ${esc(dash.total)} osservazioni: i numeri sono parziali.`}</p>${loading ? "" : `<button type="button" data-lo-all>Carica tutto lo storico</button>`}</div>`;
-  return `${intro}${tabsHtml(ui.tab)}${more}${body(dash)}<p class="foot">Stime statistiche sperimentali, non garanzie né consigli finanziari. Nessuna giocata viene piazzata da Stay Live.</p>`;
+  return `${intro}${extra}${tabsHtml(ui.tab)}${more}${body(dash)}<p class="foot">Stime statistiche sperimentali, non garanzie né consigli finanziari. Nessuna giocata viene piazzata da Stay Live.</p>`;
 }
