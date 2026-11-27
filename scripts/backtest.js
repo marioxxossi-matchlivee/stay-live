@@ -41,7 +41,7 @@ export function withModel(overrides, fn) {
 }
 
 /** Previsioni walk-forward: per ogni partita di validazione/test usa solo partite con calcio d'inizio precedente al GIORNO della partita. */
-export function predict(rows, { n = 8, trainFrac = 0.6, valFrac = 0.2 } = {}) {
+export function predict(rows, { n = MODEL.recentN, trainFrac = 0.6, valFrac = 0.2 } = {}) {
   const i1 = Math.floor(rows.length * trainFrac), i2 = Math.floor(rows.length * (trainFrac + valFrac));
   const out = [];
   let day = null, ctx = null, hist = 0;
