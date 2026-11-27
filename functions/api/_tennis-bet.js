@@ -84,7 +84,9 @@ export function evaluateBet(match, prediction, { now = Date.now(), cfg = TENNIS_
  * il consenso delle quote senza margine è molto meglio calibrato del modello (Brier 0,160 contro 0,201) e il suo favorito vince il 76,5% contro il 71,2% del pronostico del modello;
  * tra le partite con quota del favorito > 1,30 il favorito di mercato azzecca il 62,1% (quota media 1,55) contro il 57,6% del modello sulle stesse partite.
  * Regole: servono quote reali e fresche su entrambi i lati; la probabilità è quella di mercato; il pronostico è il favorito di mercato; si pronostica solo con quota migliore del favorito > minPickOdds.
- * Senza quote (o con quote vecchie) la partita non viene pronosticata e rientra al giro successivo. Le astensioni del modello (storico insufficiente) restano.
+ * Senza quote (o con quote vecchie) la partita non viene pronosticata e rientra al giro successivo.
+ * Le astensioni del modello (storico insufficiente, partita equilibrata) NON bloccano più: sulle 1.002 partite da cui il modello si asteneva il mercato è altrettanto affidabile
+ * (favorito 60–70%: reale 63–68% contro 65% atteso; 70–80%: reale 81–82% contro 74–75%), e il modello non aggiunge informazione al mercato.
  */
 export const TENNIS_ANCHOR = {
   version: "mkt1", minPickOdds: 1.3, maxOddsAgeMs: TENNIS_BET.maxOddsAgeMs,
@@ -104,7 +106,7 @@ export function marketConsensus(sources) {
 }
 
 export function anchorToMarket(prediction, match, { now = Date.now(), cfg = TENNIS_ANCHOR } = {}) {
-  if (!prediction?.published) return prediction;                      // astensione del modello: resta
+  const modelAbstained = !prediction?.published;                      // l'astensione del modello non blocca: la probabilità viene dal mercato
   const stop = (why) => ({ ...prediction, published: false, pick: null, p1: null, p2: null, reliability: null, abstainReason: why, anchored: false });
   const start = Date.parse(match?.startsAt), fetched = Date.parse(match?.oddsFetchedAt);
   if (match?.status !== "scheduled" || !(start > now)) return stop("La partita è già iniziata o conclusa.");
@@ -118,7 +120,8 @@ export function anchorToMarket(prediction, match, { now = Date.now(), cfg = TENN
   const pFav = Math.min(0.985, pFairFav + lift), p1 = Math.round((pick === 1 ? pFav : 1 - pFav) * 1e4) / 1e4, p2 = Math.round((1 - p1) * 1e4) / 1e4;
   const po = pickOdds(match.oddsSources, pick);
   if (!po || !(po.odds > cfg.minPickOdds)) return stop(`Quota del favorito ${po ? po.odds.toFixed(2).replace(".", ",") : "n.d."}: non superiore a ${cfg.minPickOdds.toFixed(2).replace(".", ",")}, nessun pronostico.`);
-  return { ...prediction, p1, p2, pick, anchored: true, abstainReason: null, modelVersion: `${prediction.modelVersion}+${cfg.version}`,
-    reasons: [`Probabilità dal consenso delle quote senza margine (${mc.books} ${mc.books === 1 ? "fonte" : "fonti"}); il modello dava ${Math.round((prediction.p1 ?? 0) * 100)}% a ${Math.round((prediction.p2 ?? 0) * 100)}%.`, ...(prediction.reasons ?? [])],
-    components: { ...prediction.components, anchor: { v: cfg.version, pModel1: prediction.p1, pModelPick: prediction.pick, pMarket1: Math.round(mc.p1 * 1e4) / 1e4, books: mc.books, bestOdds: po.odds } } };
+  return { ...prediction, p1, p2, pick, published: true, anchored: true, abstainReason: null, modelVersion: `${prediction.modelVersion ?? "tennis-v2"}+${cfg.version}`,
+    reliability: prediction.reliability ?? (mc.books >= 3 ? "media" : "bassa"),   // senza valutazione del modello: dal numero di fonti di quota
+    reasons: [modelAbstained ? `Probabilità dal consenso delle quote senza margine (${mc.books} ${mc.books === 1 ? "fonte" : "fonti"}); il modello si asteneva (${prediction.abstainReason ?? "dati insufficienti"}).` : `Probabilità dal consenso delle quote senza margine (${mc.books} ${mc.books === 1 ? "fonte" : "fonti"}); il modello dava ${Math.round((prediction.p1 ?? 0) * 100)}% a ${Math.round((prediction.p2 ?? 0) * 100)}%.`, ...(prediction.reasons ?? [])],
+    components: { ...prediction.components, anchor: { v: cfg.version, pModel1: prediction.p1 ?? null, pModelPick: prediction.pick ?? null, modelAbstained, pMarket1: Math.round(mc.p1 * 1e4) / 1e4, books: mc.books, bestOdds: po.odds } } };
 }
