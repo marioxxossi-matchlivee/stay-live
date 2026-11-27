@@ -7,7 +7,8 @@ import { NM_PARAMS } from "./_newmodel-params.js";
 export const MODEL = {
   priorHome: 1.5, priorAway: 1.2, priorWeight: 30, // media gol di partenza (casa/trasferta) e peso in "partite"
   minLeagueMatches: 20,   // sotto questa soglia il campionato usa la media di tutti i campionati
-  decay: 0.92,            // peso della k-esima partita più vecchia = decay^k
+  decay: 0.97,            // peso della k-esima partita più vecchia = decay^k (0,97: backtest walk-forward su 6.334 partite, Brier 1X2 0,6124 contro 0,6198 con 0,92 e 8 partite)
+  recentN: 24,            // partite recenti considerate per squadra (plateau da 24 in su; con 8 il Brier 1X2 era 0,6198)
   shrinkK: 4,             // "partite fittizie" mescolate ai gol attesi stagionali del provider (afProbabilities)
   formShrinkK: 24,        // "partite fittizie" di valore medio mescolate alla forma recente della squadra (teamForm). Era 4: sui dati reali
                           // (2.126 partite, 2026) con 4 il modello storico peggiorava la media di campionato (Brier 0,251 vs 0,243) e dichiarava
@@ -448,7 +449,7 @@ export const interestOrder = (x, y) => (y.verdict === "BET") - (x.verdict === "B
 
 const afRank = (s) => (s.agree === "conferma" ? 0 : s.agree === "contraddice" ? 2 : 1);
 
-export function analyzeMatch(match, ctx, { n = 8, af = null, market = null, inj = null, only = null } = {}) {
+export function analyzeMatch(match, ctx, { n = MODEL.recentN, af = null, market = null, inj = null, only = null } = {}) {
   const before = Date.parse(match.kickoff_at) || Date.now();
   const base = ctx.baseline(match.league);
   const home = teamForm(match.home_id, before, ctx, n);

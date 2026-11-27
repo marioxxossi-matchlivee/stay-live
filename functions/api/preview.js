@@ -9,7 +9,7 @@ import { legRows, modelVersion, predictionRow, recordLater } from "./_prediction
 export async function onRequest({ request, env, waitUntil }) {
   const url = new URL(request.url);
   const ids = [...new Set((url.searchParams.get("ids") ?? "").split(",").map((s) => s.trim()).filter(Boolean))];
-  const n = [5, 8, 10].includes(Number(url.searchParams.get("n"))) ? Number(url.searchParams.get("n")) : 8;
+  const n = [5, 8, 10].includes(Number(url.searchParams.get("n"))) ? Number(url.searchParams.get("n")) : MODEL.recentN;
   if (!ids.length || ids.length > 40 || !ids.every((id) => /^[\w-]{3,80}$/.test(id))) {
     return json({ error: "Seleziona da 1 a 40 partite." }, 400);
   }

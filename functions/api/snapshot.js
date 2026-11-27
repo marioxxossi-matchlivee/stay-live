@@ -30,7 +30,7 @@ export async function onRequest({ request, env }) {
     const ver = modelVersion();
     // Come nell'app: si registra solo il pronostico delle partite con quote reali di mercato; le altre rientrano quando le quote compaiono.
     const complete = matches.filter((m) => br.marketState?.get(m.game_id) === "used");
-    const analyses = complete.map((m) => [m, analyzeMatch(m, ctx, { n: 8, only: VISIBLE_KEYS, ...(br.byGame.get(m.game_id) ?? {}) })]);
+    const analyses = complete.map((m) => [m, analyzeMatch(m, ctx, { only: VISIBLE_KEYS, ...(br.byGame.get(m.game_id) ?? {}) })]);
     const rows = analyses.map(([m, a]) => predictionRow(m, a, { now, ver })).filter(Boolean);
     const legs = analyses.flatMap(([m, a]) => legRows(m, a, { now, ver, multigol: true }));
     const [stored, storedLegs] = await Promise.all([recordPredictions(env, rows), recordLegs(env, legs)]);

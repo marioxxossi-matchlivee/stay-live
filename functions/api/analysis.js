@@ -8,7 +8,7 @@ import { legRows, predictionRow, recordLater } from "./_predictions.js";
 export async function onRequest({ request, env, waitUntil }) {
   const url = new URL(request.url);
   const id = url.searchParams.get("id") ?? "";
-  const n = [5, 8, 10].includes(Number(url.searchParams.get("n"))) ? Number(url.searchParams.get("n")) : 8;
+  const n = [5, 8, 10].includes(Number(url.searchParams.get("n"))) ? Number(url.searchParams.get("n")) : MODEL.recentN;
   if (!/^[\w-]{3,80}$/.test(id)) return json({ error: "Parametro id non valido." }, 400);
   const missing = missingConfig(env);
   if (missing.length) return json({ error: `Variabili mancanti: ${missing.join(", ")}` }, 503);
