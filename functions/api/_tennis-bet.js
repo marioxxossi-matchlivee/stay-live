@@ -11,6 +11,13 @@ export const TENNIS_BET = {
   strictCategories: ["itf", "challenger", "challenger_itf"], // mercati meno liquidi e dati più poveri: serve affidabilità "alta"
 };
 
+/**
+ * Giocata di valore (pronostici ancorati al mercato): molto probabile, quota accettabile, valore atteso positivo.
+ * Evidenza (partite 13–26/11/2026): favoriti con probabilità di mercato 70–80% vincono l'81,9% (321 partite) e quelli sopra 80% oltre il 90%: il mercato li sottostima.
+ * Con favorito almeno al 70% e quota migliore sopra 1,30: 62 partite, 82,3% azzeccati, ROI +10%: campione ancora piccolo, da riconfermare.
+ */
+export const TENNIS_VALUE = { minProb: 0.70, minOdds: 1.30, minEv: 0.03 };
+
 const valid = (o) => Number.isFinite(o) && o > 1;
 const round = (x, d = 4) => (x == null ? null : Math.round(x * 10 ** d) / 10 ** d);
 
@@ -50,6 +57,16 @@ export function evaluateBet(match, prediction, { now = Date.now(), cfg = TENNIS_
   out.odds = po.odds; out.book = po.book; out.rawImplied = round(1 / po.odds); out.implied = round(po.reference.implied);
   if (!(age <= cfg.maxOddsAgeMs)) return no("Quote non aggiornate: nessun EV calcolato.");
   out.ev = round(p * po.odds - 1);
+  if (prediction.anchored) {                                              // pronostico ancorato: criteri di «giocata di valore»
+    const v = TENNIS_VALUE, fmt = (x) => x.toFixed(2).replace(".", ","), whyV = [];
+    if (p < v.minProb) whyV.push(`Probabilità ${Math.round(p * 100)}%: sotto il ${Math.round(v.minProb * 100)}% richiesto per una giocata molto probabile.`);
+    if (po.odds <= v.minOdds) whyV.push(`Quota ${fmt(po.odds)} non superiore a ${fmt(v.minOdds)}.`);
+    if (out.ev < v.minEv) whyV.push(`Valore atteso ${(out.ev * 100).toFixed(1).replace(".", ",")}% sotto il ${(v.minEv * 100).toFixed(0)}%.`);
+    if (whyV.length) { out.reasons.push(...whyV); return out; }
+    out.verdict = "BET";
+    out.reasons.push(`Giocata di valore: probabilità ${Math.round(p * 100)}%, quota ${fmt(po.odds)} (${po.book}), valore atteso +${(out.ev * 100).toFixed(1).replace(".", ",")}%.`);
+    return out;
+  }
   const why = [];
   if (prediction.reliability === "bassa") why.push("Affidabilità bassa: pochi dati a supporto.");
   if (cfg.strictCategories.includes(category) && prediction.reliability !== "alta") why.push("Challenger/ITF: mercato poco liquido, si richiede affidabilità alta.");
