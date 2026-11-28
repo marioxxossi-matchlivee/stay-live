@@ -24,6 +24,7 @@ import { enableSheet } from "./sheet.js";
 import { marketsHtml } from "./markets.js";
 import { SHOW_CORNERS, VISIBLE_GROUPS } from "./modelview.js";
 import { restoreBoardPayload } from "./snapshot.js";
+import { initNotifyUi, startAutoSync } from "./notify.js";
 
 hideBrokenCrests();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -35,7 +36,7 @@ const openAcc = new Set();
 const reduceMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 const state = {
   matches: [], leagues: [], continents: [], league: "all", navOpen: false, day: null, onlyBet: false, q: "", usage: null, selected: new Set(),
-  n: 8, minOdds: MIN_ODDS_DEFAULT, loading: false, error: null, banner: null, syncTried: false, updatedAt: null,
+  n: 24, minOdds: MIN_ODDS_DEFAULT, loading: false, error: null, banner: null, syncTried: false, updatedAt: null,
 };
 const MINODDS_KEY = "stayLive.minOdds";
 try { const mo = localStorage.getItem(MINODDS_KEY); if (mo != null) state.minOdds = clampMinOdds(mo); } catch { /* quota minima di default */ }
@@ -345,14 +346,14 @@ function formBox(name, f, logo) {
 }
 function explain(match, a) {
   const i = a.inputs;
-  const sel = (k) => a.selections.find((s) => s.key === k);
+  const sel = (k) => a.selections.find((s) => s.key === k);   // le selezioni visibili sono 1X2 e doppia chance: mai assumere altri mercati
   const base = i.neutral ? `Campo neutro: uso ${num(i.baseline.perTeam, 3)} gol per squadra.` : `${num(i.baseline.home, 3)} gol in casa e ${num(i.baseline.away, 3)} in trasferta.`;
   const team = (name, f) => `${esc(name)}: ${f.n} partite usate (massimo ${a.n}), ognuna pesa ${num(MODEL.decay)} volte la successiva. Media gol fatti ${num(f.gfAvg)} e subiti ${num(f.gaAvg)} → attacco ${num(f.attackRaw, 3)}, difesa ${num(f.defenseRaw, 3)} (1,000 = media del campionato). Con ${MODEL.formShrinkK} partite “medie” aggiunte per non esagerare: attacco <b>${num(f.attack, 3)}</b>, difesa <b>${num(f.defense, 3)}</b>.`;
   const steps = [
     ["Media gol di riferimento", `Nelle ${i.baseline.sample} partite di ${i.baseline.scope} già giocate: ${base} Il dato è mescolato con una media di partenza (${num(MODEL.priorHome, 1)} / ${num(MODEL.priorAway, 1)}) che pesa come ${MODEL.priorWeight} partite.`],
     ["Forma delle due squadre", `${team(match.home, i.home)}<br>${team(match.away, i.away)}`],
     ["Gol attesi", `${esc(match.home)}: ${num(i.neutral ? i.baseline.perTeam : i.baseline.home, 3)} × attacco ${num(i.home.attack, 3)} × difesa avversaria ${num(i.away.defense, 3)} = <b>${num(a.lambda.home, 2)}</b>. ${esc(match.away)}: ${num(i.neutral ? i.baseline.perTeam : i.baseline.away, 3)} × ${num(i.away.attack, 3)} × ${num(i.home.defense, 3)} = <b>${num(a.lambda.away, 2)}</b>. Totale atteso <b>${num(a.lambda.total, 2)}</b> gol.`],
-    [a.api?.used ? "Probabilità dalle ultime partite" : "Probabilità di ogni esito", `Ogni punteggio i–j vale Poisson(${num(a.lambda.home)}; i) × Poisson(${num(a.lambda.away)}; j). Sommando le caselle giuste si ottengono tutti i mercati: ad esempio Over 2,5 = 1 − P(0, 1 o 2 gol totali) = <b>${pct(sel("over25").p, 1)}</b>; 1 = somma dei punteggi con più gol in casa = <b>${pct(sel("home").p, 1)}</b>. Più probabili: ${a.topScores.map((t) => `${t.score} (${pct(t.p, 1)})`).join(", ")}.`],
+    [a.api?.used ? "Probabilità dalle ultime partite" : "Probabilità di ogni esito", `Ogni punteggio i–j vale Poisson(${num(a.lambda.home)}; i) × Poisson(${num(a.lambda.away)}; j). Sommando le caselle giuste si ottengono tutti i mercati: ad esempio 1 = somma dei punteggi con più gol in casa = <b>${pct(sel("home")?.p, 1)}</b>; 1X = somma dei punteggi in cui la casa non perde = <b>${pct(sel("dc1x")?.p, 1)}</b>. Più probabili: ${a.topScores.map((t) => `${t.score} (${pct(t.p, 1)})`).join(", ")}.`],
     ...(a.api?.used ? [
       ["Pronostico di API-Football", `${a.api.percent ? `Il provider stima ${esc(match.home)} ${pct(a.api.percent.home)}, pareggio ${pct(a.api.percent.draw)}, ${esc(match.away)} ${pct(a.api.percent.away)}. ` : ""}${a.api.lambda ? `Dalle medie gol della stagione (${a.api.played} partite giocate) ricavo ${num(a.api.lambda.home, 2)} gol attesi per ${esc(match.home)} e ${num(a.api.lambda.away, 2)} per ${esc(match.away)}, avvicinati alla media del campionato quando le partite sono poche. ` : ""}${a.api.underOver ? `Consiglio sui gol: ${a.api.underOver.side === "over" ? "Over" : "Under"} ${num(a.api.underOver.line, 1)} (+${MODEL.afAdviceShift * 100} punti a quella linea). ` : ""}`],
       ["Fusione delle fonti (un solo cervello)", `Per ogni esito la probabilità finale è la media pesata delle fonti disponibili: ${fusionText(a)}. Per la probabilità prudente: ultime partite stressate sui gol attesi, API-Football meno ${MODEL.afMargin * 100} punti sulle percentuali 1X2, mercato meno ${MODEL.marketMargin * 100} punti; poi si toglie il ${pct(MODEL.spreadPenalty)} della distanza tra la fonte più alta e la più bassa${a.fusion?.absent && (a.fusion.absent.home + a.fusion.absent.away) ? ` e ${num(MODEL.injPenalty * 100, 1)} punti per ogni assente confermato (${a.fusion.absent.home + a.fusion.absent.away} in totale)` : ""}. Se API-Football o il mercato stimano un esito sotto il ${pct(MODEL.afContrast)}, non può diventare BET.`],
@@ -460,7 +461,7 @@ function renderDetail() {
         <div><small>Campione</small><strong>${a.inputs.home.n} + ${a.inputs.away.n} gare</strong></div>
       </div>
       <label class="hist" style="margin:0 0 6px">Storico usato
-        <select id="detail-n">${[5, 8, 10].map((v) => `<option value="${v}" ${v === a.n ? "selected" : ""}>${v} gare</option>`).join("")}</select></label>
+        <select id="detail-n">${[5, 8, 10, 24].map((v) => `<option value="${v}" ${v === a.n ? "selected" : ""}>${v} gare</option>`).join("")}</select></label>
       <h4>Altri mercati · inserisci la quota del bookmaker per il verdetto sul valore</h4>
       ${groups.map((g) => `<div class="mk"><h5>${esc(g)}</h5>${rest.filter((x) => x.market === g).map((x) => selectionRow(x, a.sample, match.id)).join("")}</div>`).join("")}
       <h4>Come è stato calcolato, passo per passo</h4>
@@ -1255,3 +1256,5 @@ setInterval(() => { if (document.visibilityState === "visible" && !state.error) 
 document.body.dataset.view = "matches";
 render();
 load();
+initNotifyUi();                 // notifiche sul cambio di pronostico (Impostazioni)
+startAutoSync();
