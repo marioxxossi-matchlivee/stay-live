@@ -112,7 +112,9 @@ test("giro refresh: programma e risultati reali → database → pronostici → 
   assert.ok(matches.some((m) => m.category === "challenger") && matches.some((m) => m.category === "itf") && matches.some((m) => m.category === "tour"));
   assert.ok(matches.filter((m) => m.src_endpoint === "results").every((m) => m.surface), "superficie dai risultati via courtId");
   // senza storico sufficiente il modello si astiene e lo registra
-  const preds = db.t.tennis_predictions; assert.ok(preds.length >= 1); assert.ok(preds.every((p) => p.published === false && p.abstain_reason && p.bet.verdict === "EVITA"));
+  const preds = db.t.tennis_predictions; assert.ok(preds.length >= 1);
+  // l'astensione del modello non blocca più: senza quote utili resta non pubblicato (con motivo); con quote fresche il pronostico è ancorato al mercato
+  assert.ok(preds.every((p) => (p.published ? p.components?.anchor?.modelAbstained === true && /\+mkt1$/.test(p.model_ver) : p.abstain_reason && p.bet.verdict === "EVITA")));
   const snap = db.t.tennis_snapshot.find((s) => s.id === "board").payload;
   assert.ok(snap.matches.length >= 20); assert.equal(snap.diagnostics.counts.live, 0);
   assert.ok(snap.diagnostics.provider.quota.remaining === 199000); assert.ok(!JSON.stringify(snap).includes("SEGRETO"));
