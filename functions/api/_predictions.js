@@ -5,7 +5,7 @@ import { errorMessage, supabaseUpsert } from "./_lib.js";
 /** Parametri che cambiano i pronostici: se ne cambi uno, la versione cambia e le statistiche non si mescolano con quelle vecchie. */
 const VERSIONED = [
   "priorHome", "priorAway", "priorWeight", "minLeagueMatches", "decay", "recentN", "shrinkK", "formShrinkK", "lambdaMin", "lambdaMax", "pLowMethod", "pLowQuantile", "teamSd", "sdMax", "rho",
-  "minSample", "betSample", "betThreshold", "minEdge", "maxUsefulProb", "minPlayOdds", "requireRealOdds", "edgeMargin", "longshotFloor", "weights", "forecastMinOdds", "forecastMinP", "marketMargin", "spreadPenalty", "injPenalty",
+  "minSample", "betSample", "betThreshold", "minEdge", "maxUsefulProb", "minPlayOdds", "requireRealOdds", "edgeMargin", "longshotFloor", "weights", "forecastMinOdds", "marketMargin", "spreadPenalty", "injPenalty",
   "afDelta", "afMargin", "afAdviceShift", "afAgree", "afContrast",
 ];
 export function modelVersion(model = MODEL) {
