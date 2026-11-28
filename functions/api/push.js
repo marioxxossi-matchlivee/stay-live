@@ -6,7 +6,7 @@ const str = (v, max) => (typeof v === "string" ? v.slice(0, max) : null);
 /**
  * Notifiche sul cambio di pronostico.
  *  GET    -> { publicKey }                       chiave pubblica VAPID per sottoscrivere il dispositivo
- *  POST   -> { subscription, plays }             sincronizza le giocate salvate di questo dispositivo (sostituisce l'elenco)
+ *  POST   -> { subscription, plays, night }      sincronizza le giocate salvate di questo dispositivo (sostituisce l'elenco); night = notifiche notturne (default spente)
  *  DELETE -> { endpoint }                        disattiva le notifiche del dispositivo
  * L'invio vero lo fa la edge function pick-change-notify (Supabase).
  */
@@ -34,7 +34,7 @@ export async function onRequest({ request, env }) {
       seen.add(`${sport}:${ref}`);
       picks.push({ sport, ref, selection, label: str(p.label, 120), home: str(p.home, 80), away: str(p.away, 80), kickoff: new Date(kickoff).toISOString() });
     }
-    const res = await supabaseRpc(env, "sync_saved_picks", { p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth, p_ua: request.headers.get("user-agent") ?? "", p_picks: picks });
+    const res = await supabaseRpc(env, "sync_saved_picks", { p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth, p_ua: request.headers.get("user-agent") ?? "", p_picks: picks, p_night: body?.night === true });
     return json({ ok: true, ...(res ?? {}) });
   } catch (error) {
     return json({ error: errorMessage(error) }, 502);
