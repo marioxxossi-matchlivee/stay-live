@@ -1008,3 +1008,13 @@ details.more .mk,details.more .form,details.more .kv div{background:var(--soft)}
 .daybar .complete-data::after{content:none}
 .daybar .complete-data:active:not(:disabled){transform:translateY(2px);box-shadow:none}
 .daybar .complete-data:disabled{opacity:.65;cursor:default}
+
+/* Affidabilità: campionati e mercati */
+.lr-tabs{display:flex;gap:6px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none}
+.lr-tabs::-webkit-scrollbar{display:none}
+.lr-tab{flex:none;border:1px solid var(--soft-line,var(--line));background:var(--card);color:var(--ink-2);border-radius:99px;padding:7px 12px;font-size:13px;white-space:nowrap}
+.lr-tab[aria-pressed=true]{background:var(--pitch);border-color:var(--pitch);color:#fff}
+.lr-card .ef-line{margin:0 0 10px;font-size:13px;color:var(--ink-2)}
+.lr-more{margin-top:10px}
+.lr-more summary{cursor:pointer;font-size:13px;color:var(--ink-2);margin-bottom:8px}
+.lr-card .ef-val small{display:block}

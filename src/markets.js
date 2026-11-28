@@ -13,7 +13,7 @@ import { accordionHtml } from "./playlist.js";
 import { SHORT_PICK, shortPick } from "./pickview.js";
 import { MULTIGOL_BANDS, multigolOf as multigolFromGoals, outcomes } from "../functions/api/model.js";
 
-const RULES = { thr: 0.6, maxUseful: 0.8, minEdge: 0.08, minPlay: 1.3, betSample: 5, margin: 1.03 };
+const RULES = { thr: 0.6, maxUseful: 0.8, minEdge: 0.08, minPlay: 1.2, betSample: 5, margin: 1.03 };
 const sign = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(Math.round(v * 100))}`;
 const f1 = (v) => num(v, 1);
 const optLabel = (k) => SHORT_PICK[k] ?? k;
@@ -226,5 +226,6 @@ export function marketsHtml(m, { mode = "all", rules = RULES, open = false, corn
   const why = hk ? motivationOf(m, hk, rules) : "";
   const tendina = accordionHtml({ id: `${idPrefix}:${m.id}`, open, cls: "mcd", headCls: "mcd-head", head: "<span>Mercati e motivazioni</span>", body: `<div class="mcd-body">${detailsBody(m, cv, rules, vis)}</div>` });
   const recap = final ? recapHtml(m, final, cv, rules, vis) : "";
-  return `${recap}<div class="mcm">${rows}</div>${why ? `<p class="mc-why"><b>${recKey ? (recBet ? "★ Consigliato · " : "◦ Più probabile, non consigliato · ") : ""}${esc(optLabel(hk))}</b> ${why}</p>` : ""}${tendina}`;
+  const skip = !m.pick && mk.sk ? `<p class="mc-why mc-wait"><b>Nessun pronostico</b> · il più probabile (${esc(optLabel(mk.sk.k))} ${pct(mk.sk.p)}) ha quota ${num(mk.sk.o)}${mk.sk.e ? " (stimata)" : ""}, sotto il minimo di ${num(mk.sk.m)}: partita non selezionata.</p>` : "";
+  return `${recap}<div class="mcm">${rows}</div>${skip}${why ? `<p class="mc-why"><b>${recKey ? (recBet ? "★ Consigliato · " : "◦ Più probabile, non consigliato · ") : ""}${esc(optLabel(hk))}</b> ${why}</p>` : ""}${tendina}`;
 }

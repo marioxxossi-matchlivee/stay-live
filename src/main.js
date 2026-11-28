@@ -12,6 +12,7 @@ import { buildPreviewPdf } from "./report.js";
 import { renderAfDetail } from "./afdetail.js";
 import { crest, hideBrokenCrests, matchHeader } from "./ui.js";
 import { efficiency, efficiencyHtml, reliabilityHtml } from "./efficiency.js";
+import { leagueReliabilityHtml } from "./leaguereliability.js";
 import { budgetHtml } from "./budgetview.js";
 import { dqChipHtml, dqDetailHtml, saveDayState } from "./dataquality.js";
 import { absorbCorners, absorbResults, addPlay, evaluate, legFromItem, loadPlays, pendingCornerIds, pendingMatchIds, playFromItem, savePlays, signature } from "./plays.js";
@@ -866,18 +867,32 @@ function deletePlay(id) {
   showToast("Giocata eliminata", { action: "Annulla", ms: 6000, onAction: () => { plays.splice(Math.min(index, plays.length), 0, play); savePlays(plays); updatePlaysBadge(); renderPlays(); } });
 }
 /* Affidabilità di tutti i BET registrati dall'app (non solo quelli salvati): letta dal server, mostrata in cima alla vista Giocate. */
-const reliabilityState = { html: `<section class="ef-card"><h3>Affidabilità dei BET dell'app</h3><p class="ef-empty">Calcolo in corso…</p></section>`, at: 0 };
+const reliabilityState = { base: `<section class="ef-card"><h3>Affidabilità dei BET dell'app</h3><p class="ef-empty">Calcolo in corso…</p></section>`, html: "", at: 0 };
+const lrState = { rows: null, market: "dc", error: null, at: 0 };
+/** Scheda BET + scheda «Campionati e mercati»: si ricompone ogni volta che cambia una delle due. */
+function composeReliability() {
+  reliabilityState.html = reliabilityState.base + leagueReliabilityHtml(lrState, { esc, pct, leagueName });
+  const el = $("#reliability"); if (el) el.innerHTML = reliabilityState.html;
+}
+composeReliability();
+async function loadLeagueReliability() {
+  if (lrState.rows && Date.now() - lrState.at < 5 * 60e3) return;
+  try { lrState.rows = (await getJson("/api/reliability-leagues")).rows ?? []; lrState.error = null; lrState.at = Date.now(); } catch (e) { lrState.error = e.message; }
+  composeReliability();
+}
 async function loadReliability() {
+  void loadLeagueReliability();
   if (Date.now() - reliabilityState.at < 60e3) return;
   try {
     let data = await getJson("/api/reliability"), legacy = false;
     // Il modello attuale non ha ancora BET conclusi ma ce ne sono di versioni precedenti: si mostrano, ben etichettati, invece di nasconderli.
     if (!data.total?.n && data.olderVersions) { try { data = await getJson("/api/reliability?all=1"); legacy = true; } catch { /* resta il messaggio */ } }
-    reliabilityState.html = reliabilityHtml(data, { esc, pct }, { legacy });
+    reliabilityState.base = reliabilityHtml(data, { esc, pct }, { legacy });
     reliabilityState.at = Date.now();
-  } catch (e) { reliabilityState.html = `<section class="ef-card"><h3>Affidabilità dei BET dell'app</h3><p class="ef-empty">Non disponibile: ${esc(e.message)}</p></section>`; }
-  const el = $("#reliability"); if (el) el.innerHTML = reliabilityState.html;
+  } catch (e) { reliabilityState.base = `<section class="ef-card"><h3>Affidabilità dei BET dell'app</h3><p class="ef-empty">Non disponibile: ${esc(e.message)}</p></section>`; }
+  composeReliability();
 }
+document.addEventListener("click", (e) => { const b = e.target.closest("[data-lr-market]"); if (b) { lrState.market = b.dataset.lrMarket; composeReliability(); } });
 let playsBusy = false;
 async function refreshPlays() {
   if (playsBusy) return;
