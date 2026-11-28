@@ -43,6 +43,7 @@ const MINODDS_KEY = "stayLive.minOdds";
 try { const mo = localStorage.getItem(MINODDS_KEY); if (mo != null) state.minOdds = clampMinOdds(mo); } catch { /* quota minima di default */ }
 state.rules = null;            // regole del motore (soglie) inviate con l'elenco, per spiegare i verdetti
 const leagueName = (id, short = false) => state.leagues.find((l) => l.id === id)?.[short ? "short" : "name"] ?? id;
+globalThis.stayLiveLeagueName = leagueName;      // usato dalla scheda Affidabilità (monitor-tab.js)
 /** Filtro campionato: "all", id campionato oppure "n:<country>" per tutta una nazione. */
 const inScope = (leagueId) => {
   if (state.league === "all") return true;

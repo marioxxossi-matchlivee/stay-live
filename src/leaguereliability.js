@@ -30,3 +30,24 @@ export function leagueReliabilityHtml({ rows, market, error }, { esc, pct, leagu
     ${sum.n ? `<p class="ef-line">Tutti i campionati: <b>${esc(pct(sum.won / sum.n))}</b> (${sum.won}/${sum.n})</p>` : ""}${body}
     <p class="ef-foot">Esito più probabile di ogni mercato, registrato prima della partita. In ordine di affidabilità (limite inferiore dell'intervallo al 95%). ⚠ = meno di ${MIN_SOLID} partite: differenze di pochi punti sono rumore. Gli esiti con quota bassa escono spesso ma rendono poco.</p></section>`;
 }
+
+/**
+ * Monta la scheda «Campionati e mercati» in un contenitore autonomo (scheda Affidabilità): carica i dati, gestisce i pulsanti dei mercati e si ricarica al massimo ogni 5 minuti.
+ * `deps` = { esc, pct, leagueName }.
+ */
+export function mountLeagueReliability(host, deps) {
+  const st = { rows: null, market: "dc", error: null, at: 0 };
+  const paint = () => { host.innerHTML = leagueReliabilityHtml(st, deps); };
+  host.addEventListener("click", (e) => { const b = e.target instanceof Element ? e.target.closest("[data-lr-market]") : null; if (b) { st.market = b.dataset.lrMarket; paint(); } });
+  async function reload() {
+    if (st.rows && Date.now() - st.at < 5 * 60e3) return;
+    try {
+      const res = await fetch("/api/reliability-leagues"), j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? `Errore ${res.status}`);
+      st.rows = j.rows ?? []; st.error = null; st.at = Date.now();
+    } catch (e) { st.error = e.message; }
+    paint();
+  }
+  paint(); void reload();
+  return { reload };
+}

@@ -4,9 +4,11 @@ import { PLAYS_KEY } from "./plays.js";
 import { TPLAYS_KEY } from "./tennis/plays.js";
 
 export const NOTIFY_KEY = "stayLive.notify";
+export const NIGHT_KEY = "stayLive.notifyNight";            // notifiche notturne (23:00–07:00): spente di default
 const read = (key) => { try { const v = JSON.parse(localStorage.getItem(key) ?? "[]"); return Array.isArray(v) ? v : []; } catch { return []; } };
 
 export const supported = () => typeof navigator !== "undefined" && "serviceWorker" in navigator && "PushManager" in globalThis && "Notification" in globalThis;
+export const nightEnabled = () => { try { return localStorage.getItem(NIGHT_KEY) === "1"; } catch { return false; } };
 export const enabled = () => { try { return supported() && localStorage.getItem(NOTIFY_KEY) === "1" && Notification.permission === "granted"; } catch { return false; } };
 
 /** Giocate da seguire: partite non ancora giocate (calcio: tutte le gambe senza risultato; tennis: giocate senza risultato). Una riga per partita. */
@@ -26,9 +28,9 @@ export async function syncNow(force = false) {
   const reg = await navigator.serviceWorker.getRegistration("/sw.js") ?? await navigator.serviceWorker.register("/sw.js");
   const sub = await reg.pushManager.getSubscription();
   if (!sub) return false;
-  const plays = collectPicks(), sig = JSON.stringify(plays.map((p) => [p.sport, p.ref, p.selection]));
+  const plays = collectPicks(), night = nightEnabled(), sig = JSON.stringify([night, plays.map((p) => [p.sport, p.ref, p.selection])]);
   if (!force && sig === lastSig) return true;
-  const res = await fetch("/api/push", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON(), plays }) });
+  const res = await fetch("/api/push", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON(), plays, night }) });
   if (res.ok) lastSig = sig;
   return res.ok;
 }
@@ -60,7 +62,7 @@ export function startAutoSync() {
   setInterval(tick, 60e3);
 }
 
-/** Pulsante nelle Impostazioni (#notify-toggle, #notify-state). */
+/** Pulsanti nelle Impostazioni (#notify-toggle, #notify-state, #notify-night, #night-state). */
 export function initNotifyUi() {
   const btn = document.getElementById("notify-toggle"), st = document.getElementById("notify-state");
   if (!btn) return;
@@ -69,9 +71,12 @@ export function initNotifyUi() {
     btn.textContent = enabled() ? "Disattiva" : "Attiva";
     if (st) st.textContent = msg || (enabled() ? "Attive: ti avviso se cambia il pronostico di una partita salvata nelle Giocate." : "Disattivate.");
   };
+  const nb = document.getElementById("notify-night"), ns = document.getElementById("night-state");
+  const paintNight = () => { if (!nb) return; nb.disabled = !enabled(); nb.textContent = nightEnabled() ? "Disattiva" : "Attiva"; if (ns) ns.textContent = nightEnabled() ? "Attive: ricevi avvisi anche tra le 23:00 e le 07:00." : "Disattivate: di notte non ti disturbo, avviso dopo le 07:00."; };
+  nb?.addEventListener("click", async () => { try { if (nightEnabled()) localStorage.removeItem(NIGHT_KEY); else localStorage.setItem(NIGHT_KEY, "1"); await syncNow(true); } catch { /* si riprova al prossimo giro */ } paintNight(); });
   btn.addEventListener("click", async () => {
     btn.disabled = true;
-    try { if (enabled()) await disable(); else await enable(); paint(); } catch (e) { paint(e.message); } finally { btn.disabled = false; }
+    try { if (enabled()) await disable(); else await enable(); paint(); } catch (e) { paint(e.message); } finally { btn.disabled = false; paintNight(); }
   });
-  paint();
+  paint(); paintNight();
 }
