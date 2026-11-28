@@ -1,0 +1,26 @@
+name: Notifiche cambio pronostico
+
+# Ogni 15 minuti chiede alla edge function pick-change-notify di confrontare le giocate salvate con i pronostici attuali e di avvisare se sono cambiati.
+# Solo lettura sul database dal punto di vista di questo workflow: la scrittura (baseline e registro notifiche) la fa la edge function.
+# Secrets: SUPABASE_URL, NOTIFY_SECRET (lo stesso impostato nella edge function).
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  notifica:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Controlla i pronostici salvati
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NOTIFY_SECRET: ${{ secrets.NOTIFY_SECRET }}
+        run: |
+          test -n "$NOTIFY_SECRET" || { echo "NOTIFY_SECRET non impostato: notifiche non attive."; exit 0; }
+          out=$(curl -fsS -X POST -H "x-notify-secret: $NOTIFY_SECRET" "$SUPABASE_URL/functions/v1/pick-change-notify")
+          echo "$out" | tee -a "$GITHUB_STEP_SUMMARY"
