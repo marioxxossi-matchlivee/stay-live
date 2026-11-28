@@ -31,7 +31,7 @@ test("senza pronostico del provider il modello resta quello di prima", () => {
   const a = analyzeMatch(match, ctx, { n: 8 });
   assert.equal(a.basis, "storico"); assert.equal(a.api, null);
   assert.equal(a.selections[0].pApi, null);
-  assert.equal(compactPick(a).basis, "storico");
+  assert.equal(compactPick(a), null, "senza quota reale non c'è pronostico");
 });
 
 test("con API-Football la probabilita' finale e' la media pesata di provider e ultime partite (pesi rinormalizzati senza mercato)", () => {

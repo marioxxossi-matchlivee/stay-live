@@ -24,6 +24,7 @@ test("/api/push: GET dà la chiave pubblica; POST valida, scarta le giocate non 
     const res = await onRequest({ request: new Request("https://a/api/push", { method: "POST", body: JSON.stringify({ subscription: sub, plays }) }), env });
     assert.equal(res.status, 200);
     assert.match(calls[0].url, /rpc\/sync_saved_picks$/);
+    assert.equal(calls[0].body.p_night, false, "notifiche notturne spente di default");
     assert.deepEqual(calls[0].body.p_picks.map((p) => `${p.sport}:${p.ref}:${p.selection}`), ["football:g1:dc1x", "tennis:t1:2"]);
     const bad = await onRequest({ request: new Request("https://a/api/push", { method: "POST", body: JSON.stringify({ subscription: { endpoint: "http://x" }, plays: [] }) }), env });
     assert.equal(bad.status, 400);

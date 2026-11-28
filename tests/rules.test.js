@@ -26,7 +26,7 @@ test("senza quota reale non c'è BET (serve il value bet), e la quota minima mos
   assert.equal(adjustPick(p, 1.8).minOdds, 1.8);
   assert.equal(adjustPick(p, 1.8).verdict, "EVITA");
   assert.match(adjustPick(p, 1.8).reason, /Quota reale non disponibile/);
-  assert.equal(MODEL.minPlayOdds, 1.3, "il modello condiviso non viene alterato");
+  assert.equal(MODEL.minPlayOdds, 1.2, "il modello condiviso non viene alterato");
 });
 test("pochi dati e scelte assenti passano invariati", () => {
   assert.equal(adjustPick(null, 1.5), null);

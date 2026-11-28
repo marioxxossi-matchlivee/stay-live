@@ -141,18 +141,15 @@ test("solo cache: nessuna richiesta ad API-Football", async () => {
   assert.equal(af, 0); assert.equal(r.retry.pending, 0);
 });
 
-test("forecastPick: esito più probabile con quota > 1,3; esiste sempre; segnala quando la quota è bassa", async () => {
+test("forecastPick: sempre l'esito più probabile; la quota reale sotto il minimo (o assente) non lo cambia ma lo segnala", async () => {
   const { forecastPick, MODEL } = await import("../functions/api/model.js");
   const mk = (key, p, odds = null) => ({ key, p, pLow: p - 0.05, odds: odds ? { median: odds } : null });
-  // con quota reale: 1X ha p alta ma quota 1,2 -> si prende l'esito più probabile con quota > 1,3
-  const a = forecastPick([mk("home", 0.55, 1.75), mk("draw", 0.25, 3.6), mk("away", 0.20, 4.5), mk("dc1x", 0.80, 1.2), mk("dcx2", 0.45, 2.1), mk("dc12", 0.75, 1.28)]);
-  assert.equal(a.key, "home"); assert.equal(a.lowOdds, false); assert.equal(a.forecast, true);
-  // partita sbilanciata: l'unico esito con quota sufficiente ha p < forecastMinP -> si tiene il più probabile e si segnala
-  const b = forecastPick([mk("home", 0.85, 1.12), mk("draw", 0.10, 8), mk("away", 0.05, 15), mk("dc1x", 0.95, 1.03), mk("dcx2", 0.15, 5.5), mk("dc12", 0.90, 1.08)]);
-  assert.equal(b.key, "dc1x"); assert.equal(b.lowOdds, true);
-  // senza quota reale: quota equa ridotta del margine (1/p/1,06)
+  const a = forecastPick([mk("home", 0.55, 1.75), mk("draw", 0.25, 3.6), mk("away", 0.20, 4.5), mk("dc1x", 0.80, 1.25), mk("dcx2", 0.45, 2.1), mk("dc12", 0.75, 1.28)]);
+  assert.equal(a.key, "dc1x"); assert.equal(a.forecast, true); assert.equal(a.lowOdds, false); assert.equal(a.noOdds, false);
+  const b = forecastPick([mk("home", 0.85, 1.12), mk("draw", 0.10, 8), mk("away", 0.05, 15), mk("dc1x", 0.95, MODEL.forecastMinOdds - 0.05), mk("dcx2", 0.15, 5.5), mk("dc12", 0.90, 1.08)]);
+  assert.equal(b.key, "dc1x", "non si ripiega su un esito meno probabile"); assert.equal(b.lowOdds, true);
   const c = forecastPick([mk("home", 0.50), mk("draw", 0.25), mk("away", 0.25), mk("dc1x", 0.75), mk("dcx2", 0.50), mk("dc12", 0.75)]);
-  assert.ok(c.p <= 1 / MODEL.forecastMinOdds / (1 + MODEL.bookMargin) + 1e-9);
+  assert.equal(c.key, "dc1x"); assert.equal(c.noOdds, true); assert.equal(c.lowOdds, true, "senza quota reale la partita non si seleziona");
   assert.equal(forecastPick([]), null);
 });
 

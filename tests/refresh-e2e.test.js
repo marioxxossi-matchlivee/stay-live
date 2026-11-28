@@ -152,7 +152,8 @@ test("giro completo + recupero automatico, con API-Football come unica fonte", a
     assert.ok(snap && snapChunks.length > 0 && m1.verify.ok);
     assert.equal(snapChunks.length, snap.meta.snapshotStorage.chunkCount);
     const storedMatches = snapChunks.flatMap((r) => r.payload.matches);
-    assert.ok(storedMatches.length >= LEAGUES.length * 2 && snap.meta.v === 2 && snap.meta.status === "partial");
+    assert.ok(storedMatches.length > 0 && snap.meta.v === 2 && snap.meta.status === "partial");
+    assert.ok(storedMatches.every((m) => m.status !== "scheduled" || m.dq?.publishOk), "nell'app solo partite con dati completi (quote reali incluse)");
     assert.ok(storedMatches.some((m) => m.pick), "i pronostici del modello sono calcolati");
     assert.equal(snap.payload.matches.length, 0, "il manifest non contiene il grande array delle partite");
     // corner disattivati: nessun corner storico scaricato, nessuna richiesta di statistiche, nessuna quota corner

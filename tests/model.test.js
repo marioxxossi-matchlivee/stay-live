@@ -74,10 +74,10 @@ test("con quota inserita decide il valore atteso prudente", () => {
 test("quota minima regolabile: sotto non si gioca anche se il valore atteso è positivo; la quota reale non è obbligatoria", () => {
   const sel = { pLow: 0.8, minOdds: 1.3, edge: 0.2 };
   assert.equal(verdictFor(sel, 8, 1.25).verdict, "EVITA");              // 0,8 x 1,25 = 1,0: sotto la quota minima 1,30
-  assert.match(verdictFor(sel, 8, 1.25).reason, /sotto il minimo/);
+  assert.match(verdictFor(sel, 8, 1.25).reason, /Quota troppo bassa/);
   assert.equal(verdictFor(sel, 8, 1.4).verdict, "BET");
   assert.equal(withMinOdds(1.1, () => verdictFor({ pLow: 0.88, minOdds: 1.1, edge: 0.2 }, 8, 1.2).verdict), "BET", "abbassando la quota minima passano anche quote basse");
-  assert.equal(MODEL.minPlayOdds, 1.3, "il valore del modello viene ripristinato");
+  assert.equal(MODEL.minPlayOdds, 1.2, "il valore del modello viene ripristinato");
   const none = withModel({ requireRealOdds: false }, () => verdictFor(sel, 8));
   assert.equal(none.verdict, "BET", "senza quota reale il BET nasce comunque (valore non verificato)");
   assert.match(none.reason, /NON è verificato/);
