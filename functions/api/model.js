@@ -44,8 +44,8 @@ export const MODEL = {
   // CERVELLO UNICO: ogni probabilità è la fusione pesata di tre fonti, per ogni singola selezione (se una manca, i pesi si ridistribuiscono):
   //   storico = Poisson sulle ultime partite · api = pronostico di API-Football (1X2 e gol attesi stagionali) · mercato = quote di API-Football senza margine.
   weights: { storico: 0.10, api: 0.05, mercato: 0.85 },   // validato su quote reali: il Brier 1X2 migliora al crescere del peso del mercato (football-data, 2634 partite: 0,597 con 58% -> 0,5895 con 87%) e sulle 958 partite con tutte e tre le fonti registrate (prediction_leg_results, 7-26/11/2026) la combinazione migliore è il solo mercato (0,5716); le percentuali 1X2 di API-Football peggiorano la stima (pareggio dato in media al 44,5% contro 21% reale): peso minimo
-  // PRONOSTICO PER OGNI PARTITA: sempre l'esito più probabile tra 1X2 e doppia chance. La quota minima NON lo cambia: se la sua quota (reale, o stimata dalla quota equa se manca)
-  // è sotto forecastMinOdds la partita non viene selezionata (nessun pronostico), invece di ripiegare su un esito meno probabile.
+  // PRONOSTICO PER OGNI PARTITA: sempre l'esito più probabile tra 1X2 e doppia chance. La quota minima NON lo cambia: se la sua quota (solo reale: mai stimata)
+  // manca o è sotto forecastMinOdds la partita non viene selezionata (nessun pronostico), invece di ripiegare su un esito meno probabile.
   forecastMinOdds: 1.2,
   marketMargin: 0.03,     // sulla probabilità del mercato si tolgono 3 punti per la probabilità prudente
   spreadPenalty: 0.30,    // se le fonti sono in disaccordo, la probabilità prudente cala del 30% della distanza tra la più alta e la più bassa
@@ -429,12 +429,13 @@ export function verdictFor(sel, sample, odds = null) {
 /** Quota di riferimento di una selezione: quella reale di mercato; se manca, la quota equa ridotta del margine medio del bookmaker (mai presentata come reale). */
 export const refOdds = (s) => (s.odds?.median > 1 ? s.odds.median : s.p > 0 ? 1 / s.p / (1 + MODEL.bookMargin) : 0);
 
-/** Pronostico di una partita: l'esito più probabile, sempre. `lowOdds` = la sua quota di riferimento è sotto forecastMinOdds: in quel caso la partita non si seleziona (lo decide analyzeMatch). Non è un verdetto BET/EVITA. */
+/** Pronostico di una partita: l'esito più probabile, sempre. `lowOdds` = la sua quota REALE manca o è sotto forecastMinOdds: in quel caso la partita non si seleziona (lo decide analyzeMatch). Non è un verdetto BET/EVITA. */
 export function forecastPick(selections) {
   const list = selections.filter((s) => Number.isFinite(s.p));
   if (!list.length) return null;
   const top = [...list].sort((a, b) => b.p - a.p || b.pLow - a.pLow)[0];
-  return { ...top, forecast: true, lowOdds: refOdds(top) < MODEL.forecastMinOdds };
+  const real = top.odds?.median > 1 ? top.odds.median : null;      // solo quota reale di mercato: mai stimata
+  return { ...top, forecast: true, noOdds: real == null, lowOdds: !(real >= MODEL.forecastMinOdds) };
 }
 
 /** Ordine di interesse di due selezioni (BET prima, poi vantaggio dimostrato su quota reale, conferma del provider, vantaggio sulla media, probabilità prudente). Lo usa il consiglio principale e la sintesi per mercato. */
@@ -521,7 +522,7 @@ export function analyzeMatch(match, ctx, { n = MODEL.recentN, af = null, market 
   const forecast = forecastPick(selections);
   const betPick = ranked[0] ?? null;                                // scelta storica per valore (BET/EVITA): resta per i backtest di affidabilità
   const pick = forecast && !forecast.lowOdds ? forecast : null;      // quota del pronostico sotto il minimo: partita non selezionata (nessun esito alternativo)
-  const skipped = forecast?.lowOdds ? { key: forecast.key, p: forecast.p, odds: round(refOdds(forecast), 2), est: !(forecast.odds?.median > 1), min: MODEL.forecastMinOdds } : null;
+  const skipped = forecast?.lowOdds ? { key: forecast.key, p: forecast.p, odds: forecast.noOdds ? null : round(forecast.odds.median, 2), min: MODEL.forecastMinOdds } : null;
   const scores = [];
   m.forEach((row, i) => row.forEach((v, j) => scores.push({ score: `${i}-${j}`, p: round(v) })));
   scores.sort((a, b) => b.p - a.p);
@@ -545,7 +546,7 @@ export function analyzeMatch(match, ctx, { n = MODEL.recentN, af = null, market 
 export function compactPick(analysis) {
   const s = analysis.pick;
   if (!s) return null;
-  return { key: s.key, label: s.label, market: s.market, preferred: isPreferred(s), p: s.p, pLow: s.pLow, minOdds: s.minOdds, estOdds: estimateOdds(s.p), verdict: s.verdict, forecast: s.forecast ?? false, lowOdds: s.lowOdds ?? false,
+  return { key: s.key, label: s.label, market: s.market, preferred: isPreferred(s), p: s.p, pLow: s.pLow, minOdds: s.minOdds, verdict: s.verdict, forecast: s.forecast ?? false, lowOdds: s.lowOdds ?? false,
     edge: s.edge, agreeBy: s.agreeBy ?? null, pWorst: s.pWorst ?? null,
     reason: s.reason, confidence: analysis.confidence, sample: analysis.sample, expectedGoals: analysis.lambda.total,
     basis: analysis.basis, pApi: s.pApi, pModel: s.pModel, pMarket: s.pMarket, agree: s.agree,
@@ -583,8 +584,7 @@ export function marketsOf(analysis) {
   for (const s of sel) x[s.key] = { p: s.p, l: s.pLow, e: s.edge, o: s.odds?.median ?? null, ev: s.ev, g: s.agree === "conferma" ? 1 : s.agree === "contraddice" ? -1 : 0, v: s.verdict === "BET" ? 1 : 0, c: s.code ?? null, sp: s.spread };
   const i = analysis.inputs, side = (f) => ({ n: f.n, gf: f.gfAvg, ga: f.gaAvg, f: f.last.map(FORM_LETTER).join("") });
   const pc = analysis.api?.used ? analysis.api.percent : null;
-  const sk = analysis.skipped ? { k: analysis.skipped.key, p: analysis.skipped.p, o: analysis.skipped.odds, e: analysis.skipped.est, m: analysis.skipped.min } : null;
-  return { b, x, sk, rec: analysis.recommended ?? [], s: analysis.sample, c: analysis.confidence, ba: analysis.basis,
+  return { b, x, rec: analysis.recommended ?? [], s: analysis.sample, c: analysis.confidence, ba: analysis.basis,
     st: { lh: analysis.lambda.home, la: analysis.lambda.away, tot: analysis.lambda.total, lg: i.baseline.avgGoals ?? (i.baseline.home + i.baseline.away), h: side(i.home), a: side(i.away), api: pc ? { h: pc.home, d: pc.draw, a: pc.away } : null, abs: analysis.fusion?.absent ?? null } };
 }
 
