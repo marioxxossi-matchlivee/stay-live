@@ -13,7 +13,7 @@ const pickName = (p) => (p.pick === 1 ? p.p1.name : p.p2.name);
 
 const headHtml = (r) => {
   const team = (x) => `<span class="pl-team">${crest(x.name, null, "crest md")}<span>${esc(x.name)}</span></span>`;
-  return `<span class="pl-teams">${team(r.play.p1)}${team(r.play.p2)}</span><span class="pl-end">${statusPill(r.status)}</span>`;
+  return `<span class="pl-teams">${team(r.play.p1)}${team(r.play.p2)}</span><span class="pl-end">${r.score ? `<b style="margin-right:8px;font-variant-numeric:tabular-nums">${esc(r.score)}</b>` : ""}${statusPill(r.status)}</span>`;
 };
 
 function bodyHtml(r) {
